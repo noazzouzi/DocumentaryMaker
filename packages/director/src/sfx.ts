@@ -3,7 +3,7 @@
 import {
   COMPONENT_META, ids, lerp, type SfxCategory, type SfxCue, type SfxEntry,
 } from "@docmaker/core";
-import { anchorAt, clamp, cueFrame, cueWord, intensityAt, windowCapOk, type Ctx, type Shot } from "./ctx";
+import { anchorAt, clamp, cueFrame, cueWord, intensityAt, rateOk, type Ctx, type Shot } from "./ctx";
 import type { Fx } from "./fx";
 import type { PlannedSilence } from "./music";
 import type { Bleep, Ov } from "./overlays";
@@ -284,10 +284,9 @@ export function selectSfx(ctx: Ctx, env: SfxEnv, cands: SfxCand[]): SfxResult {
     const rollKey = `${c.sourceItemId}|${cat}`;
     const rollMember = ROLL.has(cat) && rollLast.has(rollKey) && Math.abs(rollLast.get(rollKey)! - c.event) <= ctx.fps;
     const intensity = intensityAt(ctx, c.event);
-    const W = ctx.S(60);
     if (!rollMember && c.priority < 5) {
-      if (!windowCapOk(heads.map((h) => h.f), c.event, W, Math.max(1, Math.floor(X.perMin[1] * intensity)))) return false;
-      if (IMPACTS.has(cat) && !windowCapOk(heads.filter((h) => h.impact).map((h) => h.f), c.event, W, Math.max(1, Math.floor(X.impactsPerMin[1] * intensity)))) return false;
+      if (!rateOk(ctx, heads.map((h) => h.f), c.event, X.perMin[1] * intensity)) return false;
+      if (IMPACTS.has(cat) && !rateOk(ctx, heads.filter((h) => h.impact).map((h) => h.f), c.event, X.impactsPerMin[1] * intensity)) return false;
     }
     if (accepted.some((a) => Math.abs(a.c.event - c.event) < X.minGapFrames && !designed(a.c, c))) return false;
     if (c.transition && accepted.filter((a) => a.c.transition).length >= maxTransition && c.priority < 5) return false;

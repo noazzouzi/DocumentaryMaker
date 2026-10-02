@@ -269,10 +269,22 @@ export type CompId = OverlayComponentId;
 export const isAiAsset = (a: FrozenAsset | undefined): boolean =>
   !!a && (a.candidate?.license.code === "AI-GENERATED" || a.declaration?.kind === "ai-generated" || a.candidate?.provider === "fal");
 
+/**
+ * A per-minute rate as a sliding-window cap: r ≥ 1 → ⌊r⌋ events per 60 s; 0 < r < 1 → 1 event per 60/r s; r ≤ 0 → none.
+ */
+export function rateCap(fps: number, perMin: number): { W: number; cap: number } {
+  if (!(perMin > 0)) return { W: Math.round(60 * fps), cap: 0 };
+  if (perMin >= 1) return { W: Math.round(60 * fps), cap: Math.floor(perMin + 1e-9) };
+  return { W: Math.round((60 / perMin) * fps), cap: 1 };
+}
+export function rateOk(ctx: Ctx, frames: readonly number[], f: number, perMin: number): boolean {
+  const { W, cap } = rateCap(ctx.fps, perMin);
+  return windowCapOk(frames, f, W, cap);
+}
+
 /** Registers an explicit flash at f when the per-minute budget allows (else the caller falls back to a routine flash). */
 export function takeExplicitFlash(ctx: Ctx, f: number): boolean {
-  const cap = Math.max(1, Math.floor(Math.min(ctx.T.flash.explicitPerMin, ctx.Bu.explicitFlashPerMin)));
-  if (!windowCapOk(ctx.explicitFlashes, f, ctx.S(60), cap)) return false;
+  if (!rateOk(ctx, ctx.explicitFlashes, f, Math.min(ctx.T.flash.explicitPerMin, ctx.Bu.explicitFlashPerMin))) return false;
   ctx.explicitFlashes.push(f);
   return true;
 }

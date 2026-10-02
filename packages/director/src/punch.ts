@@ -3,7 +3,7 @@
 // then the fill pass (zoom cuts, strongest remaining candidates) and the per-chapter floor.
 import { COMPONENT_META, lerp, msToFrame, type LayoutWord } from "@docmaker/core";
 import { camMax } from "./camera";
-import { cueWord, intensityAt, shotIdxAt, windowCapOk, type BeatCtx, type Ctx, type Shot } from "./ctx";
+import { cueWord, intensityAt, rateOk, shotIdxAt, type BeatCtx, type Ctx, type Shot } from "./ctx";
 import type { Fx, FxBook } from "./fx";
 import { eligibleSeconds } from "./music";
 import type { OvState } from "./overlays";
@@ -81,7 +81,7 @@ function tryPunch(ctx: Ctx, env: PunchEnv, c: PunchCand, fill: boolean): Fx | nu
   if (env.quiet.some(([q0, q1]) => a >= q0 && a < q1)) return null;
   const frames = punchFrames(env);
   if (frames.some((f) => Math.abs(f - a) < P.minGapFrames)) return null;
-  if (!windowCapOk(frames, a, ctx.S(60), Math.max(1, Math.floor(P.perMin[1] * intensityAt(ctx, a))))) return null;
+  if (!rateOk(ctx, frames, a, P.perMin[1] * intensityAt(ctx, a))) return null;
   const si = shotIdxAt(env.shots, a);
   const s = env.shots[si]!;
   if (s.role === "montage") return null;
@@ -157,7 +157,7 @@ export function placePunches(ctx: Ctx, env: PunchEnv): void {
       if (B.maxCamScale < ctx.P.reframe.scale[0]) continue;
       const frames = punchFrames(env);
       if (frames.some((f) => Math.abs(f - B.from) < ctx.P.punch.minGapFrames)) continue;
-      if (!windowCapOk(frames, B.from, ctx.S(60), Math.max(1, Math.floor(ctx.P.punch.perMin[1] * intensityAt(ctx, B.from))))) continue;
+      if (!rateOk(ctx, frames, B.from, ctx.P.punch.perMin[1] * intensityAt(ctx, B.from))) continue;
       if (env.quiet.some(([q0, q1]) => B.from >= q0 && B.from < q1)) continue;
       if (!env.room(B.from)) continue;
       B.zoomCut = true;

@@ -6,7 +6,7 @@ import {
 import { clamp, cueFrame, cueWord, round2, shotIdxAt, truncate, type BeatCtx, type Ctx, type Shot } from "../ctx";
 import { evidenceBoard, photoBurstFrames, photoBurstProps } from "./fromMotion";
 import { holdOf } from "./hold";
-import { CLS, addOv, cooldownOk, enterOf, personById, personRule, portraitFor, type OvState } from "./state";
+import { CLS, addOv, cooldownOk, enterOf, overshootOk, personById, personRule, portraitFor, type OvState } from "./state";
 import { keywordSlam } from "./cues";
 import { fillAts, syncWords } from "./sync";
 
@@ -206,6 +206,7 @@ export function cueComponents(ctx: Ctx, st: OvState, shots: readonly Shot[]): Bl
       const cands: { comp: OverlayComponentId; d: Derivation; weight: number }[] = [];
       for (const pol of ctx.style.components) {
         if (!pol.enabled || pol.weight <= 0 || !pol.triggers.includes(cue.type) || !DERIVABLE_TRIGGERS[pol.id].includes(cue.type)) continue;
+        if (!overshootOk(ctx, pol.id)) continue;
         const d = derive(ctx, shots, b, k, cue, pol.id);
         if (!d || !cooldownOk(ctx, st, pol.id, d.from)) continue;
         cands.push({ comp: pol.id, d, weight: pol.weight });

@@ -48,6 +48,10 @@ export function zoneFor(ctx: Ctx, c: OverlayComponentId, want?: ZoneName): ZoneN
 }
 
 /** Validates props against OVERLAY_PROPS and clamps timing; returns null (with a warning) when unusable. */
+/** Overshoot components (Stamp) only when the style's motion tokens allow them (lint OVERSHOOT). */
+export const overshootOk = (ctx: Ctx, c: OverlayComponentId) =>
+  !COMPONENT_META[c].overshootAllowed || ctx.I.renderTokens.motion.overshootAllowedIn.includes(c);
+
 export function addOv(ctx: Ctx, st: OvState, o: {
   component: OverlayComponentId; ref: string; beatId: string | null; from: number; dur: number; props: Record<string, unknown>;
   cls: number; origin: Ov["origin"]; zone?: ZoneName; anchorWord?: string | null; anchorChapter?: string | null; anchorSegment?: string | null;
@@ -55,6 +59,10 @@ export function addOv(ctx: Ctx, st: OvState, o: {
 }): Ov | null {
   const parsed = OVERLAY_PROPS[o.component].safeParse(o.props);
   const where = o.beatId ?? o.ref;
+  if (!overshootOk(ctx, o.component)) {
+    ctx.warn("OVERSHOOT_SKIPPED", where, `${o.component} skipped: the style does not allow overshoot`);
+    return null;
+  }
   if (!parsed.success) {
     ctx.warn("OVERLAY_PROPS", where, `${o.component} dropped: ${parsed.error.issues.map((x) => `${x.path.join(".")} ${x.message}`).join("; ").slice(0, 200)}`);
     return null;

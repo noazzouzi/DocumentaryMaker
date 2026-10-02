@@ -44,7 +44,7 @@ export function climaxFx(ctx: Ctx, book: FxBook, reveals: readonly RevealInfo[],
     if (snapped.has(r.beat.id)) continue;
     const explicit = r.flashExplicit;
     book.add(ctx, r.wordId ?? r.beat.id, {
-      fx: "flash", shape: "hit", amt: explicit ? 0.8 : Math.min(0.45, ctx.T.flash.cap), from: r.a, dur: ctx.F30(3), curve: 2, color: "#FFFFFF", target: "picture",
+      fx: "flash", shape: "hit", amt: explicit ? Math.min(0.8, ctx.T.flash.explicitMax) : Math.min(0.45, ctx.T.flash.cap), from: r.a, dur: ctx.F30(3), curve: 2, color: "#FFFFFF", target: "picture",
       role: "revealFlash", anchorWord: r.wordId, cls: CLS.structural, beatId: r.beat.id,
     });
   }

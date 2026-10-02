@@ -3,6 +3,7 @@ import {
   COMPONENT_META, buildAnchorIndex, canonicalJson, collectAssetIds, isDocmakerError, resolveTimeline, timelineItemIds,
   type FrozenAsset, type LintIssue, type ProgramLayout, type StyleData, type Timeline,
 } from "@docmaker/core";
+import { rateCap } from "./ctx";
 import { holdOf } from "./overlays/hold";
 import { cutsWithSfx, effectiveUpscale, isImpact, maxGapFrames, punchEvents, sfxEvents } from "./stats";
 import { OVERLAPS, keyOf } from "./transitions";
@@ -174,9 +175,10 @@ export function lintTimeline(t: Timeline, style: StyleData, ctx: { layout: Progr
   }
   for (const f of t.fx) if (f.fx === "flash") flash(f.id, f.from, f.amt);
   explicit.sort((a, b) => a - b);
+  const ex = rateCap(fps, F.explicitPerMin);
   for (let i = 0; i < explicit.length; i++) {
-    const n = explicit.filter((x) => x >= explicit[i]! && x < explicit[i]! + S(60)).length;
-    if (n > F.explicitPerMin) { out.push(issue("error", "FLASH_CAP", "global", `${n} explicit flashes within 60 s from frame ${explicit[i]}`)); break; }
+    const n = explicit.filter((x) => x >= explicit[i]! && x < explicit[i]! + ex.W).length;
+    if (n > ex.cap) { out.push(issue("error", "FLASH_CAP", "global", `${n} explicit flashes within ${(ex.W / fps).toFixed(0)} s from frame ${explicit[i]} (max ${F.explicitPerMin}/min)`)); break; }
   }
   // TRANSITION_RUN
   const T = style.transitionPolicy;
@@ -203,11 +205,13 @@ export function lintTimeline(t: Timeline, style: StyleData, ctx: { layout: Progr
     ["SFX", sfx, style.sfxPolicy.perMin[1]], ["impacts", impacts, style.sfxPolicy.impactsPerMin[1]],
     ["punches", punches, style.cameraPolicy.punch.perMin[1]], ["keyword slams", slams, style.budgets.keywordSlamPerMin],
   ];
-  for (const [name, xs, cap] of maxRules) {
-    for (let a = 0; a + W <= Math.max(N, W); a += step) {
+  for (const [name, xs, perMin] of maxRules) {
+    for (let a = 0; a < Math.max(N, 1); a += step) {
       const I = intensityRange(t, style, a, a + W).max;
-      const n = count(xs, a, a + W);
-      if (n > Math.max(1, Math.floor(cap * I + 1e-9))) { out.push(issue("warn", "DENSITY_MAX", `${(a / fps).toFixed(0)}s`, `${n} ${name} in 60 s (cap ${cap})`)); break; }
+      const rc = rateCap(fps, perMin * I);
+      const n = count(xs, a, a + rc.W);
+      if (n > rc.cap) { out.push(issue("warn", "DENSITY_MAX", `${(a / fps).toFixed(0)}s`, `${n} ${name} in ${(rc.W / fps).toFixed(0)} s (cap ${perMin}/min)`)); break; }
+      if (a + W >= N) break;
     }
   }
   for (const [a0, e0] of eligible(t, style)) {

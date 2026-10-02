@@ -1,7 +1,7 @@
 // Step 7 (b)–(f), (h)–(j): person intros, date stamps, keyword slams, clip cards/labels, disclosure labels, chapter cards,
 // title sting, safe-messaging card, letterbox.
 import { lerp, spokenText, tokenizeDisplay, type Person } from "@docmaker/core";
-import { cueFrame, cueWord, round2, shotIdxAt, truncate, wordCount, type BeatCtx, type Ctx, type Shot } from "../ctx";
+import { cueFrame, cueWord, rateOk, round2, shotIdxAt, truncate, wordCount, type BeatCtx, type Ctx, type Shot } from "../ctx";
 import { CHAPTER_KICKER, LABEL_TEXT, SAFE_MESSAGING_CARD } from "../resources";
 import { backdropRecipe } from "../shots";
 import { holdOf } from "./hold";
@@ -37,7 +37,6 @@ export function splitNameRole(s: string): { name: string; role: string } | null 
   return { name: t, role: "" };
 }
 
-const slamsIn = (st: OvState, from: number, to: number) => st.items.filter((o) => !o.dropped && o.component === "KeywordSlam" && o.from >= from && o.from < to).length;
 
 /** (b) PERSON_INTRO → FreezeLabel (video under the anchor, seeded) or LowerThird. Returns the served cue keys. */
 export function personIntros(ctx: Ctx, st: OvState, shots: readonly Shot[]): void {
@@ -102,7 +101,7 @@ export function keywordSlam(ctx: Ctx, st: OvState, b: BeatCtx, a: number, wordId
   const n = wordCount(b.text.onScreenText);
   if (n < 1 || n > 3) return null;
   if (!cooldownOk(ctx, st, "KeywordSlam", a)) return null;
-  if (slamsIn(st, a - ctx.S(60) + 1, a + 1) >= Math.max(1, Math.floor(ctx.Bu.keywordSlamPerMin * b.intensity))) return null;
+  if (!rateOk(ctx, st.items.filter((o) => !o.dropped && o.component === "KeywordSlam").map((o) => o.from), a, ctx.Bu.keywordSlamPerMin * b.intensity)) return null;
   const text = truncate(b.text.onScreenText.toLocaleUpperCase(ctx.lang), 28);
   const props = { text, color: ctx.tok.tokens.palette.danger, background: "black" };
   const h = holdOf("KeywordSlam", props, ctx.fps);
