@@ -274,9 +274,20 @@ describe("planBeats", () => {
     expect(r.issues.filter((x) => x.level === "error")).toEqual([]);
     expect(llm.calls).toEqual(["beats.CH2"]);
   });
+  it("typographic differences are re-cut from the segment without a paid retry (V_REALIGNED)", async () => {
+    const typo: ChapterBeatsWire = { chapter_id: "CH2", beats: [
+      wireBeat("CH2-S01", "The price hit 5,500 guilders!"), wireBeat("CH2-S01", "Nobody asked what a flower was worth.  Then the buyers vanished"), wireBeat("CH2-S03", "What a line"),
+    ] };
+    const llm = new ScriptedLlm({ "beats.CH2": typo });
+    const r = await planBeats(makeCtx(llm), { chapter: CH, factSheet: FS, style: TEST_PLUGIN, isHook: false, lang: "en", startOrder: 0 });
+    expect(llm.calls).toEqual(["beats.CH2"]);
+    expect(r.method).toBe("llm");
+    expect(r.texts.map((t) => t.text)).toEqual([SLICES[0], `${SLICES[1]} ${SLICES[2]}`, "What a line."]);
+    expect(r.issues.filter((x) => x.rule === "V_REALIGNED").map((x) => x.where)).toEqual(["CH2-S01", "CH2-S03"]);
+  });
   it("broken slices → one repair round → deterministic fallback with annotations re-attached", async () => {
     const bad: ChapterBeatsWire = { chapter_id: "CH2", beats: [
-      wireBeat("CH2-S01", "The price hit 5,500 guilders!", { cue_tags: [{ type: "NUMBER", word: "5,500", value: "5500" }], on_screen_text: "5,500" }),
+      wireBeat("CH2-S01", "The price reached 5,500 guilders.", { cue_tags: [{ type: "NUMBER", word: "5,500", value: "5500" }], on_screen_text: "5,500" }),
       wireBeat("CH2-S01", "Nobody asked what a flower was worth. Then the buyers vanished."),
       wireBeat("CH2-S03", "What a line."),
     ] };

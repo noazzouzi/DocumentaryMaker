@@ -73,7 +73,8 @@ export interface PipelineResult {
 }
 
 /** Runs every LLM step of the offline demo on a fixture (EN primary + FR secondary). */
-export async function runFixturePipeline(id: string, o?: { asOf?: string; minutes?: number }): Promise<PipelineResult> {
+export async function runFixturePipeline(id: string, o?: { asOf?: string; minutes?: number; style?: StylePlugin }): Promise<PipelineResult> {
+  const plugin = o?.style ?? TEST_PLUGIN;
   const llm = new FixtureLlm(fixtureDir(id));
   const ctx = makeCtx(llm);
   const manifest = FixtureManifest.parse(JSON.parse(readFileSync(join(fixtureDir(id), "fixture.json"), "utf8")));
@@ -91,9 +92,9 @@ export async function runFixturePipeline(id: string, o?: { asOf?: string; minute
     idea: id, factSummary: factSheet.oneLinePremise, stage: "research",
     styles: [{ id: "drama-commentary", names: { en: "Drama", fr: "Drama" }, description: { en: "", fr: "" }, bestFor: ["history"] }],
   });
-  const profile = TEST_STYLE.scriptProfile;
+  const profile = plugin.data.scriptProfile;
   const budgets = { en: planBudget(minutes, "en", profile, "rise-fall"), fr: planBudget(minutes, "fr", profile, "rise-fall") };
-  const outline = await writeOutline(ctx, { factSheet, style: TEST_PLUGIN, budget: budgets.en, budgets, shapeId: "rise-fall", lang: "en", riskFlags: style.riskFlags });
+  const outline = await writeOutline(ctx, { factSheet, style: plugin, budget: budgets.en, budgets, shapeId: "rise-fall", lang: "en", riskFlags: style.riskFlags });
 
   const chapters: Record<Lang, ChapterScript[]> = { en: [], fr: [] };
   const titles: Record<Lang, string> = { en: outline.title, fr: outline.title };
@@ -103,7 +104,7 @@ export async function runFixturePipeline(id: string, o?: { asOf?: string; minute
     for (const plan of outline.chapters) {
       const primary = chapters.en.find((c) => c.chapterId === plan.id) ?? null;
       const r = await writeChapterWithTitle(ctx, {
-        lang, primaryLang: "en", outline, plan, factSheet, style: TEST_PLUGIN, storySoFar: story, previousTail: tail,
+        lang, primaryLang: "en", outline, plan, factSheet, style: plugin, storySoFar: story, previousTail: tail,
         skeleton: lang === "fr" && primary ? segmentSkeleton(primary) : null, targetWords: plan.targetWords, riskFlags: [],
       });
       if (r.videoTitle) titles[lang] = r.videoTitle;
@@ -120,7 +121,7 @@ export async function runFixturePipeline(id: string, o?: { asOf?: string; minute
   const primaryTexts: BeatLang[] = [];
   const planIssues: PipelineResult["planIssues"] = [];
   for (const ch of scripts.en.chapters) {
-    const r = await planBeats(ctx, { chapter: ch, factSheet, style: TEST_PLUGIN, isHook: ch.chapterId === "CH1", lang: "en", startOrder: planned.length });
+    const r = await planBeats(ctx, { chapter: ch, factSheet, style: plugin, isHook: ch.chapterId === "CH1", lang: "en", startOrder: planned.length });
     planned.push(...r.plans);
     primaryTexts.push(...r.texts);
     planIssues.push({ chapterId: ch.chapterId, method: r.method, issues: r.issues });
@@ -140,7 +141,7 @@ export async function runFixturePipeline(id: string, o?: { asOf?: string; minute
   const frTexts: BeatLang[] = [];
   const sliceIssues: PipelineResult["sliceIssues"] = [];
   for (const ch of scripts.fr?.chapters ?? []) {
-    const r = await sliceBeats(ctx, { plans: plans.plans, primaryTexts: enTexts, chapter: ch, lang: "fr", factSheet, mode: "llm", style: TEST_STYLE });
+    const r = await sliceBeats(ctx, { plans: plans.plans, primaryTexts: enTexts, chapter: ch, lang: "fr", factSheet, mode: "llm", style: plugin.data });
     frTexts.push(...r.texts);
     sliceIssues.push({ chapterId: ch.chapterId, method: r.method, issues: r.issues });
   }

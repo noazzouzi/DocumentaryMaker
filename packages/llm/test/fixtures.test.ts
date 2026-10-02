@@ -9,7 +9,7 @@ import {
   BeatSliceWire, ChapterBeatsWire, ChapterScriptWire, FactCheckWire, FactSheetWire, StyleSuggestionWire, buildOutlineWire,
   deterministicFactChecks, lintScript, planBudget, validateBeats, validateOutline,
 } from "../src/index";
-import { fixtureDir, runFixturePipeline, type PipelineResult } from "./helpers";
+import { REPO, fixtureDir, runFixturePipeline, type PipelineResult } from "./helpers";
 
 const errors = (xs: LintIssue[]) => xs.filter((x) => x.level === "error");
 
@@ -133,5 +133,23 @@ describe("tulip-mania offline pipeline (golden)", () => {
       expect(new Set(det.map((x) => x.id)).size).toBe(det.length);
     }
     expect(r.ctx.costs.receipts).toEqual([]); // fixtures cost nothing
+  });
+});
+
+describe("tulip-mania with the builtin drama-commentary style (packages/styles)", () => {
+  it("runs the same golden checks with the real StylePlugin (prompt pack in the system prompt)", async () => {
+    let plugin: import("@docmaker/core").StylePlugin;
+    try {
+      const styles = await import("@docmaker/styles");
+      plugin = await styles.loadStyleDir(join(styles.builtinStylesDir(REPO), "drama-commentary"), "builtin");
+    } catch {
+      return; // styles package not available yet: covered by TEST_STYLE above
+    }
+    const r = await runFixturePipeline("tulip-mania", { style: plugin });
+    const lint = lintScript({ lang: "en", profile: plugin.data.scriptProfile, outline: r.outline, chapters: r.scripts.en.chapters, facts: r.factSheet });
+    expect(errors(lint)).toEqual([]);
+    expect(r.planIssues.flatMap((p) => errors(p.issues))).toEqual([]);
+    expect(r.planIssues.every((p) => p.method === "llm")).toBe(true);
+    expect(r.factChecks.en.items.filter((x) => x.risk === "high")).toEqual([]);
   });
 });

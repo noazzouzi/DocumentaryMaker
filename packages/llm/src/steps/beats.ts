@@ -1,10 +1,11 @@
 // Steps 5 and 5s: planBeats (LLM → validate → repair → deterministic fallback) and sliceBeats (secondary languages / re-slice).
 import { z } from "zod";
 import {
-  MotionData, beatWordRanges, tokenizeDisplay, type BeatLang, type BeatPlan, type ChapterScript, type FactSheet, type Lang,
+  MotionData, tokenizeDisplay, type BeatLang, type BeatPlan, type ChapterScript, type FactSheet, type Lang,
   type LintIssue, type MotionTemplate, type StyleData, type StylePlugin,
 } from "@docmaker/core";
-import { resplitSegments, beatsFromWire } from "../beats/map";
+import { realignChapterTexts, resplitSegments, beatsFromWire } from "../beats/map";
+import { realignSlices } from "../beats/realign";
 import { checkMotion, copyInvariantFields } from "../beats/motion";
 import { splitBeatsFallback } from "../beats/split";
 import { emptyBeatLang } from "../beats/synthetic";
@@ -67,8 +68,9 @@ export async function planBeats(ctx: StepCtx, i: { chapter: ChapterScript; factS
   const req = { step: "beats" as const, schema: ChapterBeatsWire, effort: "medium" as const, maxTokens: 16000, lang, system };
   const run = (w: ChapterBeatsWire) => {
     const m = beatsFromWire(w, { chapter, factSheet, lang, startOrder: i.startOrder });
-    const v = validateBeats({ plans: m.plans, texts: m.texts, chapter, factSheet, style: style.data, lang, primary: true });
-    return { plans: v.plans, texts: v.texts, issues: [...m.issues, ...v.issues] };
+    const ra = realignChapterTexts(m.plans, m.texts, chapter, lang);
+    const v = validateBeats({ plans: m.plans, texts: ra.texts, chapter, factSheet, style: style.data, lang, primary: true });
+    return { plans: v.plans, texts: v.texts, issues: [...m.issues, ...ra.issues, ...v.issues] };
   };
   let res = run(await call(ctx, { ...req, key: chapter.chapterId, user }));
   let failing = failingSegments(res.issues);
@@ -185,16 +187,16 @@ export async function sliceBeats(ctx: StepCtx | null, i: { plans: BeatPlan[]; pr
         segsToFallback.add(seg.id);
         continue;
       }
-      try {
-        beatWordRanges(seg.displayText, ws.map((w) => w!.text.trim()));
-      } catch {
+      const aligned = realignSlices(seg.displayText, ws.map((w) => w!.text));
+      if (!aligned) {
         segsToFallback.add(seg.id);
         continue;
       }
+      if (aligned.changed) issues.push({ level: "warn", rule: "V_REALIGNED", where: seg.id, msg: `${lang} slices differed typographically from the narration; re-cut from the segment` });
       beats.forEach((b, k) => {
         const w = ws[k]!;
         const p = prim.get(b.id);
-        const text = w.text.trim();
+        const text = aligned.slices[k]!;
         const anchors = resolveAnchors(text, w.cue_anchor_words, b.id);
         issues.push(...anchors.issues);
         let motionData: Record<string, unknown> = {};

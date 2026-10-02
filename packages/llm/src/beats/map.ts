@@ -7,6 +7,7 @@ import { normRef, normRefsLenient, normSegmentId } from "../wire/ids";
 import type { ChapterBeatsWire } from "../wire/schemas";
 import { splitBeatsFallback, fallbackShares } from "./split";
 import { computePlanKey } from "./synthetic";
+import { realignSlices } from "./realign";
 
 const QUOTE_TEMPLATES = new Set(["quote_card", "tweet_card", "document_highlight"]);
 
@@ -158,4 +159,26 @@ export function resplitSegments(
     });
   }
   return { plans: outPlans, texts: outTexts };
+}
+
+/** Re-cuts beat texts from the segment when they only differ typographically (V_REALIGNED warning, no paid retry). */
+export function realignChapterTexts(
+  plans: readonly BeatPlan[], texts: BeatLang[], chapter: ChapterScript, lang: Lang,
+): { texts: BeatLang[]; issues: LintIssue[] } {
+  const out = texts.map((t) => ({ ...t }));
+  const idx = new Map(out.map((t, k) => [`${t.lang}|${t.beatId}`, k]));
+  const issues: LintIssue[] = [];
+  for (const seg of chapter.segments) {
+    if (seg.type !== "narration") continue;
+    const beats = plans.filter((p) => p.segmentId === seg.id && p.origin !== "clip" && p.origin !== "breath");
+    const ks = beats.map((b) => idx.get(`${lang}|${b.id}`));
+    if (beats.length === 0 || ks.some((k) => k === undefined)) continue;
+    const r = realignSlices(seg.displayText, ks.map((k) => out[k!]!.text));
+    if (!r?.changed) continue;
+    ks.forEach((k, j) => {
+      out[k!] = { ...out[k!]!, text: r.slices[j]! };
+    });
+    issues.push({ level: "warn", rule: "V_REALIGNED", where: seg.id, msg: "beat texts differed typographically from the narration; re-cut from the segment" });
+  }
+  return { texts: out, issues };
 }
