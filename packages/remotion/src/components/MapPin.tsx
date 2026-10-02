@@ -52,6 +52,20 @@ function routePath(pts: { x: number; y: number }[]): string {
   return d;
 }
 
+/** Pushes overlapping label boxes down (in y order) so close places stay readable. */
+export function layoutLabels(boxes: { x: number; y: number; w: number }[], h: number): number[] {
+  const order = boxes.map((b, i) => ({ ...b, i })).sort((a, b) => a.y - b.y || a.x - b.x);
+  const placed: { x: number; y: number; w: number }[] = [];
+  const out: number[] = new Array<number>(boxes.length);
+  for (const b of order) {
+    let y = b.y;
+    for (const q of placed) if (b.x < q.x + q.w && q.x < b.x + b.w && y < q.y + h && q.y < y + h) y = q.y + h;
+    placed.push({ x: b.x, y, w: b.w });
+    out[b.i] = y;
+  }
+  return out;
+}
+
 export const MapPin: React.FC<ComponentProps<"MapPin">> = ({ item }) => {
   const env = useEnv();
   const c = useItemClock(item);
@@ -66,7 +80,7 @@ export const MapPin: React.FC<ComponentProps<"MapPin">> = ({ item }) => {
 
   const views = useMemo((): { from: MapView; to: MapView; firstCountry: string | null } => {
     const pl = p.places.slice(0, 6);
-    const end = viewFor(placesBounds(pl, 0.6, 4), W, H, 180);
+    const end = viewFor(placesBounds(pl, 0.8, 7), W, H, 200);
     const startBounds = p.region === "auto" ? placesBounds(pl, 4, 28) : REGION_BOUNDS[p.region];
     return { from: viewFor(startBounds, W, H, 60), to: end, firstCountry: pl[0] ? countryAt(pl[0].lon, pl[0].lat) : null };
   }, [p.places, p.region, W, H]);
@@ -81,6 +95,7 @@ export const MapPin: React.FC<ComponentProps<"MapPin">> = ({ item }) => {
     return { x: xy[0], y: xy[1], label: pl.label, at: pl.at };
   });
   const first = pts[0];
+  const labelY = layoutLabels(pts.map((pt, i) => ({ x: pt.x + (i === 0 ? 92 : 30), y: pt.y - 26, w: 40 + pt.label.length * (i === 0 ? 22 : 18) })), 56);
   const route = p.route && pts.length >= 2 ? routePath(pts) : "";
   const routeStart = (first?.at ?? 0) + 8;
   const routeFrames = clamp(20 + 10 * pts.length, 30, 60);
@@ -132,7 +147,7 @@ export const MapPin: React.FC<ComponentProps<"MapPin">> = ({ item }) => {
           <div
             key={`l${i}`}
             style={{
-              position: "absolute", top: pt.y - 26, left: leftSide ? undefined : pt.x + (i === 0 ? 92 : 30), right: leftSide ? W - pt.x + (i === 0 ? 92 : 30) : undefined,
+              position: "absolute", top: labelY[i]!, left: leftSide ? undefined : pt.x + (i === 0 ? 92 : 30), right: leftSide ? W - pt.x + (i === 0 ? 92 : 30) : undefined,
               padding: "8px 16px", backgroundColor: look.chip, color: look.chipText, borderRadius: 6, opacity: a, transform: `translateX(${((leftSide ? 1 : -1) * 16 * (1 - a)).toFixed(2)}px)`,
               fontFamily: fontStack(env.tokens, "body"), fontWeight: 800, fontSize: i === 0 ? 34 : 28, letterSpacing: "0.04em", whiteSpace: "nowrap",
               borderLeft: i === 0 ? `5px solid ${pal.danger}` : `5px solid ${accent}`,

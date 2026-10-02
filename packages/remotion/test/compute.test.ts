@@ -162,6 +162,19 @@ describe("computeTimeline", () => {
     expect(g.fx.map((f) => f.from)).toEqual([...g.fx.map((f) => f.from)].sort((a, b) => a - b));
   });
 
+  it("overlays that treat the picture add derived fx (no backdrop-filter): counter blur, blur slams, comment piles", () => {
+    const counters = t.overlays.filter((o) => o.component === "NumberCounter");
+    for (const o of counters) {
+      const b = ct.fx.find((f) => f.id === `fx:${o.id}:blur`)!;
+      expect(b).toMatchObject({ fx: "blur", from: o.from, dur: o.dur, amt: 3, shape: "span", target: "picture" });
+    }
+    const u = clone(t);
+    const slam = u.overlays.find((o) => o.component === "KeywordSlam")!;
+    (slam.props as { background: string }).background = "blur";
+    const cu = computeTimeline(u);
+    expect(cu.fx.filter((f) => f.id.startsWith(`fx:${slam.id}:`)).map((f) => [f.fx, f.amt])).toEqual([["blur", 18], ["dark", 0.55]]);
+  });
+
   it("deferred covers resolve through DEFERRED_TRANSITIONS only when unimplemented", () => {
     expect(resolveCover("flash")).toEqual({ presentation: "flash", mapped: false });
     expect(resolveCover("iris").presentation).toBe("iris");

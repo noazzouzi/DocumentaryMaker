@@ -18,9 +18,10 @@ export function buildTimeline(): Timeline {
   set(2, { kind: "cover", presentation: "dipToBlack", durationFrames: 30, direction: "left", color: "#000000", peak: 1 });
   set(3, { kind: "cover", presentation: "glitch", durationFrames: 6, direction: "left", color: "#FFFFFF", peak: 0.8 });
   set(4, { kind: "cut", accent: { type: "velocity", preset: "pushCut", direction: "left", exitFrames: 5, entryFrames: 6, flash: 0.2 } });
-  // an M2 component (QuoteCard → FallbackCard until implemented) late in CH2
+  // an M2 component (QuoteCard) and an id unknown to this build (→ FallbackCard) late in CH2
   const q = sampleItem("QuoteCard", u.render, u.fps, "en", 75);
   u.overlays.push({ ...q, id: "ov:CH2:QuoteCard:9", from: 1640, dur: 60 } as OverlayItem);
+  u.overlays.push({ ...q, id: "ov:CH2:FutureThing:9", component: "FutureThing", props: { text: "A component from a newer build" }, from: 1700, dur: 60 } as unknown as OverlayItem);
   return u;
 }
 

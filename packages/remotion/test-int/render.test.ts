@@ -118,12 +118,29 @@ describe("components (one still per M1 component, overlay layers only)", () => {
     });
   }
 
-  it("FallbackCard renders an unimplemented component's text instead of crashing", async () => {
-    const item = t.overlays.find((o) => o.id === "ov:CH2:QuoteCard:9")!;
+  it("FallbackCard renders the text of a component id unknown to this build instead of crashing", async () => {
+    const item = t.overlays.find((o) => o.id === "ov:CH2:FutureThing:9")!;
     const logs: Log[] = [];
     const file = await still(item.from + 20, { id: "DocumentaryOverlay", layers: OVERLAY_ONLY, logs, name: "fallback" });
     expect(errorsOf(logs)).toEqual([]);
     expect(regionStats(decodeRgba(file), t.render.tokens.layout.zones.center).opaqueShare).toBeGreaterThan(0.02);
+  });
+});
+
+describe("every component (StyleSpecimen, sample props)", () => {
+  it("renders all 25 components without errors, each visibly different", async () => {
+    const logs: Log[] = [];
+    const inputProps = { render: t.render, lang: "en" };
+    const c = await renderer.selectComposition({ serveUrl, id: "StyleSpecimen", inputProps, browserExecutable: exe, chromiumOptions, puppeteerInstance: browser, logLevel: "error" });
+    expect(c.durationInFrames).toBe(25);
+    const hashes: string[] = [];
+    for (let f = 0; f < c.durationInFrames; f++) {
+      const out = path.join(tmp.dir, "stills", `specimen-${f}.jpg`);
+      await renderer.renderStill({ composition: c, serveUrl, inputProps, frame: f, output: out, imageFormat: "jpeg", browserExecutable: exe, chromiumOptions, puppeteerInstance: browser, logLevel: "error", onBrowserLog: (l) => logs.push({ type: l.type, text: l.text }) });
+      hashes.push(sha(out));
+    }
+    expect(errorsOf(logs)).toEqual([]);
+    expect(new Set(hashes).size).toBe(25);
   });
 });
 

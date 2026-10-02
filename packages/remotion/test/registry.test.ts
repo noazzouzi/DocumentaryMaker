@@ -4,6 +4,9 @@ import { COMPOSITION_IDS, FONT_REGISTRY, IMPLEMENTED_COMPONENTS } from "../src";
 import { fallbackAssetId, fallbackText, FallbackCard } from "../src/components/FallbackCard";
 import { COMPONENT_REGISTRY, componentFor } from "../src/components/registry";
 import { stripTagPrefix } from "../src/components/SourceLabel";
+import { paragraphCentres } from "../src/components/ArticleHighlight";
+import { boardCamera } from "../src/components/EvidenceBoard";
+import { layoutLabels } from "../src/components/MapPin";
 import { stampScale } from "../src/components/Stamp";
 import { FONT_CSS_FILES } from "../src/fonts/fonts.css";
 import { fontFaces, fontWeightFor } from "../src/fonts/registry";
@@ -29,6 +32,11 @@ describe("component registry", () => {
       else expect(componentFor(item)).toBe(FallbackCard);
     }
     expect([...IMPLEMENTED_COMPONENTS].every((id) => (OverlayComponentId.options as readonly string[]).includes(id))).toBe(true);
+  });
+
+  it("implements every component of the closed vocabulary (M2); ids unknown to this build fall back", () => {
+    expect([...IMPLEMENTED_COMPONENTS].sort()).toEqual([...OverlayComponentId.options].sort());
+    expect(componentFor({ component: "FutureThing" } as unknown as OverlayItem)).toBe(FallbackCard);
   });
 
   it("sample items parse with OVERLAY_PROPS for every component (StyleSpecimen data)", () => {
@@ -137,5 +145,35 @@ describe("media URLs and text helpers", () => {
     const c = coverRect(4000, 3000, 1920, 1080, { x: 0.25, y: 0.25, w: 0.5, h: 0.5 }, { x: 0.5, y: 0.5 });
     expect(c.width).toBeCloseTo(3840, 6); // crop 2000 px wide fills 1920 → k = 0.96
     expect(c.left + 0.5 * c.width).toBeCloseTo(960, 6);
+  });
+});
+
+describe("component layout math", () => {
+  it("map labels never overlap (pushed down in y order)", () => {
+    const ys = layoutLabels([{ x: 100, y: 100, w: 200 }, { x: 150, y: 110, w: 200 }, { x: 900, y: 105, w: 100 }, { x: 120, y: 120, w: 80 }], 56);
+    expect(ys[0]).toBe(100);
+    expect(ys[1]).toBe(156);
+    expect(ys[2]).toBe(105); // far right: untouched
+    expect(ys[3]).toBe(212);
+  });
+
+  it("evidence board camera eases between overview and items and holds between moves", () => {
+    const items = [{ x: 900, y: 700, w: 520 }, { x: 2300, y: 900, w: 520 }];
+    const moves = [{ at: 10, focus: 0, frames: 20 }, { at: 60, focus: -1, frames: 20 }];
+    const o = boardCamera(moves, items, 0);
+    expect(o).toEqual({ cx: 1920, cy: 1080, s: 0.5 });
+    const f = boardCamera(moves, items, 40);
+    expect(f.cx).toBeCloseTo(900, 6);
+    expect(f.s).toBeGreaterThan(0.5);
+    expect(boardCamera(moves, items, 20).cx).toBeGreaterThan(900);
+    expect(boardCamera(moves, items, 20).cx).toBeLessThan(1920);
+    expect(boardCamera(moves, items, 90)).toEqual(o);
+  });
+
+  it("article page layout puts later paragraphs lower", () => {
+    const { centres, height } = paragraphCentres("Headline", ["short", "x".repeat(400), "y".repeat(80)]);
+    expect(centres[1]!).toBeGreaterThan(centres[0]!);
+    expect(centres[2]!).toBeGreaterThan(centres[1]!);
+    expect(height).toBeGreaterThan(centres[2]!);
   });
 });
