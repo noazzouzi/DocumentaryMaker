@@ -1,9 +1,11 @@
 // @docmaker/remotion "." — public API (packages/remotion/src/index.ts). Browser-safe: no node:* (lint-enforced).
-// P0 skeleton (SPEC §4.19 + §0.1 step 4): Documentary is a placeholder that W7 replaces; the types are verbatim.
+// Contract: §4.19 remotion stub (signatures unchanged; DocProps verbatim). Additional exports are additive.
 import type React from "react";
-import { BUILTIN_FONTS, type Timeline } from "@docmaker/core";
+import type { Timeline } from "@docmaker/core";
+import { IMPLEMENTED } from "./components/registry";
 import { Documentary as DocumentaryImpl } from "./Documentary";
 import { useTimeline as useTimelineImpl } from "./data/useTimeline";
+import { FONT_REGISTRY as FONT_REGISTRY_IMPL } from "./fonts/registry";
 
 export interface DocProps {
   timeline: Timeline | null; // Player: inline
@@ -23,11 +25,18 @@ export const COMPOSITION_IDS = {
   readonly still: "GeneratedStill"; readonly gl: "GlProbe"; readonly fonts: "FontSpecimen"; readonly specimen: "StyleSpecimen";
 };
 /** Must equal core BUILTIN_FONTS (test). */
-export const FONT_REGISTRY: readonly { family: string; weights: readonly number[]; italic: boolean }[] = BUILTIN_FONTS.map((f) => ({
-  family: f.family, weights: f.weights, italic: f.italic,
-}));
+export const FONT_REGISTRY: readonly { family: string; weights: readonly number[]; italic: boolean }[] = FONT_REGISTRY_IMPL;
 export function useTimeline(p: DocProps): Timeline | null {
   return useTimelineImpl(p);
 }
 /** Components implemented so far (M1/M2); others render FallbackCard. */
-export const IMPLEMENTED_COMPONENTS: ReadonlySet<string> = new Set<string>();
+export const IMPLEMENTED_COMPONENTS: ReadonlySet<string> = IMPLEMENTED;
+
+// ---- additive exports
+export { DEFAULT_LAYERS } from "./Documentary";
+export { COMPONENT_REGISTRY, componentFor } from "./components/registry";
+export { FallbackCard } from "./components/FallbackCard";
+export { assetUrl } from "./lib/assetUrl";
+export { fontWeightFor } from "./fonts/registry";
+export { sampleItem, sampleProps } from "./specimen/samples";
+export { SPECIMEN_HERO_FRAME, STYLE_SPECIMEN_FRAMES, probeWebGl, type GlProbeResult } from "./specimen/compositions";

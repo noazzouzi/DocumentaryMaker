@@ -98,3 +98,18 @@ if (err?.error && (ErrorCode.options as string[]).includes(err.error)) {
 }
 ```
 **Local workaround.** The dispatcher also prints `ERROR <CODE>: <message>` on stderr; `voice` maps it back (`sidecarError()` in `align/faster-whisper.ts`).
+
+## 2026-10-02 remotion (W7) → render (W8), I (notes; no core contract change)
+
+**Problem 1 — bit-exact renders need Chrome's CPU rasterizer.** With `gl: "swangle"` Chrome rasterizes tiles on the (SwiftShader) GPU, and the GPU process shares glyph/image caches across tabs. Measured on the shared Chrome Headless Shell: any glyph drawn larger than ~160 device px (e.g. KeywordSlam 220 px, NumberCounter 160 px, slam-in scales) and some image/blend tiles differ by 1–7 LSB between renders of the same frame (3 renders → 3 hashes), so §16.2.3 "render twice → identical sha256" is flaky. With `--disable-gpu-rasterization` every probed frame (glyphs, images, covers, dissolves, velocity cuts, counters) is identical across 3–8 renders, sequential or concurrent, at similar speed on this CPU-only machine. Remotion 4.0.532 exposes that flag only through the env var `__RESERVED_IS_INSIDE_REMOTION_LAMBDA=true` (read by `open-browser.js`; its only other effect is the wording of an out-of-memory error).
+**Proposed diff.** `packages/render` sets `process.env.__RESERVED_IS_INSIDE_REMOTION_LAMBDA = "true"` before `openBrowser()`/`renderMedia()` in the render worker (and in its test-int), documented next to the GL probe; drop it once Remotion exposes `chromiumOptions` raster flags.
+**Local workaround.** `packages/remotion/test-int/helpers/harness.ts` `enableDeterministicRaster()` does exactly that for W7's render tests. `@docmaker/remotion` also avoids `backdrop-filter` (it varied even with CPU raster): NumberCounter's background blur and KeywordSlam's `background:"blur"` are derived picture fx that `computeTimeline` adds (`fx:<itemId>:blur` / `fx:<itemId>:dark`, target `picture`) — the director must NOT add its own blur fx for these two components (W6).
+
+**Problem 2 — interface details other packages consume (already implemented, for W8/W9/W10/W11).**
+1. `planChunks()` returns `to` **inclusive** (same as `RenderChunk.to` and `renderMedia({frameRange:[from,to]})`); `sliceHash(t, from, to, ctx)` takes the same inclusive range.
+2. `GlProbe` logs two console lines for `onBrowserLog`: `UNMASKED_RENDERER_WEBGL=<renderer>` and `GL_PROBE {"ok","webgl2","renderer","vendor","version","error"}` (also exported as `probeWebGl()` from `@docmaker/remotion`).
+3. `GeneratedStill` props `{source: VisualSource | null, tokens}` — `tokens` may be `StyleRenderTokens` or bare `StyleTokens`. `StyleSpecimen` props `{render: StyleRenderTokens | null, lang?: "en"|"fr"}`; frame i renders component `OverlayComponentId.options[i]` (25 frames) with sample props over a backdrop — render stills 0…24 for the contact sheet.
+4. `OverlayItem` (M3): the item plays from local frame 0 for its `dur`; `calculateMetadata` returns `dur + enterFrames + exitFrames` as specified (trailing frames are transparent), so place the `.mov` at `item.from`.
+5. Remotion's types forbid `premountFor` with `layout="none"`; timed items therefore use the default absolute-fill Sequence layout (every component is a full-frame AbsoluteFill anyway).
+6. Preview audio cannot pan (`@remotion/media` `<Audio>` has no pan): SFX pans and RL sweeps are heard only in the offline mix (intended preview difference, §10.13).
+7. Letterbox bars follow the geometry: 2.39 → 138 px per bar at 1920×1080 (§10.7 quotes 132 px).

@@ -1,0 +1,135 @@
+{
+ "source": "beats.py output (motion-graphics-music-video-skill, MIT) on a 128 BPM test track",
+ "fps": 24.0,
+ "bpm": 128.0,
+ "beats": [
+  {
+   "t": 0.354,
+   "n": 0,
+   "strength": 0.69,
+   "low": 7.75,
+   "bar_pos": 0,
+   "f": 8
+  },
+  {
+   "t": 0.83,
+   "n": 1,
+   "strength": 23.75,
+   "low": 2.78,
+   "bar_pos": 1,
+   "f": 20
+  },
+  {
+   "t": 1.295,
+   "n": 2,
+   "strength": 1.58,
+   "low": 6.56,
+   "bar_pos": 2,
+   "f": 31
+  },
+  {
+   "t": 1.765,
+   "n": 3,
+   "strength": 18.57,
+   "low": 4.45,
+   "bar_pos": 3,
+   "f": 42
+  },
+  {
+   "t": 2.229,
+   "n": 4,
+   "strength": 0.63,
+   "low": 7.6,
+   "bar_pos": 0,
+   "f": 53
+  },
+  {
+   "t": 2.705,
+   "n": 5,
+   "strength": 23.46,
+   "low": 2.7,
+   "bar_pos": 1,
+   "f": 65
+  },
+  {
+   "t": 3.17,
+   "n": 6,
+   "strength": 1.27,
+   "low": 6.34,
+   "bar_pos": 2,
+   "f": 76
+  },
+  {
+   "t": 3.64,
+   "n": 7,
+   "strength": 19.43,
+   "low": 4.6,
+   "bar_pos": 3,
+   "f": 87
+  },
+  {
+   "t": 4.104,
+   "n": 8,
+   "strength": 1.72,
+   "low": 7.43,
+   "bar_pos": 0,
+   "f": 98
+  },
+  {
+   "t": 4.58,
+   "n": 9,
+   "strength": 22.13,
+   "low": 2.79,
+   "bar_pos": 1,
+   "f": 110
+  },
+  {
+   "t": 5.045,
+   "n": 10,
+   "strength": 1.33,
+   "low": 6.01,
+   "bar_pos": 2,
+   "f": 121
+  },
+  {
+   "t": 5.515,
+   "n": 11,
+   "strength": 18.24,
+   "low": 4.36,
+   "bar_pos": 3,
+   "f": 132
+  },
+  {
+   "t": 5.979,
+   "n": 12,
+   "strength": 2.11,
+   "low": 6.36,
+   "bar_pos": 0,
+   "f": 143
+  },
+  {
+   "t": 6.455,
+   "n": 13,
+   "strength": 21.36,
+   "low": 2.67,
+   "bar_pos": 1,
+   "f": 155
+  },
+  {
+   "t": 6.92,
+   "n": 14,
+   "strength": 1.01,
+   "low": 5.57,
+   "bar_pos": 2,
+   "f": 166
+  },
+  {
+   "t": 7.39,
+   "n": 15,
+   "strength": 18.28,
+   "low": 4.35,
+   "bar_pos": 3,
+   "f": 177
+  }
+ ]
+}
