@@ -158,6 +158,7 @@ export class SherpaProvider implements TtsProvider {
     let cursor = 0;
     for (const [a, b] of sentenceRanges(req.ttsWords)) {
       if (signal.aborted) throw new DocmakerError("CANCELED", `${this.id} synthesis canceled`);
+      // (sherpa logs "Skip unknown phonemes U+002d" for espeak's word-boundary marks: harmless)
       const text = req.ttsWords.slice(a, b).join(" ");
       const audio = tts.generateAsync ? await tts.generateAsync({ text, sid: r.sid, speed }) : tts.generate({ text, sid: r.sid, speed });
       sampleRate = audio.sampleRate;

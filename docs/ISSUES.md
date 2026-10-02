@@ -70,3 +70,30 @@ export interface StyleRegistry { /* … */ readonly rejected?: readonly { dir: s
 
 **Proposed diff.** None required. Optionally (I): make `SegmentSkeleton.primaryHash` and `lintScript.primary` part of the §4.19 text.
 **Local workaround.** Implemented as optional parameters/new exports in `packages/llm` (all §4.19 signatures unchanged).
+
+## 2026-10-02 voice (W4) → core `node/proc.ts` (runSidecar), W10 (engine/CLI), I
+
+Notes from `@docmaker/voice` and the Python sidecar. Nothing here blocks P1; item 1 is a small core fix.
+
+**Problem.**
+1. `runSidecar` throws `INTERNAL` with the stderr tail on a non-zero exit and deletes `out.json`, so the sidecar's `{"error": code, "message"}` (§8.8) never reaches the caller (`TOOL_MISSING` for a venv without faster-whisper becomes `INTERNAL`).
+2. Additive, optional input fields (no signature removed or changed): `SynthesizeTrackInput.{personNames, provider, asr}`, `ImportRecordingInput.{clipNarrated, asr, pickupProvider, namesPrompt}`, `teleprompterHtml(…, { outdated })`. W10 should pass `personNames` = FactSheet `people[].name` + `aliases` (a cloned ElevenLabs voice named after one of them is refused, §8.3), `clipNarrated` for recording imports, and `outdated = editedAfterTake(script, activeTake)` to the teleprompter.
+3. `calibrateVoice` returns `{charsPerSec}` and caches it under `voice/<lang>/.calibration/`; the engine writes it into `project.voice[lang].charsPerSec` (voice never writes `project.json`).
+4. `buildTtsText` for the script stage: use `expandNumbers = !capabilities.normalizesNumbers` of the project's voice provider (synthetic → true; ElevenLabs/Kokoro/Piper → false) and `stripTags = !(elevenlabs && modelId ∈ eleven_v3|eleven_v4)`. Voice tolerates any `ttsText` (user-edited or built with other options): the display→tts word mapping is rebuilt by NW anchoring.
+5. `LicenseCode` has no Apache-2.0 code: Kokoro voices are `PROVIDER-TERMS` with `version: "Apache-2.0"` (ff_siwis is credited as CC-BY 4.0 because of its SIWIS training data).
+6. Model layout: `ensureModel("piper:<voice>")` extracts `vits-piper-<voice>.tar.bz2` to `<models>/piper/<voice>/` (renamed), Kokoro to `<models>/kokoro/kokoro-multi-lang-v1_0/`; faster-whisper models download into `<models>/whisper/fw`; whisper.cpp (M3) builds into `<models>/whisper/cpp` via the exported `installWhisperCppRuntime(config, signal)` (for `docmaker setup --whisper`).
+7. Segment cache key (§8.4) deviation: the context part is `""` (plus `v<n>` for an explicit re-synthesis of an unchanged segment and `r1` for `--retry-bad`), not the previous request ids: request ids are non-deterministic and chain through the chapter, so one edited segment would otherwise re-bill every following segment of the chapter. Stitching still uses the stored ids (< 2 h old) of the neighbouring segments.
+
+**Proposed diff** (core, item 1):
+```ts
+// packages/core/src/node/proc.ts — runSidecar, before throwing on r.code !== 0
+let err: { error?: string; message?: string } | null = null;
+try { err = JSON.parse(await readFile(outFile, "utf8")); } catch { /* no error JSON */ }
+if (err?.error && (ErrorCode.options as string[]).includes(err.error)) {
+  throw new DocmakerError(err.error as ErrorCode, err.message ?? `sidecar ${cmd} failed`, {
+    hint: err.error === "TOOL_MISSING" || err.error === "MODEL_MISSING" ? "run `docmaker setup --python`" : undefined,
+    details: { stderr: tail(r.stderr) },
+  });
+}
+```
+**Local workaround.** The dispatcher also prints `ERROR <CODE>: <message>` on stderr; `voice` maps it back (`sidecarError()` in `align/faster-whisper.ts`).

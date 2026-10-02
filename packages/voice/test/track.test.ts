@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 import { VoiceSettings, VoiceTrack, hashJson, spokenText, tokenizeDisplay, type Script } from "@docmaker/core";
 import { readWavHeader, sha256File } from "@docmaker/core/node";
 import { makeScript } from "@docmaker/core/testing";
-import { editedAfterTake, estimateTtsCost, synthesizeTrack, takeIdFor, voiceLicense, voiceSettingsHash } from "../src/index";
+import type { TtsRequest } from "@docmaker/core";
+import { SyntheticProvider, editedAfterTake, estimateTtsCost, synthesizeTrack, takeIdFor, voiceLicense, voiceSettingsHash } from "../src/index";
 import { makeCtx, tmpDir } from "./helpers";
 
 const synthVoice = VoiceSettings.parse({ provider: "synthetic", voiceId: "synthetic-m1" });
@@ -176,5 +177,27 @@ describe("editedAfterTake", () => {
     edited.chapters[0]!.segments.push({ ...s1, id: "CH1-S09", displayText: "A new line.", ttsText: "A new line." });
     expect(editedAfterTake(edited, take)).toEqual([s1.id, "CH1-S09"]);
     expect(editedAfterTake(edited, { ...take, missingSegmentIds: ["CH1-S09"] })).toEqual([s1.id]);
+  }, 60_000);
+});
+
+describe("synthesizeTrack — request chunking above maxCharsPerRequest", () => {
+  it("splits at sentence ends, concatenates the audio and offsets the word timings", async () => {
+    class SmallSynth extends SyntheticProvider {
+      calls: string[] = [];
+      override async capabilities() { return { ...(await super.capabilities()), maxCharsPerRequest: 70 }; }
+      override async synthesize(req: TtsRequest, out: string, signal: AbortSignal) { this.calls.push(req.text); return super.synthesize(req, out, signal); }
+    }
+    const script = makeScript({ lang: "en", chapters: 1, segmentsPerChapter: 1 });
+    const seg = script.chapters[0]!.segments[0]!;
+    expect(seg.ttsText.length).toBeGreaterThan(70);
+    const provider = new SmallSynth({ repoRoot: null, useWorker: "never" });
+    const t = await synthesizeTrack(input(script, tmpDir("voice-proj-"), { kind: "final", provider }), makeCtx());
+    expect(provider.calls.length).toBeGreaterThanOrEqual(2);
+    expect(provider.calls.every((c) => c.length <= 70)).toBe(true);
+    expect(provider.calls.join(" ")).toBe(seg.ttsText);
+    const s = t.segments[0]!;
+    expect(s.words).toHaveLength(tokenizeDisplay(seg.displayText).length);
+    for (let k = 1; k < s.words.length; k++) expect(s.words[k]!.startMs).toBeGreaterThan(s.words[k - 1]!.endMs);
+    expect(s.words[s.words.length - 1]!.endMs).toBeLessThanOrEqual(s.durationMs);
   }, 60_000);
 });

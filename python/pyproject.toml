@@ -1,0 +1,9 @@
+[project]
+name = "docmaker-sidecar"
+version = "0.1.0"
+requires-python = ">=3.11,<3.13"
+dependencies = ["faster-whisper==1.2.1", "yt-dlp[default,curl-cffi]==2026.08.19", "numpy>=1.26,<3"]
+[project.optional-dependencies]
+piper = ["piper-tts==1.8.0", "onnx"]   # GPL-3.0 — subprocess only, never imported by our TS
+[tool.uv]
+package = true

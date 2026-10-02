@@ -1,7 +1,8 @@
 // faster-whisper ASR through the Python sidecar (§8.5, §8.8) + script-guided NW alignment.
 import { existsSync } from "node:fs";
 import path from "node:path";
-import type { Aligner, Lang, RuntimeConfig, WordTiming } from "@docmaker/core";
+import type { Aligner, ErrorCode, Lang, RuntimeConfig, WordTiming } from "@docmaker/core";
+import { DocmakerError, isDocmakerError } from "@docmaker/core";
 import { runSidecar } from "@docmaker/core/node";
 import { alignScriptToTranscript } from "./nw";
 
@@ -9,6 +10,16 @@ export interface AsrOutput { words: { text: string; startMs: number; endMs: numb
 export type SidecarRunner = <T>(cmd: "asr", input: unknown, opts: { config: RuntimeConfig; signal: AbortSignal; timeoutMs?: number }) => Promise<T>;
 
 export const FW_MODEL = "large-v3-turbo";
+
+const CODES = new Set<ErrorCode>(["VALIDATION", "TOOL_MISSING", "MODEL_MISSING", "CANCELED", "INTERNAL"]);
+/** runSidecar reports failures as INTERNAL with the stderr tail; recover the dispatcher's "ERROR <CODE>: msg" line. */
+export function sidecarError(e: unknown): unknown {
+  if (!isDocmakerError(e) || e.code !== "INTERNAL") return e;
+  const m = /ERROR ([A-Z_]+): (.+)/.exec(e.message);
+  if (!m || !CODES.has(m[1] as ErrorCode)) return e;
+  const code = m[1] as ErrorCode;
+  return new DocmakerError(code, m[2]!.trim(), { cause: e, hint: code === "TOOL_MISSING" || code === "MODEL_MISSING" ? "run `docmaker setup --python`" : undefined });
+}
 
 /**
  * faster-whisper word pieces → words. A piece without a leading space continues the previous word (FR elisions
@@ -46,7 +57,7 @@ export class FasterWhisperAligner implements Aligner {
     const out = await this.run<AsrOutput>("asr", {
       audio: path.resolve(audioPath), lang, model: this.model, initialPrompt: namesPrompt || null, vad: true, beamSize: 5,
       computeType: "int8", threads: 4, modelsDir: path.join(this.config.paths.models, "whisper", "fw"),
-    }, { config: this.config, signal, timeoutMs: 6 * 3600_000 });
+    }, { config: this.config, signal, timeoutMs: 6 * 3600_000 }).catch((e: unknown) => { throw sidecarError(e); });
     return mergeAsrWords(out.words);
   }
 
