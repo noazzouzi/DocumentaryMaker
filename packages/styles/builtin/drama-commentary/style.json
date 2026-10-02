@@ -1,0 +1,1271 @@
+{
+  "budgets": {
+    "actIntensity": {
+      "act2b_collapse": 1.2,
+      "act3_reckoning": 0.7,
+      "cold_open": 1.15,
+      "midpoint_false_hope": 0.9,
+      "outro_rabbit_hole": 0.6
+    },
+    "chapterCardFrames": [
+      72,
+      150
+    ],
+    "cleanStretch": {
+      "everySec": 60,
+      "minSec": 6
+    },
+    "componentCooldownSec": {
+      "CommentPile": 120,
+      "EvidenceBoard": 120,
+      "FreezeLabel": 60,
+      "KeywordSlam": 60,
+      "LowerThird": 20,
+      "PhotoBurst": 90,
+      "SocialPost": 20,
+      "Stamp": 45
+    },
+    "explicitFlashPerMin": 1,
+    "jlCutsPerFiveMin": 1,
+    "keywordSlamPerMin": 1,
+    "lowerThirdMinGapSec": 20,
+    "overlayMaxConcurrent": 2,
+    "salience": {
+      "maxAccents": 3,
+      "minGapFrames": 6,
+      "weights": {
+        "flash": 1,
+        "impactSfx": 1,
+        "overlayEntry": 1,
+        "punch": 1,
+        "slam": 2,
+        "transitionNonCut": 1
+      },
+      "windowSec": 3
+    },
+    "titleSting": true
+  },
+  "cameraPolicy": {
+    "clip": {
+      "creep": [
+        1,
+        1.05
+      ],
+      "keyLinePunch": 0.15,
+      "switchLayoutAfterSec": 8
+    },
+    "creep": {
+      "frames": [
+        120,
+        240
+      ],
+      "scale": [
+        1,
+        1.06
+      ]
+    },
+    "cutAccent": {
+      "flashFrames": 6,
+      "flashPeak": 0.45,
+      "pulseAmt": 0.05,
+      "pulseFrames": 8,
+      "share": 0.15
+    },
+    "handheld": null,
+    "impactShake": {
+      "ampPx": [
+        10,
+        25
+      ],
+      "frames": [
+        8,
+        15
+      ],
+      "overscan": 1.03,
+      "rotDeg": [
+        0.5,
+        1
+      ]
+    },
+    "kenBurns": {
+      "driftPxPerSec": [
+        10,
+        20
+      ],
+      "minShotSec": 2,
+      "scaleRatePerSec": [
+        0.025,
+        0.04
+      ],
+      "scaleStart": [
+        1,
+        1.04
+      ],
+      "videoCreep": [
+        1,
+        1.04
+      ]
+    },
+    "maxUpscale": 1.6,
+    "montage": {
+      "aslSec": [
+        0.6,
+        1.2
+      ],
+      "beatPunch": {
+        "amt": 0.055,
+        "curve": 2.5,
+        "frames": 8
+      },
+      "snapFrames": 3
+    },
+    "plate": {
+      "anchorOffsetMs": 45,
+      "decay": 9,
+      "hz": 12,
+      "punch": 0.05,
+      "shakeX": 8,
+      "shakeY": 5,
+      "windowSec": 0.6
+    },
+    "pullBack": {
+      "blurPx": 10,
+      "frames": 15,
+      "from": 1.25
+    },
+    "punch": {
+      "exclusionFrames": 6,
+      "fillToMin": true,
+      "holdToShotEnd": true,
+      "inFrames": [
+        0,
+        3
+      ],
+      "minGapFrames": 90,
+      "minTailFrames": 20,
+      "perMin": [
+        6,
+        10
+      ],
+      "scale": [
+        1.12,
+        1.25
+      ],
+      "whooshMinGapSec": 10
+    },
+    "quietBeforeClimaxSec": [
+      0.3,
+      0.75
+    ],
+    "reframe": {
+      "scale": [
+        1.25,
+        1.45
+      ],
+      "wideScale": [
+        1,
+        1.04
+      ]
+    },
+    "shots": {
+      "aslMaxSec": 6,
+      "aslMul": {
+        "byAct": {
+          "act2b_collapse": 0.85,
+          "act3_reckoning": 1.2,
+          "outro_rabbit_hole": 1.2,
+          "spiral": 0.85,
+          "the_fall": 0.85
+        },
+        "byCue": {
+          "HOOK": 0.8,
+          "LIST": 0.8,
+          "REVEAL": 0.8,
+          "SHOCK": 0.6,
+          "TENSION_BUILD": 1.6
+        },
+        "byEnergy": [
+          1.4,
+          1.2,
+          1,
+          0.85,
+          0.7
+        ]
+      },
+      "aslSec": [
+        2,
+        4
+      ],
+      "cutLeadFrames": 2,
+      "hookAslFactor": 0.6,
+      "maxStaticHoldSec": 3,
+      "minShotFrames": 24,
+      "targetAslSec": 3,
+      "visualChangeSec": [
+        3,
+        5
+      ]
+    }
+  },
+  "captionDNA": {
+    "clipStyle": {
+      "background": "#000000B3",
+      "color": "#FFFFFF",
+      "font": "Inter",
+      "minHoldSec": 1.8,
+      "sizePx": 44
+    },
+    "color": "#FFFFFF",
+    "dangerColor": "#FF3B30",
+    "defaultMode": "burn",
+    "font": "Archivo Black",
+    "grouping": {
+      "commaPauseMs": 250,
+      "gapMs": 50,
+      "leadMs": 80,
+      "maxChars": 22,
+      "maxSec": 2,
+      "maxWords": 4,
+      "minSec": 0.5,
+      "minWords": 2,
+      "pauseBreakMs": 500,
+      "tailMs": 600
+    },
+    "heroScale": 1.35,
+    "heroWordMinGapSec": 0.6,
+    "keywordColor": "#FFD400",
+    "keywords": {
+      "holdMinSec": 1,
+      "maxWords": 4,
+      "minGapSec": [
+        6,
+        10
+      ],
+      "sizePx": 96
+    },
+    "letterSpacingEm": -0.02,
+    "moneyColor": "#3DDC84",
+    "oneLine": true,
+    "popFrames": 3,
+    "popFrom": 1.18,
+    "sizePx": 78,
+    "srtGrouping": {
+      "maxChars": 42,
+      "maxLines": 2,
+      "maxSec": 6,
+      "minSec": 1
+    },
+    "strokeColor": "#000000",
+    "strokePx": 9,
+    "suppressMinWords": 8,
+    "suppressUnder": [
+      "KeywordSlam",
+      "QuoteCard",
+      "ChapterCard",
+      "TitleSting",
+      "ArticleHighlight",
+      "DocumentCard",
+      "HeadlineStack",
+      "SocialPost",
+      "KineticText",
+      "TimelineGraphic",
+      "BarChart",
+      "MapPin",
+      "CommentPile",
+      "EvidenceBoard",
+      "FreezeLabel"
+    ],
+    "uppercase": true,
+    "variant": "keywords",
+    "weight": 900
+  },
+  "clipLayout": "pip",
+  "components": [
+    {
+      "enabled": true,
+      "id": "LowerThird",
+      "triggers": [
+        "PERSON_INTRO"
+      ],
+      "weight": 1
+    },
+    {
+      "enabled": true,
+      "id": "ChapterCard",
+      "triggers": [],
+      "weight": 1
+    },
+    {
+      "enabled": true,
+      "id": "TitleSting",
+      "triggers": [],
+      "weight": 1
+    },
+    {
+      "enabled": true,
+      "id": "QuoteCard",
+      "triggers": [
+        "QUOTE"
+      ],
+      "weight": 1
+    },
+    {
+      "enabled": true,
+      "id": "SocialPost",
+      "triggers": [
+        "TWEET"
+      ],
+      "weight": 1
+    },
+    {
+      "enabled": true,
+      "id": "ArticleHighlight",
+      "triggers": [],
+      "weight": 1
+    },
+    {
+      "enabled": true,
+      "id": "DocumentCard",
+      "triggers": [],
+      "weight": 1
+    },
+    {
+      "enabled": true,
+      "id": "HeadlineStack",
+      "triggers": [],
+      "weight": 0.8
+    },
+    {
+      "enabled": true,
+      "id": "Stamp",
+      "triggers": [
+        "REVEAL"
+      ],
+      "weight": 0.6
+    },
+    {
+      "enabled": true,
+      "id": "KeywordSlam",
+      "triggers": [
+        "SHOCK"
+      ],
+      "weight": 0.5
+    },
+    {
+      "enabled": true,
+      "id": "NumberCounter",
+      "triggers": [
+        "NUMBER"
+      ],
+      "weight": 1
+    },
+    {
+      "enabled": true,
+      "id": "DateStamp",
+      "triggers": [
+        "TIME_JUMP"
+      ],
+      "weight": 1
+    },
+    {
+      "enabled": true,
+      "id": "MapPin",
+      "triggers": [],
+      "weight": 1
+    },
+    {
+      "enabled": true,
+      "id": "TimelineGraphic",
+      "triggers": [],
+      "weight": 0.8
+    },
+    {
+      "enabled": true,
+      "id": "BarChart",
+      "triggers": [],
+      "weight": 0.8
+    },
+    {
+      "enabled": true,
+      "id": "SplitScreen",
+      "triggers": [
+        "COMPARISON"
+      ],
+      "weight": 0.8
+    },
+    {
+      "enabled": true,
+      "id": "CensorBar",
+      "triggers": [
+        "SENSITIVE"
+      ],
+      "weight": 1
+    },
+    {
+      "enabled": true,
+      "id": "Spotlight",
+      "triggers": [
+        "DOCUMENT",
+        "EMPHASIS"
+      ],
+      "weight": 0.6
+    },
+    {
+      "enabled": true,
+      "id": "KineticText",
+      "triggers": [
+        "LIST",
+        "EMPHASIS"
+      ],
+      "weight": 0.7
+    },
+    {
+      "enabled": true,
+      "id": "SourceLabel",
+      "triggers": [
+        "CLIP_REF"
+      ],
+      "weight": 1
+    },
+    {
+      "enabled": false,
+      "id": "Letterbox",
+      "triggers": [],
+      "weight": 0
+    },
+    {
+      "enabled": true,
+      "id": "FreezeLabel",
+      "triggers": [
+        "PERSON_INTRO"
+      ],
+      "weight": 0.5
+    },
+    {
+      "enabled": true,
+      "id": "PhotoBurst",
+      "triggers": [
+        "LIST",
+        "MONTAGE"
+      ],
+      "weight": 0.6
+    },
+    {
+      "enabled": true,
+      "id": "EvidenceBoard",
+      "triggers": [
+        "LIST"
+      ],
+      "weight": 0.4
+    },
+    {
+      "enabled": true,
+      "id": "CommentPile",
+      "triggers": [],
+      "weight": 1
+    }
+  ],
+  "grade": {
+    "byAct": {
+      "act2b_collapse": {
+        "css": {
+          "brightness": 0.96,
+          "saturate": 0.92
+        },
+        "vignetteAmount": 0.38
+      },
+      "act3_reckoning": {
+        "css": {
+          "saturate": 0.95
+        },
+        "vignetteAmount": null
+      }
+    },
+    "css": {
+      "brightness": 1,
+      "contrast": 1.08,
+      "hueRotateDeg": 0,
+      "saturate": 1.06,
+      "sepia": 0
+    },
+    "grainFfmpeg": 4,
+    "letterbox": null,
+    "look": "tealOrange",
+    "lut": {
+      "blacks": 0,
+      "contrast": 0.18,
+      "highlights": [
+        0.1,
+        0.04,
+        -0.03
+      ],
+      "intensity": 0.62,
+      "saturation": 0.08,
+      "shadows": [
+        -0.04,
+        0.05,
+        0.09
+      ],
+      "temp": 0,
+      "vibrance": 0.12,
+      "whites": 0
+    },
+    "splitTone": {
+      "amount": 0.18,
+      "highlights": "#F2A65A",
+      "shadows": "#1F4E5F"
+    },
+    "treatments": {
+      "archival": {
+        "brightness": 1,
+        "contrast": 1.05,
+        "hueRotateDeg": 0,
+        "saturate": 0.85,
+        "sepia": 0.25
+      },
+      "bw": {
+        "brightness": 1,
+        "contrast": 1.12,
+        "hueRotateDeg": 0,
+        "saturate": 0,
+        "sepia": 0
+      },
+      "duotone": {
+        "highlights": "#FFD400",
+        "shadows": "#1F2A44"
+      }
+    },
+    "vignette": {
+      "amount": 0.3,
+      "feather": 0.45,
+      "radius": 0.7
+    }
+  },
+  "manifest": {
+    "bestFor": [
+      "person_downfall",
+      "company_collapse",
+      "scandal_expose",
+      "internet_drama",
+      "rise_story"
+    ],
+    "category": "commentary",
+    "description": {
+      "en": "Punchy downfall & scandal storytelling: rock-bottom cold open, escalating chapters, punch-ins, evidence cards, selective kinetic captions, budgeted heavy sound design.",
+      "fr": "Récit de chute et de scandale, rythmé : cold open au plus bas, chapitres en escalade, punch-ins, cartes de preuves, sous-titres cinétiques sélectifs, sound design dosé."
+    },
+    "id": "drama-commentary",
+    "moods": [
+      "tense",
+      "ominous",
+      "ironic",
+      "epic"
+    ],
+    "names": {
+      "en": "Drama / commentary",
+      "fr": "Drama / commentaire"
+    },
+    "previewColor": "#FFD400",
+    "referencesDescription": "Long-form narrated YouTube commentary documentaries about business downfalls and celebrity drama: archival-heavy, punchy edit, framed photo cards on moving backdrops, selective kinetic text.",
+    "uses": [
+      "downfall",
+      "scandal",
+      "celebrity",
+      "internet drama",
+      "company collapse",
+      "controversy",
+      "lawsuit",
+      "trial",
+      "fraud",
+      "rise and fall",
+      "feud",
+      "drama",
+      "cancelled",
+      "bankrupt",
+      "breakup",
+      "rupture",
+      "chute",
+      "scandale",
+      "proces",
+      "affaire",
+      "clash",
+      "faillite",
+      "escroquerie",
+      "polemique",
+      "descente aux enfers",
+      "divorce"
+    ],
+    "version": "2.0.0"
+  },
+  "motion": {
+    "cameraEase": [
+      0.65,
+      0,
+      0.35,
+      1
+    ],
+    "entryEase": [
+      0.16,
+      1,
+      0.3,
+      1
+    ],
+    "entryMaxFrames": 24,
+    "exitEase": [
+      0.7,
+      0,
+      0.84,
+      0
+    ],
+    "kbEase": [
+      0.2,
+      0.12,
+      0.8,
+      0.88
+    ],
+    "overshootAllowedIn": [
+      "Stamp"
+    ],
+    "staggerMaxFrames": 15,
+    "stepFps": null
+  },
+  "musicPolicy": {
+    "clipDuckDb": -10,
+    "crossfadeFrames": 15,
+    "dropBeforeRevealSec": [
+      0.5,
+      0.75
+    ],
+    "dropOutSec": [
+      1,
+      3
+    ],
+    "duckDb": -12,
+    "duckRangeDb": [
+      -15,
+      -8
+    ],
+    "fadeInFrames": 30,
+    "fadeOutFrames": 30,
+    "ironyDropSec": [
+      1,
+      1.5
+    ],
+    "jCutFrames": 12,
+    "moodBpm": {
+      "chill": 85,
+      "comedic": 115,
+      "epic": 90,
+      "mysterious": 80,
+      "ominous": 70,
+      "sad": 72,
+      "tense": 95,
+      "uplifting": 110
+    },
+    "noVoGainDb": 0,
+    "sectionSec": [
+      120,
+      240
+    ],
+    "sfxDuckDb": -4
+  },
+  "pauses": {
+    "chapterGapMs": 2500,
+    "clipLeadMs": 300,
+    "clipTailMs": 400,
+    "deviceGapMs": 450,
+    "headMs": 300,
+    "preRevealMs": 750,
+    "segmentGapMs": 250,
+    "tailMs": 2000
+  },
+  "scriptProfile": {
+    "adBreaks": {
+      "everySec": [
+        480,
+        600
+      ],
+      "firstAfterSec": [
+        180,
+        300
+      ]
+    },
+    "avgCharsPerWord": {
+      "en": 5.6,
+      "fr": 5.7
+    },
+    "bannedPhrases": {
+      "en": [
+        "in this video",
+        "today we're going to",
+        "before we start",
+        "without further ado",
+        "smash that",
+        "don't forget to like",
+        "here's the thing",
+        "let's dive in"
+      ],
+      "fr": [
+        "dans cette vidéo",
+        "aujourd'hui on va",
+        "avant de commencer",
+        "sans plus attendre",
+        "n'oubliez pas de liker",
+        "abonnez-vous",
+        "on va plonger"
+      ]
+    },
+    "beatSec": {
+      "avgBody": 3.2,
+      "body": [
+        1.5,
+        6.5
+      ],
+      "hook": [
+        1,
+        3
+      ]
+    },
+    "chapterSec": [
+      120,
+      270
+    ],
+    "charsPerSec": {
+      "en": 16.5,
+      "fr": 16
+    },
+    "defaultShape": "rise-fall",
+    "devices": [
+      "open_loop",
+      "re_hook",
+      "pattern_interrupt",
+      "callback",
+      "cliffhanger",
+      "punchline",
+      "rhetorical_question",
+      "reveal",
+      "payoff"
+    ],
+    "hookMaxSec": 60,
+    "id": "drama-commentary/downfall",
+    "maxClipShare": {
+      "error": 0.15,
+      "warn": 0.1
+    },
+    "maxGapNoDeviceSec": 120,
+    "narrationShare": 0.82,
+    "revisionRounds": 2,
+    "sentenceWords": [
+      11,
+      18
+    ],
+    "storyShapes": [
+      {
+        "acts": [
+          {
+            "id": "cold_open",
+            "macro": "setup",
+            "purpose": "rock-bottom present, peak contrast, 3–6 escalating teasers, one-sentence promise",
+            "share": 0.04
+          },
+          {
+            "id": "act1_rise",
+            "macro": "setup",
+            "purpose": "origins and rise; why we cared",
+            "share": 0.15
+          },
+          {
+            "id": "inciting_turn",
+            "macro": "setup",
+            "purpose": "the first crack",
+            "share": 0.06
+          },
+          {
+            "id": "act2a_cracks",
+            "macro": "confrontation",
+            "purpose": "escalation with BUT/THEREFORE causality",
+            "share": 0.24
+          },
+          {
+            "id": "midpoint_false_hope",
+            "macro": "confrontation",
+            "purpose": "false redemption at ~60–70 %",
+            "share": 0.1
+          },
+          {
+            "id": "act2b_collapse",
+            "macro": "confrontation",
+            "purpose": "collapse and the biggest reveal",
+            "share": 0.25
+          },
+          {
+            "id": "act3_reckoning",
+            "macro": "resolution",
+            "purpose": "full circle, current status, thesis",
+            "share": 0.145
+          },
+          {
+            "id": "outro_rabbit_hole",
+            "macro": "resolution",
+            "purpose": "bridge to the next video",
+            "share": 0.015
+          }
+        ],
+        "id": "rise-fall",
+        "label": "Rise → fall"
+      },
+      {
+        "acts": [
+          {
+            "id": "cold_open",
+            "macro": "setup",
+            "purpose": "lowest point",
+            "share": 0.05
+          },
+          {
+            "id": "act1_peak",
+            "macro": "setup",
+            "purpose": "the peak",
+            "share": 0.15
+          },
+          {
+            "id": "the_fall",
+            "macro": "confrontation",
+            "purpose": "how it fell apart",
+            "share": 0.25
+          },
+          {
+            "id": "rock_bottom",
+            "macro": "confrontation",
+            "purpose": "consequences",
+            "share": 0.15
+          },
+          {
+            "id": "comeback",
+            "macro": "confrontation",
+            "purpose": "the attempt to return",
+            "share": 0.25
+          },
+          {
+            "id": "act3_reckoning",
+            "macro": "resolution",
+            "purpose": "verdict and status",
+            "share": 0.13
+          },
+          {
+            "id": "outro_rabbit_hole",
+            "macro": "resolution",
+            "purpose": "bridge",
+            "share": 0.02
+          }
+        ],
+        "id": "fall-comeback",
+        "label": "Fall → comeback"
+      },
+      {
+        "acts": [
+          {
+            "id": "cold_open",
+            "macro": "setup",
+            "purpose": "the strangest detail",
+            "share": 0.05
+          },
+          {
+            "id": "act1_setup",
+            "macro": "setup",
+            "purpose": "normal world",
+            "share": 0.15
+          },
+          {
+            "id": "spiral",
+            "macro": "confrontation",
+            "purpose": "escalating spiral",
+            "share": 0.3
+          },
+          {
+            "id": "twist",
+            "macro": "confrontation",
+            "purpose": "the reversal",
+            "share": 0.15
+          },
+          {
+            "id": "aftermath",
+            "macro": "resolution",
+            "purpose": "fallout",
+            "share": 0.2
+          },
+          {
+            "id": "act3_reckoning",
+            "macro": "resolution",
+            "purpose": "what it means",
+            "share": 0.13
+          },
+          {
+            "id": "outro_rabbit_hole",
+            "macro": "resolution",
+            "purpose": "bridge",
+            "share": 0.02
+          }
+        ],
+        "id": "spiral-twist",
+        "label": "Spiral → twist"
+      }
+    ]
+  },
+  "sfxPolicy": {
+    "allowComedic": false,
+    "fillToMin": true,
+    "firstAfterSilenceMinPriority": 4,
+    "heavyWhooshMinMovePx": 400,
+    "impactsPerMin": [
+      1,
+      3
+    ],
+    "minGapFrames": 6,
+    "noRepeat": true,
+    "peakDb": {
+      "ambience.crowd": [
+        -34,
+        -28
+      ],
+      "ambience.room": [
+        -38,
+        -32
+      ],
+      "bleep": [
+        -18,
+        -18
+      ],
+      "boom.low": [
+        -14,
+        -8
+      ],
+      "boom.sub": [
+        -12,
+        -6
+      ],
+      "click": [
+        -24,
+        -18
+      ],
+      "ding": [
+        -22,
+        -16
+      ],
+      "drone": [
+        -30,
+        -24
+      ],
+      "glitch": [
+        -20,
+        -14
+      ],
+      "heartbeat": [
+        -22,
+        -16
+      ],
+      "impact": [
+        -12,
+        -6
+      ],
+      "impact.soft": [
+        -16,
+        -10
+      ],
+      "keys": [
+        -28,
+        -22
+      ],
+      "marker": [
+        -26,
+        -20
+      ],
+      "notification": [
+        -20,
+        -14
+      ],
+      "paper": [
+        -24,
+        -18
+      ],
+      "pop": [
+        -22,
+        -16
+      ],
+      "riser": [
+        -20,
+        -14
+      ],
+      "shutter": [
+        -20,
+        -14
+      ],
+      "swell.reverse": [
+        -22,
+        -16
+      ],
+      "thud": [
+        -16,
+        -10
+      ],
+      "tick": [
+        -28,
+        -22
+      ],
+      "whoosh.heavy": [
+        -22,
+        -18
+      ],
+      "whoosh.light": [
+        -24,
+        -18
+      ],
+      "whoosh.up": [
+        -22,
+        -18
+      ],
+      "whoosh.whip": [
+        -22,
+        -18
+      ]
+    },
+    "perMin": [
+      8,
+      15
+    ],
+    "silenceFrames": [
+      12,
+      24
+    ],
+    "silencesPerFiveMin": 2,
+    "silentCutShare": 0.5
+  },
+  "stills": {
+    "assetReuseMinGapSec": 60,
+    "card": {
+      "backdrops": [
+        "gradientGrid",
+        "paper",
+        "blurSelf"
+      ],
+      "borderPx": [
+        10,
+        14
+      ],
+      "heightFrac": [
+        0.7,
+        0.85
+      ],
+      "shadow": {
+        "blurPx": 60,
+        "offsetY": 35,
+        "opacity": 0.9
+      },
+      "tiltDeg": [
+        1,
+        3
+      ]
+    },
+    "cardIfAspectBelow": 1.25,
+    "cardIfWidthBelow": 1400,
+    "layoutWeights": {
+      "card": 0.4,
+      "cover": 0.6
+    },
+    "maxCardRun": 2
+  },
+  "techniqueFloor": {
+    "exemptActsShorterThanSec": 90,
+    "perChapter": {
+      "punch": 1
+    },
+    "perFiveMin": {
+      "jlCut": 1,
+      "silence": 2
+    }
+  },
+  "tokens": {
+    "backdrop": "gradientGrid",
+    "fonts": {
+      "body": "Inter",
+      "caption": "Archivo Black",
+      "document": "Courier Prime",
+      "headline": "Anton",
+      "mono": "JetBrains Mono",
+      "serif": "Instrument Serif",
+      "slam": "Archivo Black"
+    },
+    "layout": {
+      "keepOut": [
+        {
+          "h": 130,
+          "reason": "YouTube player controls (bottom 12 %): no text",
+          "w": 1920,
+          "x": 0,
+          "y": 950
+        }
+      ],
+      "safe": {
+        "h": 972,
+        "w": 1728,
+        "x": 96,
+        "y": 54
+      },
+      "zones": {
+        "captionBand": {
+          "h": 140,
+          "w": 1500,
+          "x": 210,
+          "y": 760
+        },
+        "center": {
+          "h": 600,
+          "w": 1440,
+          "x": 240,
+          "y": 140
+        },
+        "full": {
+          "h": 1080,
+          "w": 1920,
+          "x": 0,
+          "y": 0
+        },
+        "lowerThird": {
+          "h": 160,
+          "w": 900,
+          "x": 96,
+          "y": 560
+        },
+        "topLeft": {
+          "h": 80,
+          "w": 700,
+          "x": 96,
+          "y": 64
+        },
+        "topRight": {
+          "h": 80,
+          "w": 700,
+          "x": 1124,
+          "y": 64
+        }
+      }
+    },
+    "palette": {
+      "accent": "#FFD400",
+      "danger": "#E8412F",
+      "ink": "#0E0F0E",
+      "money": "#3DDC84",
+      "muted": "#8A8A8A",
+      "paper": "#F1EEE6",
+      "secondary": "#2F3CFF",
+      "text": "#FFFFFF"
+    },
+    "typeRamp": {
+      "caption": 78,
+      "cardBody": 40,
+      "chapterKicker": 28,
+      "chapterTitle": 120,
+      "counter": 160,
+      "keywordCaption": 96,
+      "label": 24,
+      "lowerThirdName": 54,
+      "lowerThirdRole": 30,
+      "slam": 220
+    }
+  },
+  "transitionPolicy": {
+    "accentKindsPerAct": 2,
+    "accents": [
+      "whip",
+      "zoomThrough",
+      "glitch",
+      "pushCut",
+      "paperRip"
+    ],
+    "actBoundary": "dipToBlack",
+    "chapterBoundary": "cut+impact",
+    "cueMap": {
+      "ARTICLE": "zoomThrough",
+      "DOCUMENT": "zoomThrough",
+      "FLASHBACK": "lightLeak",
+      "IRONY": "pushCut",
+      "MONTAGE": "pushCut",
+      "REVEAL": "flash",
+      "TIME_JUMP": "whip"
+    },
+    "cutShare": 0.85,
+    "energyFrames": {
+      "calm": [
+        15,
+        24
+      ],
+      "high": [
+        5,
+        9
+      ],
+      "medium": [
+        9,
+        15
+      ]
+    },
+    "flash": {
+      "cap": 0.5,
+      "explicitMax": 0.9,
+      "explicitPerMin": 1,
+      "frames": [
+        2,
+        4
+      ],
+      "routine": [
+        0.2,
+        0.45
+      ]
+    },
+    "intentMap": {
+      "crossfade": "dissolve",
+      "cut": "cut",
+      "dip_to_black": "dipToBlack",
+      "flash": "flash",
+      "glitch": "glitch",
+      "whip": "whip",
+      "zoom_through": "zoomThrough"
+    },
+    "maxKindsPerFilm": 5,
+    "minGapFrames": 30,
+    "montage": {
+      "flashPeak": 0.2,
+      "primary": "pushCut"
+    },
+    "noRepeatRun": 3,
+    "primary": "flash",
+    "primaryShare": [
+      0.6,
+      0.7
+    ],
+    "quota": {
+      "minEnergy": 3,
+      "tolerance": 0.05,
+      "window": 20
+    },
+    "weights": {
+      "flash": 0.62,
+      "glitch": 0.06,
+      "paperRip": 0.04,
+      "pushCut": 0.08,
+      "whip": 0.1,
+      "zoomThrough": 0.1
+    }
+  },
+  "visualPriority": [
+    "archival_photo",
+    "news_footage",
+    "youtube_clip",
+    "motion_graphic",
+    "document_screenshot",
+    "social_post",
+    "map",
+    "text_card",
+    "stock_broll",
+    "ai_illustration"
+  ]
+}
