@@ -83,6 +83,7 @@ Notes from `@docmaker/voice` and the Python sidecar. Nothing here blocks P1; ite
 5. `LicenseCode` has no Apache-2.0 code: Kokoro voices are `PROVIDER-TERMS` with `version: "Apache-2.0"` (ff_siwis is credited as CC-BY 4.0 because of its SIWIS training data).
 6. Model layout: `ensureModel("piper:<voice>")` extracts `vits-piper-<voice>.tar.bz2` to `<models>/piper/<voice>/` (renamed), Kokoro to `<models>/kokoro/kokoro-multi-lang-v1_0/`; faster-whisper models download into `<models>/whisper/fw`; whisper.cpp (M3) builds into `<models>/whisper/cpp` via the exported `installWhisperCppRuntime(config, signal)` (for `docmaker setup --whisper`).
 7. Segment cache key (§8.4) deviation: the context part is `""` (plus `v<n>` for an explicit re-synthesis of an unchanged segment and `r1` for `--retry-bad`), not the previous request ids: request ids are non-deterministic and chain through the chapter, so one edited segment would otherwise re-bill every following segment of the chapter. Stitching still uses the stored ids (< 2 h old) of the neighbouring segments.
+8. Running the sidecar creates `python/docmaker_sidecar/__pycache__/` (untracked): add `__pycache__/` to the root `.gitignore` (F/I), or set `PYTHONDONTWRITEBYTECODE=1` in `runSidecar`'s env.
 
 **Proposed diff** (core, item 1):
 ```ts
