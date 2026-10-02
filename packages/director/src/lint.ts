@@ -71,7 +71,14 @@ function intensityRange(t: Timeline, style: StyleData, a: number, e: number): { 
   return { min: xs.length ? Math.min(...xs) : 1, max: xs.length ? Math.max(...xs) : 1 };
 }
 
-export function lintTimeline(t: Timeline, style: StyleData, ctx: { layout: ProgramLayout; layoutHash: string; frozen: Record<string, FrozenAsset> }): LintIssue[] {
+/**
+ * `maxClipSeconds` (project.assets) is an additive, optional ctx field: the §4.19 ctx carries no project settings,
+ * so the per-clip length check of CLIP_SHARE runs only when the caller passes it.
+ */
+export function lintTimeline(
+  t: Timeline, style: StyleData,
+  ctx: { layout: ProgramLayout; layoutHash: string; frozen: Record<string, FrozenAsset>; maxClipSeconds?: number | null },
+): LintIssue[] {
   const out: LintIssue[] = [];
   const N = t.durationInFrames;
   const fps = t.fps;
@@ -194,6 +201,15 @@ export function lintTimeline(t: Timeline, style: StyleData, ctx: { layout: Progr
   const cs = style.scriptProfile.maxClipShare;
   if (share > cs.error) out.push(issue("error", "CLIP_SHARE", "global", `clips fill ${(share * 100).toFixed(1)} % of the runtime (> ${cs.error * 100} %)`));
   else if (share > cs.warn) out.push(issue("warn", "CLIP_SHARE", "global", `clips fill ${(share * 100).toFixed(1)} % of the runtime (> ${cs.warn * 100} %)`));
+  if (ctx.maxClipSeconds != null && ctx.maxClipSeconds > 0) {
+    // picture of one clip passage (J/L audio overhangs are not counted); +1 frame for ms → frame rounding
+    const lim = Math.round(ctx.maxClipSeconds * fps) + 1;
+    const per = new Map<string, number>();
+    for (const c of t.video) if (c.beatId?.endsWith("-CLIP") && c.source.kind === "video") per.set(c.beatId, (per.get(c.beatId) ?? 0) + c.dur);
+    for (const [beatId, d] of per) {
+      if (d > lim) out.push(issue("error", "CLIP_SHARE", beatId, `clip passage of ${(d / fps).toFixed(1)} s > maxClipSeconds ${ctx.maxClipSeconds}`));
+    }
+  }
   // DENSITY_MAX / DENSITY_MIN
   const W = S(60), step = S(10);
   const sfx = sfxEvents(t);

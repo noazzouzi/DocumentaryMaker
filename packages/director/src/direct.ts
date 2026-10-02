@@ -129,6 +129,12 @@ function policyChecks(ctx: Ctx, t: Timeline): LintIssue[] {
   return out;
 }
 
+/** project.assets.maxClipSeconds when the engine passes the whole Project (DirectorInput.project is a Pick without it). */
+function maxClipSecondsOf(I: DirectorInput): number | null {
+  const v = (I.project as { assets?: { maxClipSeconds?: unknown } }).assets?.maxClipSeconds;
+  return typeof v === "number" && v > 0 ? v : null;
+}
+
 export function direct(I: DirectorInput): DirectorOutput {
   if (I.layout.lang !== I.lang) throw new DocmakerError("VALIDATION", `layout language ${I.layout.lang} ≠ ${I.lang}`);
   const ctx = buildCtx(I);
@@ -230,7 +236,7 @@ export function direct(I: DirectorInput): DirectorOutput {
   const lint = [
     ...ctx.issues,
     ...policyChecks(ctx, timeline),
-    ...lintTimeline(timeline, I.style, { layout: I.layout, layoutHash: I.layoutHash, frozen: I.frozen }),
+    ...lintTimeline(timeline, I.style, { layout: I.layout, layoutHash: I.layoutHash, frozen: I.frozen, maxClipSeconds: maxClipSecondsOf(I) }),
     ...rejected.map((r) => ({ level: "warn" as const, rule: "OVERRIDE_REJECTED", where: r.id, msg: r.reason })),
   ];
   const stats = computeStats(ctx, timeline, shots, { drops: arb.drops, cleanStretches: arb.cleanStretches, jl: ca.jl, keywordCaptions: caps.keywordCount, transitionCuts: sfx.transitionCuts, boundaries: sfx.boundaries });

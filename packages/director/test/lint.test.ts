@@ -93,6 +93,23 @@ describe("lintTimeline", () => {
     expect(lint(t).some((i) => i.rule === "CLIP_SHARE")).toBe(true);
   });
 
+  it("flags a clip passage longer than maxClipSeconds (when the caller passes it)", () => {
+    const t = clone();
+    const vid = Object.values(t.assets).find((a) => a.kind === "video")!.id;
+    // consecutive shots from #3 until the passage reaches ≥ 5 s
+    let total = 0;
+    t.video = t.video.map((c, k) => {
+      if (k < 3 || total >= 5 * t.fps) return c;
+      total += c.dur;
+      return { ...c, beatId: "CH1-S02-CLIP", source: { kind: "video", assetId: vid, sourceInFrames: 0, crop: null, focal: { x: 0.5, y: 0.5 } } };
+    });
+    const clipLen = (max: number | null) => lintTimeline(t, TEST_STYLE, { ...ctx, maxClipSeconds: max }).filter((i) => i.rule === "CLIP_SHARE" && i.where === "CH1-S02-CLIP");
+    expect(total).toBeGreaterThanOrEqual(5 * t.fps);
+    expect(clipLen(3).map((i) => i.level)).toEqual(["error"]);
+    expect(clipLen(Math.ceil(total / t.fps))).toEqual([]);
+    expect(clipLen(null)).toEqual([]);
+  });
+
   it("warns on static holds, missing visual change and short reads", () => {
     const t = clone();
     t.video = t.video.map((c) => ({ ...c, camera: { ...c.camera, kind: "static", keys: [{ f: 0, scale: 1.04, x: 0, y: 0, rot: 0 }] } }));
