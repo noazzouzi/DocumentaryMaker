@@ -19,6 +19,5 @@ it.skipIf(!process.env.DIRECTOR_DEBUG)("debug dump (DIRECTOR_DEBUG=1)", () => {
     log.push(...out.lint.map((l) => `${l.level} ${l.rule} ${l.where} ${l.msg}`));
     writeFileSync(`${OUT}/${name}.json`, stableStringify(out.timeline, 1));
   }
-  log.push(JSON.stringify((globalThis as unknown as { __sfxdbg?: unknown }).__sfxdbg));
   writeFileSync(`${OUT}/log.txt`, log.join("\n"));
 });

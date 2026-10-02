@@ -113,3 +113,38 @@ if (err?.error && (ErrorCode.options as string[]).includes(err.error)) {
 5. Remotion's types forbid `premountFor` with `layout="none"`; timed items therefore use the default absolute-fill Sequence layout (every component is a full-frame AbsoluteFill anyway).
 6. Preview audio cannot pan (`@remotion/media` `<Audio>` has no pan): SFX pans and RL sweeps are heard only in the offline mix (intended preview difference, §10.13).
 7. Letterbox bars follow the geometry: 2.39 → 138 px per bar at 1920×1080 (§10.7 quotes 132 px).
+
+## 2026-10-02 director (W6) → core `director` §4.19 types (I), core/testing (I), styles (W1), engine (W10)
+
+**Problem 1 — `DirectorInput` has no `outline`.** §9.3 uses the outline for the story shape, the per-chapter plan (act, climax/silence ranking) and the outline's ad-break plan, but `DirectorInput` only carries `layout`, `script`, `plans`, … (the outline reaches `LayoutInput` only).
+**Proposed diff.**
+```ts
+// packages/core/src/director.ts (§4.19) — interface DirectorInput
+  outline: Outline | null; // null → story shape from style.scriptProfile by act names, ad breaks from the style schedule
+```
+**Local workaround.** `buildCtx` reads an optional extra field (`(I as DirectorInput & { outline?: Outline | null }).outline ?? null`) and falls back as in the comment. W10: please pass `outline` in the `direct()` input already.
+
+**Problem 2 — `maxClipSeconds` is unreachable.** `DirectorInput.project` is `Pick<Project, "slug" | "seed" | "captions" | "captionsVariant" | "video" | "themeOverride">` and `lintTimeline`'s ctx has no project settings, so the CLIP_SHARE clause "any clip > `maxClipSeconds` (error)" cannot run.
+**Proposed diff.** Add `"assets"` to the `Pick` (or `maxClipSeconds: number` to `DirectorInput`), and `maxClipSeconds?: number | null` to the `lintTimeline` ctx type in §4.19.
+**Local workaround.** `lintTimeline` accepts the optional `ctx.maxClipSeconds` (additive; the check is skipped without it), and `direct()` reads `project.assets.maxClipSeconds` when the caller passes the whole `Project` (structurally allowed by the `Pick`). W10: pass the whole project, or pass `maxClipSeconds` when you call `lintTimeline` yourself.
+
+**Problem 3 — no "downgraded" marker on `BeatPlan`.** §9.3 (f) labels "downgraded reconstruction beats with people" `SourceLabel{reconstruction}`, but `validateBeats` (§6.3) leaves no trace of the downgrade on the plan.
+**Proposed diff.** `BeatPlan.downgradedFrom: MotionTemplate | null` (set by W2's `validateBeats`; `null` otherwise).
+**Local workaround.** Heuristic `isReconstruction(b)` in `src/overlays/cues.ts`: `motionTemplate === "kinetic_text"` with `personIds` non-empty and a `quoteId` or a QUOTE/TWEET/DOCUMENT/ARTICLE cue.
+
+**Problem 4 — true-crime-dossier enables an overshoot component it forbids (W1).** `components` has `Stamp {enabled: true, weight: 0.5, triggers: ["REVEAL"]}` while `motion.overshootAllowedIn` is `[]` (as Appendix D says), so every Stamp would be a lint `OVERSHOOT` error (the Stamp renderer always overshoots).
+**Proposed diff.** Either add `"Stamp"` to true-crime-dossier `motion.overshootAllowedIn`, or disable its Stamp policy; `validateStyle` could warn on an enabled `overshootAllowed` component missing from `overshootAllowedIn`.
+**Local workaround.** The director never places an overshoot component the style's render tokens do not allow (step 7g skips it as a candidate; `addOv` drops it with a `OVERSHOOT_SKIPPED` warning). The other REVEAL devices still apply.
+
+**Problem 5 — fractional per-minute caps (W1, notes).** cinematic-essay has `transitions.flash.explicitPerMin: 0.5` and `explicitMax: 0.6` (< the 0.8 reveal-flash peak of §9.3 step 9). The spec only defines caps as "≤ N per 60 s".
+**Local workaround (director + lint agree).** `rateCap(fps, r)`: r ≥ 1 → ⌊r⌋ per 60 s; 0 < r < 1 → 1 per 60/r s; r ≤ 0 → none; used for flashes, punches, zoom cuts, SFX/impacts, keyword slams and in FLASH_CAP / DENSITY_MAX. The explicit reveal flash peak is `min(0.8, explicitMax)`.
+
+**Problem 6 — `makeTimeline` is not drama-compliant (core/testing).** Its transition pattern (explicit `flash` 0.6 on every sixth shot) trips `FLASH_CAP`/`TRANSITION_RUN` under `TEST_STYLE`.
+**Proposed diff.** Emit cuts (or one explicit flash per 60 s) in `makeTimeline`.
+**Local workaround.** `test/lint.test.ts` normalises the factory's transitions to cuts and asserts that the raw pattern is flagged.
+
+**Notes (no change required).**
+1. W7's request is honoured: the director adds no blur/dark fx for NumberCounter or KeywordSlam (`computeTimeline` derives them).
+2. A scratch take gets one whole-program `SourceLabel{scratch-voice}` instead of `{synthetic-voice}` *and* `{scratch-voice}`: both are whole-programme labels in the top-right zone and would overlap; scratch-voice already implies synthetic voice.
+3. Caption ids: SRT and pop/karaoke/rail groups of a segment share one `ids.caption(segmentId, n)` counter (unique per segment across variants); consumers must use `CaptionGroup.variant`, not the id, to tell them apart. Keyword captions use `kw:`.
+4. `SILENT_CUT_SHARE` (warn) can be unavoidable for fast-cut styles: drama-commentary cuts 15–30 times a minute but `sfxPolicy.perMin` tops out at 15, so `(1 − silentCutShare) × cuts` cut textures do not always fit. The director fills cut textures per 60 s block up to the SFX cap (61 % / 73 % silent cuts on the rich / tulip-mania test scenarios vs the 50 % ± 10 target).
