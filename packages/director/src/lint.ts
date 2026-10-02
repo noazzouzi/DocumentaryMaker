@@ -4,7 +4,7 @@ import {
   type FrozenAsset, type LintIssue, type ProgramLayout, type StyleData, type Timeline,
 } from "@docmaker/core";
 import { holdOf } from "./overlays/hold";
-import { effectiveUpscale, isImpact, maxGapFrames, punchEvents, sfxEvents } from "./stats";
+import { cutsWithSfx, effectiveUpscale, isImpact, maxGapFrames, punchEvents, sfxEvents } from "./stats";
 import { OVERLAPS, keyOf } from "./transitions";
 
 /** Lint severities (§4.13 table): exported so the web app can render rule help. */
@@ -272,8 +272,7 @@ export function lintTimeline(t: Timeline, style: StyleData, ctx: { layout: Progr
   // SILENT_CUT_SHARE
   const boundaries = t.video.length - 1;
   if (boundaries >= 10) {
-    const withSfx = new Set(t.audio.sfx.map((x) => x.sourceItemId));
-    const silent = t.video.slice(1).filter((c) => !withSfx.has(c.id)).length / boundaries;
+    const silent = 1 - cutsWithSfx(t) / boundaries;
     const target = style.sfxPolicy.silentCutShare;
     if (Math.abs(silent - target) > 0.1 + 1e-9) out.push(issue("warn", "SILENT_CUT_SHARE", "global", `${(silent * 100).toFixed(0)} % silent cuts (target ${(target * 100).toFixed(0)} % ± 10)`));
   }

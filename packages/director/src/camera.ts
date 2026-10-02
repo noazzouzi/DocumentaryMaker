@@ -59,7 +59,12 @@ export function assignCameras(ctx: Ctx, shots: Shot[], o: CameraOptions): void {
       const bs = beatShots[0]!.from, be = beatShots[beatShots.length - 1]!.end;
       const c = Math.min(maxS, lerp(ctx.P.creep.scale, ctx.R(`creep:${b.id}`)()));
       const at = (f: number) => 1 + ((c - 1) * (f - bs)) / Math.max(1, be - bs);
-      cam = creep(at(s.from), at(s.end));
+      if (s.change || s.zoomCut) {
+        // a camera-change shot inside a creep keeps the creep's speed on a tight/wide reframe of its source
+        const wasWide = s.zoomCut || (lastBase.get(srcKey) ?? 1) < 1.15;
+        const base = Math.min(maxS / Math.max(1, at(s.end)), wasWide ? lerp(ctx.P.reframe.scale, r()) : lerp(ctx.P.reframe.wideScale, r()));
+        cam = { ...creep(base * at(s.from), base * at(s.end)), kind: "reframe" };
+      } else cam = creep(at(s.from), at(s.end));
     } else if (s.src.kind === "video") {
       const prevSame = shots[i - 1] && shots[i - 1]!.src.assetId === s.src.assetId ? shots[i - 1]! : null;
       const reframe = s.zoomCut || (s.change && (prevSame === null || prevSame.layout === s.layout));

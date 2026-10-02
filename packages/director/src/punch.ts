@@ -157,6 +157,7 @@ export function placePunches(ctx: Ctx, env: PunchEnv): void {
       if (B.maxCamScale < ctx.P.reframe.scale[0]) continue;
       const frames = punchFrames(env);
       if (frames.some((f) => Math.abs(f - B.from) < ctx.P.punch.minGapFrames)) continue;
+      if (!windowCapOk(frames, B.from, ctx.S(60), Math.max(1, Math.floor(ctx.P.punch.perMin[1] * intensityAt(ctx, B.from))))) continue;
       if (env.quiet.some(([q0, q1]) => B.from >= q0 && B.from < q1)) continue;
       if (!env.room(B.from)) continue;
       B.zoomCut = true;

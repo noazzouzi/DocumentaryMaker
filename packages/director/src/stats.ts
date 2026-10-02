@@ -85,3 +85,11 @@ export function effectiveUpscale(t: Timeline, i: number): number | null {
 export function transitionKeys(t: Timeline): string[] {
   return t.video.slice(1).map((c) => keyOf(c.transitionIn));
 }
+
+/** Shot boundaries carrying an SFX event within [cut − 2, cut + 3] frames (a "non-silent" cut). */
+export function cutsWithSfx(t: Timeline): number {
+  const ev = t.audio.sfx.map((x) => x.eventFrame).sort((a, b) => a - b);
+  let n = 0;
+  for (const c of t.video.slice(1)) if (ev.some((f) => f >= c.from - 2 && f <= c.from + 3)) n++;
+  return n;
+}

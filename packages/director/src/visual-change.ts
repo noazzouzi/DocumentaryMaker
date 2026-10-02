@@ -62,6 +62,16 @@ export function visualChangePass(ctx: Ctx, shots: Shot[], st: OvState, book: FxB
     const si = shotIdxAt(shots, Math.round(mid));
     const s = shots[si]!;
     if (s.role === "montage") { skip.add(gap.e0); continue; }
+    if (s.role === "clip") {
+      // a clip keeps its framing (pip/cover switch at a sentence boundary): a gentle push-in reads as the change
+      const at = Math.round(mid);
+      if (s.end - at >= ctx.F30(20) && book.add(ctx, `${s.id}@${at}`, { fx: "zoom", shape: "span", amt: 0.06, fade: 8, from: at, dur: s.end - at, x: s.src.focal.x, y: s.src.focal.y, target: "picture+followers", role: "cardPunch", anchorWord: null, cls: CLS.fill, beatId: s.beatId })) {
+        cardPunches++;
+        continue;
+      }
+      skip.add(gap.e0);
+      continue;
+    }
     const lo = Math.max(s.from + minShot, gap.e0 + 1), hi = Math.min(s.end - minShot, gap.e1 - 1);
     if (hi < lo) { skip.add(gap.e0); continue; }
     let split: number | null = null;
@@ -78,7 +88,6 @@ export function visualChangePass(ctx: Ctx, shots: Shot[], st: OvState, book: FxB
       ...s, id: "", from: split, change: true, anchorWord: word, anchorOffset: word ? -cutLead : 0, explicitFlash: false, zoomCut: false,
       transition: { kind: "cut", accent: { type: "none" } }, tkey: "cut", tsource: "none", snap: "none", camera: null,
       src: s.src.kind === "video" ? { ...s.src, sourceIn: s.src.sourceIn + (split - s.from) } : { ...s.src },
-      layout: s.role === "clip" && s.layout === "pip" ? "cover" : s.layout, layoutParams: s.role === "clip" && s.layout === "pip" ? null : s.layoutParams,
     };
     s.end = split;
     shots.splice(si + 1, 0, rest);

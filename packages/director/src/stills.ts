@@ -79,7 +79,26 @@ export function decideLayouts(ctx: Ctx, shots: Shot[]): void {
         else layout = !forced ? "cover" : "card";
       } else if (forced) layout = "card";
       else layout = weightedPick(ctx.St.layoutWeights, ctx.R(`lay:${s.id}`)) ?? "cover";
-      if (layout === "card" && cardRun >= ctx.St.maxCardRun) layout = forced ? "contain-blur" : "cover";
+      if (layout === "card" && cardRun >= ctx.St.maxCardRun) {
+        if (!forced) layout = "cover";
+        else {
+          // break the run by turning an earlier non-forced card of the run into a cover, else contain-blur when it
+          // does not over-upscale, else accept the run (a forced card must not be blown up)
+          let fixed = false;
+          for (let j = i - 1; j >= Math.max(0, i - cardRun); j--) {
+            const q = shots[j]!;
+            const gq = geometryOf(ctx, q);
+            if (q.layout === "card" && !q.forcedCard && q.role === "normal" && gq && gq.maxCover >= 1) {
+              applyStillLayout(ctx, q, "cover", 1);
+              cardRun = i - 1 - j;
+              fixed = true;
+              break;
+            }
+          }
+          if (!fixed && Math.min(1920 / g.w, 1080 / g.h) <= ctx.P.maxUpscale) layout = "contain-blur";
+          else if (!fixed) ctx.warn("UPSCALE", s.id, "three framed cards in a row: the image is too small for any other layout");
+        }
+      }
       applyStillLayout(ctx, s, layout, tiltSign);
       if (layout === "card") {
         tiltSign = -tiltSign;
@@ -99,10 +118,11 @@ function assetReuse(ctx: Ctx, shots: Shot[]): void {
   for (let i = 0; i < shots.length; i++) {
     const s = shots[i]!;
     const id = s.src.assetId;
-    if (!id || s.role === "clip") { if (id) last.set(id, s); continue; }
+    if (!id || s.role === "clip" || s.role === "montage") { if (id) last.set(id, s); continue; }
     const p = last.get(id);
     last.set(id, s);
     if (!p || p === shots[i - 1] && s.change) continue;
+    if (s.change && p.beatId === s.beatId) continue; // reframes alternate tight/wide within a beat
     if (s.from - p.end >= gap) continue;
     if (p.layout !== s.layout || p.change !== s.change) continue;
     if (s.src.kind === "image") {

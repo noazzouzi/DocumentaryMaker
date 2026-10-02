@@ -153,7 +153,7 @@ function derive(ctx: Ctx, shots: readonly Shot[], b: BeatCtx, k: number, cue: Cu
       const s = shots[shotIdxAt(shots, a)]!;
       if (s.src.kind !== "image" || s.src.pickSlot === null || s.layout !== "cover") return null;
       return {
-        props: { cx: clamp(s.src.focal.x, 0, 1), cy: clamp(s.src.focal.y, 0, 1), rx: 0.18, ry: 0.24, dim: 0.4, drawCircle: true, color: pal.accent },
+        props: { cx: round2(clamp(s.src.focal.x, 0, 1)), cy: round2(clamp(s.src.focal.y, 0, 1)), rx: 0.18, ry: 0.24, dim: 0.4, drawCircle: true, color: pal.accent },
         from: a, anchorWord, dur: Math.max(ctx.F30(30), Math.min(ctx.F30(180), s.end - a)),
       };
     }

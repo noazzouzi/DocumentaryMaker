@@ -269,9 +269,10 @@ export function selectSfx(ctx: Ctx, env: SfxEnv, cands: SfxCand[]): SfxResult {
   const LONG = new Set<SfxCategory>(["riser", "drone", "swell.reverse", "ambience.room", "ambience.crowd"]);
   const rollLast = new Map<string, number>();
   const heads: { f: number; impact: boolean }[] = []; // density events (rolls of one item count once)
+  const acceptedKeys = new Set<string>();
   const tryAccept = (c: SfxCand, texture: boolean): boolean => {
     const cat = resolveCat(c.category);
-    if (!cat) return false;
+    if (!cat || acceptedKeys.has(c.key)) return false;
     if ((c.impactLike || texture) && c.priority < 5 && inClean(c.event)) return false;
     const entries = byCat.get(cat)!;
     const idx0 = ((useCount.get(cat) ?? 0) + Math.floor(ctx.R(`sfxv:${c.key}`)() * entries.length)) % entries.length;
@@ -291,6 +292,7 @@ export function selectSfx(ctx: Ctx, env: SfxEnv, cands: SfxCand[]): SfxResult {
     if (accepted.some((a) => Math.abs(a.c.event - c.event) < X.minGapFrames && !designed(a.c, c))) return false;
     if (c.transition && accepted.filter((a) => a.c.transition).length >= maxTransition && c.priority < 5) return false;
     accepted.push({ c, e, from: pl.from, dur: pl.dur, peak: pl.peak, cat });
+    acceptedKeys.add(c.key);
     if (!rollMember) heads.push({ f: c.event, impact: IMPACTS.has(cat) });
     if (ROLL.has(cat)) rollLast.set(rollKey, c.event);
     useCount.set(cat, (useCount.get(cat) ?? 0) + 1);
@@ -302,16 +304,38 @@ export function selectSfx(ctx: Ctx, env: SfxEnv, cands: SfxCand[]): SfxResult {
   const keepTrans = new Set(trans.slice(0, maxTransition).map((c) => c.key));
   const ordered = cands.filter((c) => !c.transition || keepTrans.has(c.key) || c.priority >= 5)
     .sort((a, b) => b.priority - a.priority || a.event - b.event || (a.key < b.key ? -1 : 1));
-  for (const c of ordered) tryAccept(c, false);
+  // phase A: priority ≥ 2
+  for (const c of ordered) if (c.priority >= 2) tryAccept(c, false);
+  // phase B: about (1 − silentCutShare) of cuts carry an SFX — cut whooshes get the budget before detail sounds
+  const has = (f: number) => accepted.some((a) => Math.abs(a.c.event - f) < X.minGapFrames);
+  const energyOf = (sourceId: string) => ctx.beatById.get(env.shots.find((s) => s.id === sourceId)?.beatId ?? "")?.energy ?? 0;
+  const soundedIn = (a: number, b: number) => env.shots.slice(1).filter((s) => s.from >= a && s.from < b && accepted.some((x) => x.c.event >= s.from - 2 && x.c.event <= s.from + 3)).length;
+  if (X.fillToMin) {
+    // per 60-s block, so the sounded cuts spread evenly instead of piling up in high-energy passages
+    const block = ctx.S(60);
+    for (let b0 = 0; b0 < ctx.N; b0 += block) {
+      const b1 = Math.min(ctx.N, b0 + block);
+      const cuts = env.shots.slice(1).filter((s) => s.from >= b0 && s.from < b1 && s.role !== "montage");
+      const wantB = Math.round((1 - X.silentCutShare) * cuts.length);
+      let have = soundedIn(b0, b1);
+      const cutTex = cuts.map((s) => mkTexture(s.id, "whoosh.light", s.from, "texture: cut", true))
+        .sort((a, b) => energyOf(b.sourceItemId) - energyOf(a.sourceItemId) || ctx.R(`sfxtex:${a.key}`)() - ctx.R(`sfxtex:${b.key}`)());
+      for (const t of cutTex) {
+        if (have >= wantB || accepted.filter((a) => a.c.transition).length >= maxTransition) break;
+        if (has(t.event)) continue;
+        if (tryAccept(t, true)) have++;
+      }
+    }
+  }
+  // phase C: the remaining (priority 1) detail sounds
+  for (const c of ordered) if (c.priority < 2) tryAccept(c, false);
 
   // 7. fill (acts ≥ exempt): whoosh.light on energy ≥ 3 cuts, pops on overlay entries without SFX, ticks under counters
   if (X.fillToMin) {
-    const has = (f: number) => accepted.some((a) => Math.abs(a.c.event - f) < X.minGapFrames);
     const textures: SfxCand[] = [];
     for (let i = 1; i < env.shots.length; i++) {
       const B = env.shots[i]!;
-      const b = B.beatId ? ctx.beatById.get(B.beatId) : undefined;
-      if (b && b.energy >= 3 && B.role !== "montage") textures.push(mkTexture(B.id, "whoosh.light", B.from, "texture: cut", true));
+      if (B.role !== "montage" && energyOf(B.id) >= 3) textures.push(mkTexture(B.id, "whoosh.light", B.from, "texture: cut", true));
     }
     for (const o of env.overlays) {
       if (COMPONENT_META[o.component].band === "hud" || accepted.some((a) => a.c.sourceItemId === o.id)) continue;
@@ -325,17 +349,6 @@ export function selectSfx(ctx: Ctx, env: SfxEnv, cands: SfxCand[]): SfxResult {
         if (t.event < w0 || t.event >= w1 || has(t.event)) continue;
         tryAccept(t, true);
       }
-    }
-    // silent-cut share: about (1 − silentCutShare) of cuts carry a transition SFX (energy ≥ 3 cuts first)
-    const cutTex = textures.filter((t) => t.transition).sort((a, b) => {
-      const ea = ctx.beatById.get(env.shots.find((s) => s.id === a.sourceItemId)?.beatId ?? "")?.energy ?? 0;
-      const eb = ctx.beatById.get(env.shots.find((s) => s.id === b.sourceItemId)?.beatId ?? "")?.energy ?? 0;
-      return eb - ea || ctx.R(`sfxtex:${a.key}`)() - ctx.R(`sfxtex:${b.key}`)();
-    });
-    for (const t of cutTex) {
-      if (accepted.filter((a) => a.c.transition).length >= maxTransition) break;
-      if (has(t.event)) continue;
-      tryAccept(t, true);
     }
   }
 

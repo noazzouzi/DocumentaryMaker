@@ -36,18 +36,30 @@ export function groupCaptions(words: readonly LayoutWord[], g: CaptionDNA["group
     if (exclam) return false;
     return grp.length < g.minWords || grp[grp.length - 1]!.endMs - grp[0]!.startMs < g.minSec * 1000;
   };
-  for (let guard = 0; guard < 1000; guard++) {
-    const k = groups.findIndex((grp, i) => short(grp) && groups.length > 1 && [groups[i - 1], groups[i + 1]].some((n) => n && joinedLen([...grp, ...n]) <= maxMerged));
+  /** Splits an over-long merged group in two (each ≥ minWords words) at the most balanced point. */
+  const rebalance = (ws: LayoutWord[]): LayoutWord[][] => {
+    let best: LayoutWord[][] | null = null, bestLen = Infinity;
+    for (let k = g.minWords; k <= ws.length - g.minWords; k++) {
+      const a = ws.slice(0, k), b = ws.slice(k);
+      const m = Math.max(joinedLen(a), joinedLen(b));
+      if (m < bestLen) { best = [a, b]; bestLen = m; }
+    }
+    return best && bestLen <= maxMerged ? best : [ws];
+  };
+  const stuck = new Set<LayoutWord[]>();
+  for (let guard = 0; guard < 1000 && groups.length > 1; guard++) {
+    const k = groups.findIndex((grp) => short(grp) && !stuck.has(grp));
     if (k < 0) break;
     const grp = groups[k]!;
     const L = groups[k - 1], R = groups[k + 1];
     const gapL = L ? grp[0]!.startMs - L[L.length - 1]!.endMs : Infinity;
     const gapR = R ? R[0]!.startMs - grp[grp.length - 1]!.endMs : Infinity;
-    const okL = L && joinedLen([...L, ...grp]) <= maxMerged;
-    const okR = R && joinedLen([...grp, ...R]) <= maxMerged;
-    if (okL && (!okR || gapL <= gapR)) groups = [...groups.slice(0, k - 1), [...L!, ...grp], ...groups.slice(k + 1)];
-    else if (okR) groups = [...groups.slice(0, k), [...grp, ...R!], ...groups.slice(k + 2)];
-    else break;
+    const useL = L !== undefined && (R === undefined || gapL <= gapR);
+    const merged = useL ? [...L!, ...grp] : [...grp, ...R!];
+    const parts = joinedLen(merged) <= maxMerged ? [merged] : rebalance(merged);
+    if (parts.length === 1 && joinedLen(parts[0]!) > maxMerged) { stuck.add(grp); continue; }
+    if (parts.length > 1) for (const p of parts) if (short(p)) stuck.add(p);
+    groups = useL ? [...groups.slice(0, k - 1), ...parts, ...groups.slice(k + 1)] : [...groups.slice(0, k), ...parts, ...groups.slice(k + 2)];
   }
   const out: { words: LayoutWord[]; from: number; dur: number }[] = [];
   groups.forEach((grp, k) => {
@@ -244,8 +256,17 @@ function keywordPhrases(ctx: Ctx, tone: ToneCtx, sup: Ov[], slams: Ov[]): Phrase
     if (t === "money" || t === "danger") add(w, 1);
   }
   const phrases: Phrase[] = [];
-  for (const c of cands) {
-    const gi = ctx.wordIndex.get(c.w.id)!;
+  const stop = TRAIL_STOP[ctx.lang];
+  for (const c0 of cands) {
+    // the hero is a content word: an anchor on a function word moves to the next word of the sentence
+    let gi = ctx.wordIndex.get(c0.w.id)!;
+    for (let j = 0; j < 3 && stop.has(ctx.words[gi]!.norm) && !endsSentence(ctx.words[gi]!.text); j++) {
+      const nx = ctx.words[gi + 1];
+      if (!nx || nx.segmentId !== c0.w.segmentId) break;
+      gi++;
+    }
+    if (stop.has(ctx.words[gi]!.norm)) continue;
+    const c = { w: ctx.words[gi]!, prio: c0.prio };
     const ws = [c.w];
     for (let j = gi + 1; j < ctx.words.length && ws.length < k.maxWords; j++) {
       const prev = ws[ws.length - 1]!, w = ctx.words[j]!;

@@ -1,6 +1,6 @@
 // (a) motion templates → overlay components (TEMPLATE_COMPONENT), props filled from the FactSheet (§4.11 table).
 import {
-  MotionData, TEMPLATE_COMPONENT, fnv1a32, lerp, normWord, tokenizeDisplay, type CueType, type LayoutWord, type MotionTemplate,
+  COMPONENT_META, MotionData, TEMPLATE_COMPONENT, fnv1a32, framesAt, lerp, normWord, tokenizeDisplay, type CueType, type LayoutWord, type MotionTemplate,
   type OverlayComponentId,
 } from "@docmaker/core";
 import { clamp, cueFrame, round2, truncate, type BeatCtx, type Ctx } from "../ctx";
@@ -109,9 +109,10 @@ function buildTemplate(ctx: Ctx, b: BeatCtx, tpl: Exclude<MotionTemplate, "none"
     if (idx < 0) idx = pool.length;
     const raw: (number | null)[] = [];
     let end: number | null = null;
+    const latest = framesAt(ctx.fps, COMPONENT_META[component].maxHold30) - ctx.F30(30);
     for (const t of texts) {
       const m = findSpoken(t, pool, idx);
-      if (m) { raw.push(Math.max(enter, m.first.from - from)); end = Math.max(end ?? 0, m.last.from + m.last.dur - from); idx = m.endIdx; }
+      if (m && m.first.from - from <= latest) { raw.push(Math.max(enter, m.first.from - from)); end = Math.max(end ?? 0, m.last.from + m.last.dur - from); idx = m.endIdx; }
       else raw.push(null);
     }
     return { ats: fillAts(raw, enter, step), end };

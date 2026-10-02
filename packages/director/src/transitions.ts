@@ -85,14 +85,19 @@ export function assignTransitions(ctx: Ctx, shots: Shot[]): void {
           if ((c0 === "REVEAL" || c0 === "FLASHBACK") && (DEFERRED_TRANSITIONS[viaCue] ?? viaCue) === "flash") explicit = true;
         } else {
           const viaIntent = T.intentMap[b.plan.transitionIn];
-          if (viaIntent && viaIntent !== "cut") { key = viaIntent; source = "intent"; }
+          if (viaIntent && viaIntent !== "cut") {
+            key = viaIntent; source = "intent";
+            // intents are suggestions: while the primary share is below its band, an accent intent becomes the primary
+            if (key !== T.primary && quotaNonCut >= 3 && primaryCount / quotaNonCut < (T.primaryShare[0] + T.primaryShare[1]) / 2) key = T.primary;
+          }
         }
       }
       // pass 3 — quota fill
       if (key === "cut" && energy >= T.quota.minEnergy && share(false) < (1 - T.cutShare) - T.quota.tolerance && ctx.R(`trq:${b.id}`)() < intensity) {
         const ps = quotaNonCut >= 3 ? primaryCount / quotaNonCut : null;
         const r = ctx.R(`trw:${b.id}`);
-        const picked = ps !== null && ps < T.primaryShare[0] ? T.primary
+        const mid = (T.primaryShare[0] + T.primaryShare[1]) / 2;
+        const picked = ps !== null && ps < mid ? T.primary
           : ps !== null && ps > T.primaryShare[1] ? weightedPick(accentWeights, r) ?? T.primary
           : weightedPick(quotaWeights, r) ?? T.primary;
         key = picked; source = "quota";
