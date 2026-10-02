@@ -208,3 +208,39 @@ describe("ElevenLabs provider (mocked SDK)", () => {
       .rejects.toMatchObject({ code: "CONFIG_MISSING_KEY" });
   });
 });
+
+describe("ElevenLabs forced alignment (M3, mocked)", () => {
+  it("maps word results (loss → confidence) onto the script words", async () => {
+    const ctx = makeCtx();
+    const client = mockClient();
+    let sent: { text: string } | null = null;
+    client.forcedAlignment = {
+      async create(req) {
+        sent = { text: req.text };
+        return { words: [{ text: "Tout", start: 0.1, end: 0.3, loss: 0.1 }, { text: " ", start: 0.3, end: 0.32, loss: 0 }, { text: "s'effondre.", start: 0.35, end: 0.9, loss: 0.3 }] };
+      },
+    };
+    const { ElevenLabsForcedAligner } = await import("../src/index");
+    const wav = path.join(tmpDir(), "a.wav");
+    await import("node:fs/promises").then((fs) => fs.writeFile(wav, pcmToWav(fakePcm("ab"), SR)));
+    const a = new ElevenLabsForcedAligner(provider(ctx, client));
+    const w = await a.align(wav, ["Tout", "s’effondre."], "fr", ctx.signal);
+    expect(sent).toEqual({ text: "Tout s’effondre." });
+    expect(w).toEqual([
+      { text: "Tout", startMs: 100, endMs: 300, confidence: 0.9 },
+      { text: "s’effondre.", startMs: 350, endMs: 900, confidence: 0.7 },
+    ]);
+  });
+});
+
+describe("ElevenLabs live (DOCMAKER_LIVE_TESTS=1 + ELEVENLABS_API_KEY)", () => {
+  const live = process.env.DOCMAKER_LIVE_TESTS === "1" && !!process.env.ELEVENLABS_API_KEY;
+  it.skipIf(!live)("synthesises one short sentence with timestamps", async () => {
+    const ctx = makeCtx({ offline: false });
+    const p = new ElevenLabsProvider({ apiKey: process.env.ELEVENLABS_API_KEY!, config: ctx.config, logger: silentLogger });
+    const info = await p.resolveVoice("auto", "en");
+    const r = await p.synthesize({ segmentId: "CH1-S01", text: "The market collapsed in days.", ttsWords: "The market collapsed in days.".split(" "), lang: "en", voice: el({ voiceId: info.id }) }, path.join(tmpDir(), "live.raw"), ctx.signal);
+    expect(r.words).toHaveLength(5);
+    expect(r.providerRequestId).toBeTruthy();
+  }, 120_000);
+});

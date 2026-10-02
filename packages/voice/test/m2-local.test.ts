@@ -263,3 +263,23 @@ describe("synthesizeTrack with a local provider + ASR QA", () => {
     expect(fixed.segments[0]!.cacheKey).not.toBe(bad.segments[0]!.cacheKey);
   }, 60_000);
 });
+
+describe("whisper.cpp aligner (gated: DOCMAKER_TEST_WHISPER_CPP + DOCMAKER_TEST_SPEECH_WAV)", () => {
+  const wdir = process.env.DOCMAKER_TEST_WHISPER_CPP;
+  const wav = process.env.DOCMAKER_TEST_SPEECH_WAV; // French speech reading test/data/fr.txt
+  it.skipIf(!wdir || !wav)("transcribes with -nfa DTW timestamps and aligns the script (start MAE < 150 ms)", async () => {
+    const ctx = makeCtx();
+    mkdirSync(path.join(ctx.config.paths.models, "whisper"), { recursive: true });
+    symlinkSync(wdir!, path.join(ctx.config.paths.models, "whisper", "cpp"));
+    const { WhisperCppAligner } = await import("../src/index");
+    const a = new WhisperCppAligner(ctx.config);
+    expect((await a.isAvailable()).ok).toBe(true);
+    const script = (await import("node:fs")).readFileSync(path.join(DATA, "fr.txt"), "utf8").trim().split(/\s+/);
+    const al = await a.align(wav!, script, "fr", ctx.signal);
+    expect(al).toHaveLength(script.length);
+    const gt = JSON.parse((await import("node:fs")).readFileSync(path.join(DATA, "piper_fr_words.json"), "utf8")) as { startMs: number }[];
+    const truth = [gt[0]!, gt[1]!, ...gt.slice(4)];
+    const mae = al.reduce((s, w, i) => s + Math.abs(w.startMs - truth[i]!.startMs), 0) / al.length;
+    expect(mae).toBeLessThan(150);
+  }, 300_000);
+});
