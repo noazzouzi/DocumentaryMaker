@@ -162,6 +162,12 @@ describe("discoverStyles", () => {
     expect(r.rejected![0]!.issues.map((i) => i.rule)).toContain("STYLE_ACT_SHARES");
   });
 
+  it("a user styles path that is a file is a VALIDATION error", async () => {
+    const f = join(await tempDir(), "styles");
+    await writeFile(f, "not a dir");
+    await expectValidation(discoverStyles({ repoRoot: REPO_ROOT, userStylesDir: f }), /not a directory/);
+  });
+
   it("fails loudly when repoRoot has no built-in styles", async () => {
     await expectValidation(discoverStyles({ repoRoot: await tempDir(), userStylesDir: null }), /no built-in styles/);
   });

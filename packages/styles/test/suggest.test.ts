@@ -92,6 +92,18 @@ describe("suggestStyleOffline", () => {
     expect(top.score).toBeGreaterThan(suggestStyleOffline("The fall of FTX", registry).ranked[0]!.score);
   });
 
+  it("ranks the M3 presets first for their own topics", () => {
+    const cases: [string, string][] = [
+      ["The unsolved murder that shocked a small town", "true-crime-dossier"],
+      ["L'affaire de la disparition non élucidée", "true-crime-dossier"],
+      ["Le mystère oublié d'un siècle d'histoire", "cinematic-essay"],
+      ["The forgotten history of the tulip mania", "cinematic-essay"],
+      ["The biggest YouTuber feud of the year", "drama-commentary"],
+      ["La faillite d'une entreprise culte", "drama-commentary"],
+    ];
+    for (const [idea, id] of cases) expect(suggestStyleOffline(idea, registry).recommendedStyleId, idea).toBe(id);
+  });
+
   it("prefers a better-fitting style when the idea points elsewhere", () => {
     const s = suggestStyleOffline("Une histoire de la guerre de Cent Ans", withCompetitor());
     expect(s.topicType).toBe("history");
@@ -109,11 +121,12 @@ describe("suggestStyleOffline", () => {
     expect(a.recommendedMinutes).toBe(20);
   });
 
-  it("handles an idea with no signal and an empty idea", () => {
+  it("handles an idea with no signal and an empty idea (generic fallback = a style whose bestFor lists \"other\")", () => {
     for (const idea of ["Pizza recipes for beginners", ""]) {
       const s = suggestStyleOffline(idea, registry);
       expect(s.topicType).toBe("other");
-      expect(s.recommendedStyleId).toBe("drama-commentary");
+      expect(s.recommendedStyleId).toBe("cinematic-essay");
+      expect(suggestStyleOffline(idea, createRegistry([registry.get("drama-commentary")])).recommendedStyleId).toBe("drama-commentary");
       expect(s.riskFlags).toEqual(["none"]);
       expect(s.thumbnailTextOptions).toEqual([]);
     }

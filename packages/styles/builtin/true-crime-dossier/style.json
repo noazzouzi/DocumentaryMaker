@@ -1,0 +1,1124 @@
+{
+  "budgets": {
+    "actIntensity": {
+      "act2b_turn": 1.1,
+      "act3_unresolved": 0.8,
+      "cold_open": 1,
+      "outro_open": 0.6
+    },
+    "chapterCardFrames": [
+      90,
+      180
+    ],
+    "cleanStretch": {
+      "everySec": 45,
+      "minSec": 10
+    },
+    "componentCooldownSec": {
+      "CommentPile": 180,
+      "DateStamp": 20,
+      "EvidenceBoard": 120,
+      "FreezeLabel": 90,
+      "LowerThird": 25,
+      "PhotoBurst": 180,
+      "SocialPost": 30,
+      "Stamp": 90
+    },
+    "explicitFlashPerMin": 0.5,
+    "jlCutsPerFiveMin": 1,
+    "keywordSlamPerMin": 0.25,
+    "lowerThirdMinGapSec": 25,
+    "overlayMaxConcurrent": 1,
+    "salience": {
+      "maxAccents": 2,
+      "minGapFrames": 10,
+      "weights": {
+        "flash": 1,
+        "impactSfx": 1,
+        "overlayEntry": 1,
+        "punch": 1,
+        "slam": 2,
+        "transitionNonCut": 1
+      },
+      "windowSec": 4
+    },
+    "titleSting": true
+  },
+  "cameraPolicy": {
+    "clip": {
+      "creep": [
+        1,
+        1.03
+      ],
+      "keyLinePunch": 0.06,
+      "switchLayoutAfterSec": 12
+    },
+    "creep": {
+      "frames": [
+        150,
+        300
+      ],
+      "scale": [
+        1,
+        1.06
+      ]
+    },
+    "cutAccent": {
+      "flashFrames": 4,
+      "flashPeak": 0.3,
+      "pulseAmt": 0.02,
+      "pulseFrames": 8,
+      "share": 0
+    },
+    "handheld": {
+      "ampPx": 1,
+      "fps": 3
+    },
+    "impactShake": {
+      "ampPx": [
+        4,
+        10
+      ],
+      "frames": [
+        6,
+        10
+      ],
+      "overscan": 1.02,
+      "rotDeg": [
+        0,
+        0.4
+      ]
+    },
+    "kenBurns": {
+      "driftPxPerSec": [
+        3,
+        8
+      ],
+      "minShotSec": 3,
+      "scaleRatePerSec": [
+        0.01,
+        0.02
+      ],
+      "scaleStart": [
+        1,
+        1.02
+      ],
+      "videoCreep": [
+        1,
+        1.03
+      ]
+    },
+    "maxUpscale": 1.5,
+    "montage": {
+      "aslSec": [
+        1,
+        2
+      ],
+      "beatPunch": {
+        "amt": 0.02,
+        "curve": 2,
+        "frames": 8
+      },
+      "snapFrames": 3
+    },
+    "plate": {
+      "anchorOffsetMs": 45,
+      "decay": 7,
+      "hz": 10,
+      "punch": 0.03,
+      "shakeX": 3,
+      "shakeY": 2,
+      "windowSec": 0.5
+    },
+    "pullBack": {
+      "blurPx": 4,
+      "frames": 30,
+      "from": 1.15
+    },
+    "punch": {
+      "exclusionFrames": 10,
+      "fillToMin": false,
+      "holdToShotEnd": true,
+      "inFrames": [
+        0,
+        4
+      ],
+      "minGapFrames": 450,
+      "minTailFrames": 30,
+      "perMin": [
+        0,
+        1
+      ],
+      "scale": [
+        1.06,
+        1.12
+      ],
+      "whooshMinGapSec": 60
+    },
+    "quietBeforeClimaxSec": [
+      0.6,
+      1.5
+    ],
+    "reframe": {
+      "scale": [
+        1.2,
+        1.4
+      ],
+      "wideScale": [
+        1,
+        1.03
+      ]
+    },
+    "shots": {
+      "aslMaxSec": 12,
+      "aslMul": {
+        "byAct": {
+          "act2b_turn": 0.9,
+          "act3_unresolved": 1.15,
+          "outro_open": 1.25
+        },
+        "byCue": {
+          "HOOK": 0.85,
+          "REVEAL": 0.9,
+          "TENSION_BUILD": 1.5
+        },
+        "byEnergy": [
+          1.3,
+          1.15,
+          1,
+          0.9,
+          0.8
+        ]
+      },
+      "aslSec": [
+        4,
+        10
+      ],
+      "cutLeadFrames": 2,
+      "hookAslFactor": 0.7,
+      "maxStaticHoldSec": 10,
+      "minShotFrames": 45,
+      "targetAslSec": 6,
+      "visualChangeSec": [
+        5,
+        10
+      ]
+    }
+  },
+  "captionDNA": {
+    "clipStyle": {
+      "background": "#000000B3",
+      "color": "#F2F2F2",
+      "font": "JetBrains Mono",
+      "minHoldSec": 2,
+      "sizePx": 36
+    },
+    "color": "#F2F2F2",
+    "dangerColor": "#D7263D",
+    "defaultMode": "burn",
+    "font": "JetBrains Mono",
+    "grouping": {
+      "commaPauseMs": 250,
+      "gapMs": 50,
+      "leadMs": 80,
+      "maxChars": 48,
+      "maxSec": 3,
+      "maxWords": 7,
+      "minSec": 1,
+      "minWords": 2,
+      "pauseBreakMs": 500,
+      "tailMs": 500
+    },
+    "heroScale": 1,
+    "heroWordMinGapSec": 2,
+    "keywordColor": "#E3B23C",
+    "keywords": {
+      "holdMinSec": 1.5,
+      "maxWords": 3,
+      "minGapSec": [
+        15,
+        30
+      ],
+      "sizePx": 48
+    },
+    "letterSpacingEm": 0.02,
+    "moneyColor": "#7FB069",
+    "oneLine": true,
+    "popFrames": 0,
+    "popFrom": 1,
+    "sizePx": 30,
+    "srtGrouping": {
+      "maxChars": 42,
+      "maxLines": 2,
+      "maxSec": 6,
+      "minSec": 1
+    },
+    "strokeColor": "#000000",
+    "strokePx": 0,
+    "suppressMinWords": 6,
+    "suppressUnder": [
+      "KeywordSlam",
+      "QuoteCard",
+      "ChapterCard",
+      "TitleSting",
+      "ArticleHighlight",
+      "DocumentCard",
+      "HeadlineStack",
+      "SocialPost",
+      "KineticText",
+      "TimelineGraphic",
+      "BarChart",
+      "MapPin",
+      "CommentPile",
+      "EvidenceBoard",
+      "FreezeLabel"
+    ],
+    "uppercase": false,
+    "variant": "rail",
+    "weight": 700
+  },
+  "clipLayout": "cover",
+  "components": [
+    {
+      "enabled": true,
+      "id": "LowerThird",
+      "triggers": [
+        "PERSON_INTRO"
+      ],
+      "weight": 1
+    },
+    {
+      "enabled": true,
+      "id": "ChapterCard",
+      "triggers": [],
+      "weight": 1
+    },
+    {
+      "enabled": true,
+      "id": "TitleSting",
+      "triggers": [],
+      "weight": 1
+    },
+    {
+      "enabled": true,
+      "id": "QuoteCard",
+      "triggers": [
+        "QUOTE"
+      ],
+      "weight": 1
+    },
+    {
+      "enabled": true,
+      "id": "SocialPost",
+      "triggers": [
+        "TWEET"
+      ],
+      "weight": 0.6
+    },
+    {
+      "enabled": true,
+      "id": "ArticleHighlight",
+      "triggers": [],
+      "weight": 1
+    },
+    {
+      "enabled": true,
+      "id": "DocumentCard",
+      "triggers": [],
+      "weight": 1
+    },
+    {
+      "enabled": true,
+      "id": "HeadlineStack",
+      "triggers": [],
+      "weight": 0.8
+    },
+    {
+      "enabled": true,
+      "id": "Stamp",
+      "triggers": [
+        "REVEAL"
+      ],
+      "weight": 0.5
+    },
+    {
+      "enabled": false,
+      "id": "KeywordSlam",
+      "triggers": [],
+      "weight": 0
+    },
+    {
+      "enabled": true,
+      "id": "NumberCounter",
+      "triggers": [
+        "NUMBER"
+      ],
+      "weight": 0.8
+    },
+    {
+      "enabled": true,
+      "id": "DateStamp",
+      "triggers": [
+        "TIME_JUMP"
+      ],
+      "weight": 1
+    },
+    {
+      "enabled": true,
+      "id": "MapPin",
+      "triggers": [],
+      "weight": 1
+    },
+    {
+      "enabled": true,
+      "id": "TimelineGraphic",
+      "triggers": [],
+      "weight": 1
+    },
+    {
+      "enabled": true,
+      "id": "BarChart",
+      "triggers": [],
+      "weight": 0.5
+    },
+    {
+      "enabled": true,
+      "id": "SplitScreen",
+      "triggers": [
+        "COMPARISON"
+      ],
+      "weight": 0.6
+    },
+    {
+      "enabled": true,
+      "id": "CensorBar",
+      "triggers": [
+        "SENSITIVE"
+      ],
+      "weight": 1
+    },
+    {
+      "enabled": true,
+      "id": "Spotlight",
+      "triggers": [
+        "DOCUMENT",
+        "EMPHASIS"
+      ],
+      "weight": 1
+    },
+    {
+      "enabled": true,
+      "id": "KineticText",
+      "triggers": [
+        "LIST"
+      ],
+      "weight": 0.5
+    },
+    {
+      "enabled": true,
+      "id": "SourceLabel",
+      "triggers": [
+        "CLIP_REF"
+      ],
+      "weight": 1
+    },
+    {
+      "enabled": false,
+      "id": "Letterbox",
+      "triggers": [],
+      "weight": 0
+    },
+    {
+      "enabled": true,
+      "id": "FreezeLabel",
+      "triggers": [
+        "PERSON_INTRO"
+      ],
+      "weight": 0.3
+    },
+    {
+      "enabled": true,
+      "id": "PhotoBurst",
+      "triggers": [
+        "MONTAGE"
+      ],
+      "weight": 0.3
+    },
+    {
+      "enabled": true,
+      "id": "EvidenceBoard",
+      "triggers": [
+        "LIST"
+      ],
+      "weight": 1
+    },
+    {
+      "enabled": true,
+      "id": "CommentPile",
+      "triggers": [],
+      "weight": 0.4
+    }
+  ],
+  "grade": {
+    "byAct": {
+      "act2b_turn": {
+        "css": {
+          "brightness": 0.94,
+          "saturate": 0.65
+        },
+        "vignetteAmount": 0.5
+      },
+      "act3_unresolved": {
+        "css": {
+          "saturate": 0.7
+        },
+        "vignetteAmount": null
+      }
+    },
+    "css": {
+      "brightness": 0.97,
+      "contrast": 1.05,
+      "hueRotateDeg": 0,
+      "saturate": 0.75,
+      "sepia": 0
+    },
+    "grainFfmpeg": 9,
+    "letterbox": null,
+    "look": "desatCool",
+    "lut": {
+      "blacks": 0.05,
+      "contrast": 0.1,
+      "highlights": [
+        0.02,
+        0.01,
+        -0.01
+      ],
+      "intensity": 0.65,
+      "saturation": -0.25,
+      "shadows": [
+        -0.02,
+        0.01,
+        0.06
+      ],
+      "temp": -0.12,
+      "vibrance": -0.05,
+      "whites": 0
+    },
+    "splitTone": {
+      "amount": 0.2,
+      "highlights": "#D9D2C5",
+      "shadows": "#1E2A38"
+    },
+    "treatments": {
+      "archival": {
+        "brightness": 0.98,
+        "contrast": 1.05,
+        "hueRotateDeg": 0,
+        "saturate": 0.7,
+        "sepia": 0.2
+      },
+      "bw": {
+        "brightness": 0.98,
+        "contrast": 1.15,
+        "hueRotateDeg": 0,
+        "saturate": 0,
+        "sepia": 0
+      },
+      "duotone": {
+        "highlights": "#E3B23C",
+        "shadows": "#101418"
+      }
+    },
+    "vignette": {
+      "amount": 0.45,
+      "feather": 0.45,
+      "radius": 0.65
+    }
+  },
+  "manifest": {
+    "bestFor": [
+      "true_crime",
+      "scandal_expose",
+      "conspiracy_debunk"
+    ],
+    "category": "true-crime",
+    "description": {
+      "en": "Restrained investigative true crime: case files, redacted documents, typed date stamps, maps, slow creeping camera, dips to black, drones and heartbeat-driven sound.",
+      "fr": "Enquête criminelle sobre : pièces du dossier, documents caviardés, dates tapées à la machine, cartes, caméra qui avance lentement, fondus au noir, nappes et battements de cœur."
+    },
+    "id": "true-crime-dossier",
+    "moods": [
+      "ominous",
+      "mysterious",
+      "tense",
+      "sad"
+    ],
+    "names": {
+      "en": "True crime dossier",
+      "fr": "Dossier criminel"
+    },
+    "previewColor": "#D7263D",
+    "referencesDescription": "Investigative true-crime documentaries and case-file explainers: police and court documents with redactions, polaroid evidence, typed date stamps, maps and timelines, minimal monospace subtitles, drones, pulses and long dips to black.",
+    "uses": [
+      "true crime",
+      "murder",
+      "killer",
+      "case",
+      "investigation",
+      "disappearance",
+      "missing",
+      "cold case",
+      "detective",
+      "evidence",
+      "unsolved",
+      "heist",
+      "cult",
+      "crime",
+      "suspect",
+      "verdict",
+      "affaire",
+      "meurtre",
+      "tueur",
+      "enquete",
+      "disparition",
+      "dossier",
+      "indice",
+      "non elucide",
+      "fait divers",
+      "braquage",
+      "secte",
+      "assassinat"
+    ],
+    "version": "1.0.0"
+  },
+  "motion": {
+    "cameraEase": [
+      0.45,
+      0,
+      0.55,
+      1
+    ],
+    "entryEase": [
+      0.25,
+      0.8,
+      0.35,
+      1
+    ],
+    "entryMaxFrames": 20,
+    "exitEase": [
+      0.7,
+      0,
+      0.84,
+      0
+    ],
+    "kbEase": [
+      0.33,
+      0.25,
+      0.67,
+      0.75
+    ],
+    "overshootAllowedIn": [],
+    "staggerMaxFrames": 12,
+    "stepFps": null
+  },
+  "musicPolicy": {
+    "clipDuckDb": -12,
+    "crossfadeFrames": 30,
+    "dropBeforeRevealSec": [
+      0.75,
+      1.5
+    ],
+    "dropOutSec": [
+      2,
+      4
+    ],
+    "duckDb": -13,
+    "duckRangeDb": [
+      -15,
+      -8
+    ],
+    "fadeInFrames": 45,
+    "fadeOutFrames": 60,
+    "ironyDropSec": [
+      1,
+      2
+    ],
+    "jCutFrames": 18,
+    "moodBpm": {
+      "chill": 72,
+      "comedic": 100,
+      "epic": 76,
+      "mysterious": 70,
+      "ominous": 60,
+      "sad": 64,
+      "tense": 80,
+      "uplifting": 90
+    },
+    "noVoGainDb": 0,
+    "sectionSec": [
+      150,
+      300
+    ],
+    "sfxDuckDb": -4
+  },
+  "pauses": {
+    "chapterGapMs": 3000,
+    "clipLeadMs": 400,
+    "clipTailMs": 600,
+    "deviceGapMs": 650,
+    "headMs": 500,
+    "preRevealMs": 1000,
+    "segmentGapMs": 300,
+    "tailMs": 3000
+  },
+  "scriptProfile": {
+    "adBreaks": {
+      "everySec": [
+        480,
+        660
+      ],
+      "firstAfterSec": [
+        180,
+        360
+      ]
+    },
+    "avgCharsPerWord": {
+      "en": 5.6,
+      "fr": 5.7
+    },
+    "bannedPhrases": {
+      "en": [
+        "in this video",
+        "today we're going to",
+        "before we start",
+        "without further ado",
+        "smash that",
+        "don't forget to like",
+        "here's the thing",
+        "let's dive in",
+        "brutally murdered",
+        "monster",
+        "evil incarnate",
+        "you won't believe"
+      ],
+      "fr": [
+        "dans cette vidéo",
+        "aujourd'hui on va",
+        "avant de commencer",
+        "sans plus attendre",
+        "n'oubliez pas de liker",
+        "abonnez-vous",
+        "on va plonger",
+        "sauvagement assassiné",
+        "monstre",
+        "vous n'allez pas y croire"
+      ]
+    },
+    "beatSec": {
+      "avgBody": 4.2,
+      "body": [
+        2,
+        8
+      ],
+      "hook": [
+        1.5,
+        3.5
+      ]
+    },
+    "chapterSec": [
+      150,
+      330
+    ],
+    "charsPerSec": {
+      "en": 15.5,
+      "fr": 15
+    },
+    "defaultShape": "investigation",
+    "devices": [
+      "open_loop",
+      "re_hook",
+      "callback",
+      "cliffhanger",
+      "rhetorical_question",
+      "reveal",
+      "payoff",
+      "pattern_interrupt"
+    ],
+    "hookMaxSec": 75,
+    "id": "true-crime-dossier/investigation",
+    "maxClipShare": {
+      "error": 0.15,
+      "warn": 0.1
+    },
+    "maxGapNoDeviceSec": 120,
+    "narrationShare": 0.84,
+    "revisionRounds": 2,
+    "sentenceWords": [
+      10,
+      18
+    ],
+    "storyShapes": [
+      {
+        "acts": [
+          {
+            "id": "cold_open",
+            "macro": "setup",
+            "purpose": "the scene or the unanswered question, without sensationalism",
+            "share": 0.05
+          },
+          {
+            "id": "act1_people",
+            "macro": "setup",
+            "purpose": "who the people were; dignity first",
+            "share": 0.14
+          },
+          {
+            "id": "the_case",
+            "macro": "setup",
+            "purpose": "what happened and the first response",
+            "share": 0.18
+          },
+          {
+            "id": "act2a_investigation",
+            "macro": "confrontation",
+            "purpose": "leads, suspects and evidence, in order",
+            "share": 0.22
+          },
+          {
+            "id": "act2b_turn",
+            "macro": "confrontation",
+            "purpose": "the break, or the dead end",
+            "share": 0.14
+          },
+          {
+            "id": "act2c_justice",
+            "macro": "confrontation",
+            "purpose": "charges, trial and verdict, or why there were none",
+            "share": 0.12
+          },
+          {
+            "id": "act3_unresolved",
+            "macro": "resolution",
+            "purpose": "what is known and what is not, as of today",
+            "share": 0.12
+          },
+          {
+            "id": "outro_open",
+            "macro": "resolution",
+            "purpose": "the open question",
+            "share": 0.03
+          }
+        ],
+        "id": "investigation",
+        "label": "Investigation (open or unresolved)"
+      }
+    ]
+  },
+  "sfxPolicy": {
+    "allowComedic": false,
+    "fillToMin": false,
+    "firstAfterSilenceMinPriority": 3,
+    "heavyWhooshMinMovePx": 800,
+    "impactsPerMin": [
+      0,
+      1
+    ],
+    "minGapFrames": 20,
+    "noRepeat": true,
+    "peakDb": {
+      "ambience.crowd": [
+        -36,
+        -30
+      ],
+      "ambience.room": [
+        -38,
+        -32
+      ],
+      "bleep": [
+        -18,
+        -18
+      ],
+      "boom.low": [
+        -16,
+        -10
+      ],
+      "click": [
+        -26,
+        -20
+      ],
+      "drone": [
+        -30,
+        -24
+      ],
+      "glitch": [
+        -22,
+        -16
+      ],
+      "heartbeat": [
+        -24,
+        -18
+      ],
+      "impact.soft": [
+        -18,
+        -12
+      ],
+      "keys": [
+        -28,
+        -22
+      ],
+      "paper": [
+        -24,
+        -18
+      ],
+      "riser": [
+        -22,
+        -16
+      ],
+      "shutter": [
+        -22,
+        -16
+      ],
+      "thud": [
+        -18,
+        -12
+      ],
+      "tick": [
+        -28,
+        -22
+      ],
+      "whoosh.light": [
+        -26,
+        -20
+      ]
+    },
+    "perMin": [
+      2,
+      4
+    ],
+    "silenceFrames": [
+      18,
+      45
+    ],
+    "silencesPerFiveMin": 3,
+    "silentCutShare": 0.85
+  },
+  "stills": {
+    "assetReuseMinGapSec": 90,
+    "card": {
+      "backdrops": [
+        "darkNoise",
+        "paper"
+      ],
+      "borderPx": [
+        12,
+        18
+      ],
+      "heightFrac": [
+        0.62,
+        0.8
+      ],
+      "shadow": {
+        "blurPx": 55,
+        "offsetY": 30,
+        "opacity": 0.85
+      },
+      "tiltDeg": [
+        1,
+        4
+      ]
+    },
+    "cardIfAspectBelow": 1.25,
+    "cardIfWidthBelow": 1400,
+    "layoutWeights": {
+      "card": 0.5,
+      "cover": 0.5
+    },
+    "maxCardRun": 3
+  },
+  "techniqueFloor": {
+    "exemptActsShorterThanSec": 90,
+    "perChapter": {},
+    "perFiveMin": {
+      "jlCut": 1,
+      "silence": 3
+    }
+  },
+  "tokens": {
+    "backdrop": "darkNoise",
+    "fonts": {
+      "body": "Inter",
+      "caption": "JetBrains Mono",
+      "document": "Courier Prime",
+      "headline": "Special Elite",
+      "mono": "JetBrains Mono",
+      "serif": "Instrument Serif",
+      "slam": "Archivo Black"
+    },
+    "layout": {
+      "keepOut": [
+        {
+          "h": 130,
+          "reason": "YouTube player controls (bottom 12 %): no text",
+          "w": 1920,
+          "x": 0,
+          "y": 950
+        }
+      ],
+      "safe": {
+        "h": 972,
+        "w": 1728,
+        "x": 96,
+        "y": 54
+      },
+      "zones": {
+        "captionBand": {
+          "h": 64,
+          "w": 1200,
+          "x": 360,
+          "y": 880
+        },
+        "center": {
+          "h": 600,
+          "w": 1440,
+          "x": 240,
+          "y": 140
+        },
+        "full": {
+          "h": 1080,
+          "w": 1920,
+          "x": 0,
+          "y": 0
+        },
+        "lowerThird": {
+          "h": 150,
+          "w": 900,
+          "x": 96,
+          "y": 600
+        },
+        "topLeft": {
+          "h": 80,
+          "w": 700,
+          "x": 96,
+          "y": 64
+        },
+        "topRight": {
+          "h": 80,
+          "w": 700,
+          "x": 1124,
+          "y": 64
+        }
+      }
+    },
+    "palette": {
+      "accent": "#E3B23C",
+      "danger": "#D7263D",
+      "ink": "#0A0B0D",
+      "money": "#7FB069",
+      "muted": "#8B8F94",
+      "paper": "#E9E4D8",
+      "secondary": "#4A6FA5",
+      "text": "#F2F2F2"
+    },
+    "typeRamp": {
+      "caption": 30,
+      "cardBody": 36,
+      "chapterKicker": 26,
+      "chapterTitle": 110,
+      "counter": 140,
+      "keywordCaption": 48,
+      "label": 22,
+      "lowerThirdName": 50,
+      "lowerThirdRole": 28,
+      "slam": 180
+    }
+  },
+  "transitionPolicy": {
+    "accentKindsPerAct": 1,
+    "accents": [
+      "flash",
+      "glitch"
+    ],
+    "actBoundary": "dipToBlack",
+    "chapterBoundary": "dipToBlack",
+    "cueMap": {
+      "ARTICLE": "cut",
+      "DOCUMENT": "cut",
+      "FLASHBACK": "glitch",
+      "IRONY": "cut",
+      "MONTAGE": "cut",
+      "REVEAL": "flash",
+      "TIME_JUMP": "dipToBlack"
+    },
+    "cutShare": 0.9,
+    "energyFrames": {
+      "calm": [
+        18,
+        30
+      ],
+      "high": [
+        6,
+        10
+      ],
+      "medium": [
+        12,
+        18
+      ]
+    },
+    "flash": {
+      "cap": 0.5,
+      "explicitMax": 0.8,
+      "explicitPerMin": 0.5,
+      "frames": [
+        2,
+        3
+      ],
+      "routine": [
+        0.25,
+        0.45
+      ]
+    },
+    "intentMap": {
+      "crossfade": "dipToBlack",
+      "cut": "cut",
+      "dip_to_black": "dipToBlack",
+      "flash": "flash",
+      "glitch": "glitch",
+      "whip": "cut",
+      "zoom_through": "cut"
+    },
+    "maxKindsPerFilm": 3,
+    "minGapFrames": 60,
+    "montage": {
+      "flashPeak": 0.15,
+      "primary": "cut"
+    },
+    "noRepeatRun": 3,
+    "primary": "dipToBlack",
+    "primaryShare": [
+      0.6,
+      0.7
+    ],
+    "quota": {
+      "minEnergy": 3,
+      "tolerance": 0.04,
+      "window": 24
+    },
+    "weights": {
+      "dipToBlack": 0.65,
+      "flash": 0.25,
+      "glitch": 0.1
+    }
+  },
+  "visualPriority": [
+    "archival_photo",
+    "document_screenshot",
+    "news_footage",
+    "map",
+    "motion_graphic",
+    "youtube_clip",
+    "text_card",
+    "stock_broll",
+    "social_post",
+    "ai_illustration"
+  ]
+}

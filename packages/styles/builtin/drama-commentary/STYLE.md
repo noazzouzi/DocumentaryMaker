@@ -116,7 +116,7 @@ Transitions: about 85 % of shot boundaries are plain cuts. Of the rest, the flas
 ## 11. Variation space
 
 - **Story shape:** rise → fall (default), fall → comeback, spiral → twist; act shares are fixed per shape.
-- **Theme:** accent colour, backdrop recipe and grade can follow the subject (crypto, fashion, sport, tech) through the project theme override; colour meanings stay.
+- **Theme:** accent colour, backdrop recipe, texture (paper, film, scanlines, halftone) and headline font can follow the subject (crypto, fashion, sport, tech) through the project theme override; colour meanings stay.
 - **Captions:** keywords (default), full pop captions, or burned-in off with SRT only.
 - **Energy:** acts scale punch, SFX and transition intensity (cold open ×1.15, collapse ×1.2, false hope ×0.9, reckoning ×0.7, outro ×0.6).
 - **Fixed:** safety rules, keep-out zones, flash caps, the cut share, and the technique floors (a punch per chapter, silences and J/L cuts every five minutes).

@@ -180,7 +180,8 @@ export function scoreStyle(tokens: readonly string[], topic: TopicType, m: Style
   const kw = hits.reduce((s, h) => s + h.weight, 0);
   const kwPart = 1 - Math.exp(-kw / 1.5); // 1 hit ≈ .49, 2 ≈ .74, 3 ≈ .86
   const bestIdx = m.bestFor.indexOf(topic);
-  const topicPart = topic === "other" ? 0 : bestIdx >= 0 ? 1 - 0.04 * bestIdx : 0;
+  // a style listing "other" in bestFor declares itself a generic fallback: half credit for unclassified ideas
+  const topicPart = bestIdx < 0 ? 0 : topic === "other" ? 0.5 : 1 - 0.04 * bestIdx;
   const aff = CATEGORY_AFFINITY[topic][m.category];
   const score = round4(clamp01(0.5 * kwPart + 0.4 * topicPart + 0.1 * aff));
   const matched = [...new Set(hits.sort((a, b) => a.at - b.at).map((h) => h.keyword))];

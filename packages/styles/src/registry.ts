@@ -16,7 +16,9 @@ export async function listStyleDirs(root: string): Promise<string[]> {
   try {
     entries = await readdir(root, { withFileTypes: true });
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") return [];
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return [];
+    if (code === "ENOTDIR") throw new DocmakerError("VALIDATION", `styles directory ${root} is not a directory`, { cause: e });
     throw e;
   }
   const out: string[] = [];
