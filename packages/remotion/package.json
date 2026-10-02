@@ -1,0 +1,44 @@
+{
+  "name": "@docmaker/remotion",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./compute": "./src/compute/index.ts",
+    "./entry": "./src/entry.ts",
+    "./fonts": "./src/fonts/fonts.css.ts",
+    "./lint": "./eslint.determinism.js"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:render": "vitest run -c vitest.int.config.ts"
+  },
+  "dependencies": {
+    "@docmaker/core": "workspace:*",
+    "@fontsource/anton": "5.3.0",
+    "@fontsource/archivo-black": "5.3.0",
+    "@fontsource/courier-prime": "5.3.0",
+    "@fontsource/instrument-serif": "5.3.0",
+    "@fontsource/inter": "5.3.0",
+    "@fontsource/jetbrains-mono": "5.3.0",
+    "@fontsource/special-elite": "5.3.0",
+    "@remotion/fonts": "4.0.532",
+    "@remotion/layout-utils": "4.0.532",
+    "@remotion/media": "4.0.532",
+    "@remotion/noise": "4.0.532",
+    "@remotion/paths": "4.0.532",
+    "@remotion/transitions": "4.0.532",
+    "d3-geo": "3.1.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "remotion": "4.0.532",
+    "topojson-client": "3.1.0",
+    "world-atlas": "2.0.2"
+  },
+  "devDependencies": {
+    "@types/d3-geo": "3.1.1",
+    "@types/topojson-client": "3.1.5"
+  }
+}

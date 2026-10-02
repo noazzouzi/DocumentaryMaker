@@ -1,0 +1,27 @@
+{
+  "name": "@docmaker/engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@docmaker/assets": "workspace:*",
+    "@docmaker/audio": "workspace:*",
+    "@docmaker/core": "workspace:*",
+    "@docmaker/director": "workspace:*",
+    "@docmaker/export": "workspace:*",
+    "@docmaker/llm": "workspace:*",
+    "@docmaker/styles": "workspace:*",
+    "@docmaker/voice": "workspace:*",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@docmaker/remotion": "workspace:*"
+  }
+}

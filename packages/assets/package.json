@@ -1,0 +1,22 @@
+{
+  "name": "@docmaker/assets",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@docmaker/core": "workspace:*",
+    "@mozilla/readability": "0.6.0",
+    "linkedom": "0.18.13",
+    "p-limit": "7.3.3",
+    "p-retry": "8.0.1",
+    "sharp": "0.35.5"
+  },
+  "devDependencies": {}
+}

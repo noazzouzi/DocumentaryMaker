@@ -1,0 +1,24 @@
+{
+  "name": "@docmaker/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./worker": "./src/worker.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@docmaker/core": "workspace:*",
+    "@docmaker/engine": "workspace:*",
+    "@docmaker/render": "workspace:*",
+    "@docmaker/styles": "workspace:*",
+    "commander": "15.0.0"
+  },
+  "devDependencies": {},
+  "bin": {
+    "docmaker": "bin/docmaker.js"
+  }
+}

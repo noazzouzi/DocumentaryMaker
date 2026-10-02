@@ -1,0 +1,23 @@
+{
+  "name": "@docmaker/render",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:render": "vitest run -c vitest.int.config.ts"
+  },
+  "dependencies": {
+    "@docmaker/core": "workspace:*",
+    "@docmaker/remotion": "workspace:*",
+    "@remotion/bundler": "4.0.532",
+    "@remotion/renderer": "4.0.532",
+    "remotion": "4.0.532",
+    "sharp": "0.35.5"
+  },
+  "devDependencies": {}
+}

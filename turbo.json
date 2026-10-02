@@ -1,0 +1,8 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "agentGuidance": false,
+  "tasks": {
+    "typecheck": { "outputs": [] },
+    "build": { "dependsOn": ["^build"], "outputs": [".next/**", "!.next/cache/**"] }
+  }
+}

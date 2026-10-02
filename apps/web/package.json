@@ -1,0 +1,30 @@
+{
+  "name": "@docmaker/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "NEXT_TELEMETRY_DISABLED=1 next dev -H 127.0.0.1 -p 3210",
+    "build": "NEXT_TELEMETRY_DISABLED=1 next build",
+    "start": "NEXT_TELEMETRY_DISABLED=1 next start -H 127.0.0.1 -p 3210",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@docmaker/core": "workspace:*",
+    "@docmaker/engine": "workspace:*",
+    "@docmaker/remotion": "workspace:*",
+    "@docmaker/styles": "workspace:*",
+    "@remotion/player": "4.0.532",
+    "@tailwindcss/postcss": "4.3.3",
+    "next": "16.3.8",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "remotion": "4.0.532",
+    "server-only": "0.0.1",
+    "tailwindcss": "4.3.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}
