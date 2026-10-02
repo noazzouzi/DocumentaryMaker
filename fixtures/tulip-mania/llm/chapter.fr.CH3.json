@@ -1,0 +1,77 @@
+{
+  "chapter_id": "CH3",
+  "title": "Le jugement",
+  "video_title": "",
+  "segments": [
+    {
+      "id": "CH3-S01",
+      "type": "narration",
+      "text": "Puis, soudain, tout s’arrête. Dès le début de février 1637, les acheteurs disparaissent, les prix s’effondrent.",
+      "quote_id": "",
+      "fact_ids": [
+        "E5",
+        "S1"
+      ],
+      "device": "none",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH3-S02",
+      "type": "narration",
+      "text": "Mais voici le retournement : la ruine dont parle Mackay n’a peut-être jamais eu lieu.",
+      "quote_id": "",
+      "fact_ids": [
+        "C1",
+        "S1",
+        "S3"
+      ],
+      "device": "reveal",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH3-S03",
+      "type": "narration",
+      "text": "L’historienne Anne Goldgar a lu les archives : les négociants étaient surtout de riches marchands et artisans.",
+      "quote_id": "",
+      "fact_ids": [
+        "P3",
+        "C2",
+        "E8",
+        "S2",
+        "S1"
+      ],
+      "device": "payoff",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH3-S04",
+      "type": "narration",
+      "text": "Selon elle, la plupart des récits reposent sur un peu de propagande et beaucoup de plagiat.",
+      "quote_id": "",
+      "fact_ids": [
+        "Q3",
+        "P3",
+        "S1"
+      ],
+      "device": "none",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH3-S05",
+      "type": "narration",
+      "text": "La bulle était réelle pour quelques-uns. La légende fut écrite pour tous les autres.",
+      "quote_id": "",
+      "fact_ids": [
+        "C2",
+        "S1"
+      ],
+      "device": "payoff",
+      "subtitle_translation": ""
+    }
+  ],
+  "loops_opened": [],
+  "loops_closed": [
+    "L1"
+  ],
+  "summary_for_next": "Les prix s’effondrent début février 1637 ; la guilde transforme les contrats en options ; les archives de Goldgar contredisent la ruine décrite par Mackay."
+}

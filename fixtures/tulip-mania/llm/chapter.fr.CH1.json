@@ -1,0 +1,57 @@
+{
+  "chapter_id": "CH1",
+  "title": "La vente aux enchères",
+  "video_title": "La tulipomanie : la fleur qui a dupé l’Histoire",
+  "segments": [
+    {
+      "id": "CH1-S01",
+      "type": "narration",
+      "text": "Haarlem, février 1637. D’après une satire imprimée cette année-là, un commissaire-priseur baisse son prix, encore et encore.",
+      "quote_id": "",
+      "fact_ids": [
+        "E4",
+        "S1"
+      ],
+      "device": "none",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH1-S02",
+      "type": "narration",
+      "text": "Personne n’achète. Au sommet de la folie, un seul bulbe de Semper Augustus s’était vendu 10 000 florins.",
+      "quote_id": "",
+      "fact_ids": [
+        "E4",
+        "N1",
+        "S1"
+      ],
+      "device": "reveal",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH1-S03",
+      "type": "narration",
+      "text": "Comment une fleur devient-elle une fortune, puis plus rien du tout ?",
+      "quote_id": "",
+      "fact_ids": [
+        "S1"
+      ],
+      "device": "open_loop",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH1-S04",
+      "type": "music_breath",
+      "text": "",
+      "quote_id": "",
+      "fact_ids": [],
+      "device": "none",
+      "subtitle_translation": ""
+    }
+  ],
+  "loops_opened": [
+    "L1"
+  ],
+  "loops_closed": [],
+  "summary_for_next": "Haarlem, février 1637 : une vente ne trouve aucun acheteur, alors qu’un Semper Augustus valait 10 000 florins. Question centrale : comment une fleur devient une fortune, puis rien ?"
+}

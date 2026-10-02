@@ -1,0 +1,47 @@
+{
+  "chapter_id": "CH1",
+  "title": "Gone Overnight",
+  "video_title": "Glimmerline: Where Did the Money Go?",
+  "segments": [
+    {
+      "id": "CH1-S01",
+      "type": "narration",
+      "text": "In March 2026, the influencer agency Glimmerline went dark overnight.",
+      "quote_id": "",
+      "fact_ids": [
+        "E1",
+        "S1"
+      ],
+      "device": "none",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH1-S02",
+      "type": "narration",
+      "text": "Its founder, Marlo Vance, had promised his clients a fortune.",
+      "quote_id": "",
+      "fact_ids": [
+        "P1",
+        "S1"
+      ],
+      "device": "none",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH1-S03",
+      "type": "narration",
+      "text": "So where did the money go?",
+      "quote_id": "",
+      "fact_ids": [
+        "S1"
+      ],
+      "device": "open_loop",
+      "subtitle_translation": ""
+    }
+  ],
+  "loops_opened": [
+    "L1"
+  ],
+  "loops_closed": [],
+  "summary_for_next": "Gone Overnight."
+}

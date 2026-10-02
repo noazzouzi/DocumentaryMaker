@@ -1,0 +1,276 @@
+// Live Claude client (§6.1): structured outputs, refusal fallback, streaming above 32k tokens, stop_reason handling,
+// prompt caching, receipts by fingerprint (a paid call is never made twice), raw responses in rawDir, research harness.
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import Anthropic from "@anthropic-ai/sdk";
+import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
+import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import { z } from "zod";
+import { DocmakerError, canonicalJson, isDocmakerError, stableStringify, type Logger, type Progress, type Receipt, type StageId, type Lang } from "@docmaker/core";
+import { sha256Bytes } from "@docmaker/core/node";
+import { MODEL, usageCostUsd } from "../estimate";
+import { buildResearchFromTurns, type TurnLike } from "../steps/research";
+import type { LlmCallCtx, LlmClient, ResearchRequest, ResearchResult, StructuredRequest, SystemBlock } from "../types";
+
+export const FALLBACK_BETA = "server-side-fallback-2026-07-01";
+export const REFUSAL_HINT = "the topic triggered a safety classifier; reframe the idea or write this step manually";
+const STREAM_ABOVE = 32000;
+const MAX_TOKENS_CAP = 64000;
+const PARSE_TIMEOUT_MS = 30 * 60_000;
+const MAX_RESEARCH_TURNS = 8;
+
+/** The subset of the SDK this client uses (lets tests inject a mock). */
+export interface AnthropicLike {
+  messages: { parse(params: never, options?: never): PromiseLike<unknown> };
+  beta: {
+    messages: {
+      parse(params: never, options?: never): PromiseLike<unknown>;
+      stream(params: never, options?: never): { finalMessage(): Promise<unknown> };
+    };
+  };
+}
+
+interface Usage { input: number; output: number; cacheRead: number; cacheWrite: number; webSearches: number; webFetches: number }
+const ZERO: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, webSearches: 0, webFetches: 0 };
+interface MessageLike {
+  content?: unknown; stop_reason?: unknown; parsed_output?: unknown; model?: unknown; id?: unknown;
+  stop_details?: { category?: unknown } | null;
+  usage?: {
+    input_tokens?: number | null; output_tokens?: number | null; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null;
+    server_tool_use?: { web_search_requests?: number | null; web_fetch_requests?: number | null } | null;
+  } | null;
+}
+
+function addUsage(a: Usage, m: MessageLike): Usage {
+  const u = m.usage ?? {};
+  return {
+    input: a.input + (u.input_tokens ?? 0), output: a.output + (u.output_tokens ?? 0), cacheRead: a.cacheRead + (u.cache_read_input_tokens ?? 0),
+    cacheWrite: a.cacheWrite + (u.cache_creation_input_tokens ?? 0), webSearches: a.webSearches + (u.server_tool_use?.web_search_requests ?? 0),
+    webFetches: a.webFetches + (u.server_tool_use?.web_fetch_requests ?? 0),
+  };
+}
+
+/** text blocks; cache_control on the cacheable blocks (≤ 4 breakpoints, the last ones win). */
+export function systemParam(blocks: readonly SystemBlock[]): { type: "text"; text: string; cache_control?: { type: "ephemeral" } }[] {
+  const cacheIdx = blocks.map((b, i) => (b.cache ? i : -1)).filter((i) => i >= 0).slice(-4);
+  return blocks.map((b, i) => (cacheIdx.includes(i) ? { type: "text" as const, text: b.text, cache_control: { type: "ephemeral" as const } } : { type: "text" as const, text: b.text }));
+}
+
+/** Request identity for receipts: images are replaced by the hash of their data. */
+function hashableUser(user: StructuredRequest<z.ZodType>["user"]): unknown {
+  if (typeof user === "string") return user;
+  return user.map((b) => {
+    const src = (b as { type: string; source?: { type?: string; data?: string } }).source;
+    if (b.type === "image" && src?.type === "base64" && typeof src.data === "string") return { ...b, source: { ...src, data: `sha256:${sha256Bytes(src.data)}` } };
+    return b;
+  });
+}
+
+export function mapSdkError(e: unknown, signal: AbortSignal): DocmakerError {
+  if (isDocmakerError(e)) return e as DocmakerError;
+  const err = e as { name?: string; status?: number; message?: string };
+  if (signal.aborted || err?.name === "APIUserAbortError" || err?.name === "AbortError") return new DocmakerError("CANCELED", "canceled", { cause: e });
+  const status = typeof err?.status === "number" ? err.status : null;
+  const msg = err?.message ?? String(e);
+  if (status === 401 || status === 403) return new DocmakerError("CONFIG_MISSING_KEY", `Anthropic API rejected the key (${status})`, { cause: e, hint: "set ANTHROPIC_API_KEY with `docmaker setup` or the settings page" });
+  if (status === 429) return new DocmakerError("LLM_API", `Anthropic rate limit: ${msg}`, { cause: e, retryable: true });
+  if (status !== null && status >= 500) return new DocmakerError("LLM_API", `Anthropic API error ${status}: ${msg}`, { cause: e, retryable: true });
+  if (status !== null) return new DocmakerError("LLM_API", `Anthropic API error ${status}: ${msg}`, { cause: e });
+  if (err?.name === "APIConnectionError" || err?.name === "APIConnectionTimeoutError") return new DocmakerError("LLM_API", `Anthropic API unreachable: ${msg}`, { cause: e, retryable: true });
+  return new DocmakerError("LLM_API", msg, { cause: e });
+}
+
+export class AnthropicLlm implements LlmClient {
+  readonly kind = "anthropic" as const;
+  private readonly sdk: AnthropicLike;
+  private readonly rawDir: string;
+  private readonly refusalFallback: boolean;
+  private readonly logger: Logger;
+
+  constructor(o: { sdk: AnthropicLike; rawDir: string; refusalFallback: boolean; logger: Logger }) {
+    this.sdk = o.sdk;
+    this.rawDir = o.rawDir;
+    this.refusalFallback = o.refusalFallback;
+    this.logger = o.logger;
+  }
+
+  private fallbackParams(): Record<string, unknown> {
+    return this.refusalFallback ? { betas: [FALLBACK_BETA], fallbacks: "default" } : {};
+  }
+
+  fingerprint(endpoint: string, body: unknown): string {
+    return sha256Bytes(`anthropic|${endpoint}|${canonicalJson(body)}`);
+  }
+
+  private async tryReuse<S extends z.ZodType>(fp: string, schema: S, h: LlmCallCtx): Promise<z.infer<S> | undefined> {
+    if (h.newRequest) return undefined;
+    const r = await h.costs.findReceipt(fp);
+    if (!r?.outputRef) return undefined;
+    try {
+      const stored = JSON.parse(await readFile(join(this.rawDir, `${fp}.json`), "utf8")) as { parsed?: unknown };
+      const ok = schema.safeParse(stored.parsed);
+      if (!ok.success) return undefined;
+      h.onReceipt?.(r);
+      this.logger.debug("llm: reused paid response", { fingerprint: fp });
+      return ok.data;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async persist(fp: string, data: Record<string, unknown>): Promise<string> {
+    await mkdir(this.rawDir, { recursive: true });
+    const file = join(this.rawDir, `${fp}.json`);
+    const tmp = `${file}.${process.pid}.tmp`;
+    await writeFile(tmp, stableStringify(data), "utf8");
+    await rename(tmp, file);
+    return `costs/llm/${fp}.json`;
+  }
+
+  private async record(h: LlmCallCtx, o: { fp: string; endpoint: string; stage: StageId; lang: Lang | null; usage: Usage; outputRef: string | null }): Promise<Receipt> {
+    const r = await h.costs.record({
+      fingerprint: o.fp, provider: "anthropic", endpoint: o.endpoint, model: MODEL, stage: o.stage, lang: o.lang,
+      usage: {
+        input_tokens: o.usage.input, output_tokens: o.usage.output, cache_read_input_tokens: o.usage.cacheRead,
+        cache_creation_input_tokens: o.usage.cacheWrite, web_search_requests: o.usage.webSearches, web_fetch_requests: o.usage.webFetches,
+      },
+      costUsd: usageCostUsd(o.usage), outputRef: o.outputRef,
+    });
+    h.onReceipt?.(r);
+    return r;
+  }
+
+  /** One API call; returns the message and its parsed output (null when the output does not match the schema). */
+  private async send<S extends z.ZodType>(req: StructuredRequest<S>, maxTokens: number, signal: AbortSignal): Promise<{ msg: MessageLike; parsed: z.infer<S> | null }> {
+    const base = {
+      model: MODEL, max_tokens: maxTokens, system: systemParam(req.system), messages: [{ role: "user", content: req.user }],
+    };
+    try {
+      if (maxTokens > STREAM_ABOVE) {
+        const params = { ...base, ...this.fallbackParams(), output_config: { effort: req.effort, format: betaZodOutputFormat(req.schema) } };
+        const msg = (await this.sdk.beta.messages.stream(params as never, { signal } as never).finalMessage()) as MessageLike;
+        const text = (Array.isArray(msg.content) ? (msg.content as { type?: string; text?: string }[]) : [])
+          .filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
+        let parsed: z.infer<S> | null = null;
+        try {
+          const r = req.schema.safeParse(JSON.parse(text));
+          parsed = r.success ? r.data : null;
+        } catch {
+          parsed = null;
+        }
+        return { msg, parsed };
+      }
+      const opts = { signal, timeout: PARSE_TIMEOUT_MS } as never;
+      const msg = (this.refusalFallback
+        ? await this.sdk.beta.messages.parse({ ...base, ...this.fallbackParams(), output_config: { effort: req.effort, format: betaZodOutputFormat(req.schema) } } as never, opts)
+        : await this.sdk.messages.parse({ ...base, output_config: { effort: req.effort, format: zodOutputFormat(req.schema) } } as never, opts)) as MessageLike;
+      const r = msg.parsed_output === null || msg.parsed_output === undefined ? null : req.schema.safeParse(msg.parsed_output);
+      return { msg, parsed: r && r.success ? r.data : null };
+    } catch (e) {
+      // the SDK's parse helper throws when the returned JSON does not match the schema → treat as a null parse
+      const name = (e as { name?: string })?.name ?? "";
+      if (e instanceof SyntaxError || name === "ZodError" || (name === "AnthropicError" && /pars/i.test(String((e as Error).message)))) {
+        return { msg: { stop_reason: "end_turn", usage: null }, parsed: null };
+      }
+      throw mapSdkError(e, signal);
+    }
+  }
+
+  async structured<S extends z.ZodType>(req: StructuredRequest<S>, h: LlmCallCtx): Promise<z.infer<S>> {
+    if (h.signal.aborted) throw new DocmakerError("CANCELED", "canceled");
+    const identity = {
+      model: MODEL, step: req.step, key: req.key, effort: req.effort, max_tokens: req.maxTokens, system: req.system, user: hashableUser(req.user),
+      schema: z.toJSONSchema(req.schema, { unrepresentable: "any" }), fallback: this.refusalFallback,
+    };
+    const endpoint = req.maxTokens > STREAM_ABOVE ? "messages.stream" : "messages.parse";
+    const fp = this.fingerprint(endpoint, identity);
+    const reused = await this.tryReuse(fp, req.schema, h);
+    if (reused !== undefined) return reused;
+
+    let usage = ZERO;
+    let maxTokens = req.maxTokens;
+    let grew = false;
+    let reparsed = false;
+    let last: MessageLike = {};
+    let attempts = 0;
+    for (;;) {
+      attempts++;
+      const { msg, parsed } = await this.send(req, maxTokens, h.signal);
+      last = msg;
+      usage = addUsage(usage, msg);
+      if (msg.stop_reason === "refusal") {
+        await this.record(h, { fp, endpoint, stage: req.stage, lang: req.lang, usage, outputRef: null });
+        throw new DocmakerError("LLM_REFUSAL", `the model declined the ${req.step} step${msg.stop_details?.category ? ` (${String(msg.stop_details.category)})` : ""}`, { hint: REFUSAL_HINT });
+      }
+      if (msg.stop_reason === "max_tokens" && !grew) {
+        grew = true;
+        maxTokens = Math.min(MAX_TOKENS_CAP, Math.ceil(maxTokens * 1.5));
+        this.logger.warn("llm: max_tokens reached; retrying once with a larger budget", { step: req.step, maxTokens });
+        continue;
+      }
+      if (parsed === null) {
+        if (!reparsed) {
+          reparsed = true;
+          this.logger.warn("llm: structured output did not parse; retrying once", { step: req.step });
+          continue;
+        }
+        await this.record(h, { fp, endpoint, stage: req.stage, lang: req.lang, usage, outputRef: null });
+        throw new DocmakerError("LLM_SCHEMA", `the ${req.step} output does not match its schema (stop_reason ${String(msg.stop_reason)})`, { retryable: true });
+      }
+      const outputRef = await this.persist(fp, { fingerprint: fp, step: req.step, key: req.key, model: MODEL, attempts, request: identity, response: last, parsed });
+      await this.record(h, { fp, endpoint, stage: req.stage, lang: req.lang, usage, outputRef });
+      h.costs.assertWithinBudget(req.stage, req.lang);
+      return parsed;
+    }
+  }
+
+  async research(req: ResearchRequest, h: LlmCallCtx & { progress: Progress }): Promise<ResearchResult> {
+    const tools: Record<string, unknown>[] = [];
+    if (req.maxSearches > 0) tools.push({ type: "web_search_20260209", name: "web_search", max_uses: req.maxSearches });
+    if (req.maxFetches > 0) tools.push({ type: "web_fetch_20260209", name: "web_fetch", max_uses: req.maxFetches, citations: { enabled: true }, max_content_tokens: 20000 });
+    const turns: TurnLike[] = req.resumeTurns.filter((t): t is TurnLike => !!t && typeof t === "object" && Array.isArray((t as TurnLike).content));
+    if (turns.length !== req.resumeTurns.length) this.logger.warn("research: ignored malformed saved turns", { saved: req.resumeTurns.length, kept: turns.length });
+    // append-only: assistant turns are replayed unchanged (thinking blocks, encrypted_content included)
+    const messages: { role: "user" | "assistant"; content: unknown }[] = [{ role: "user", content: req.user }];
+    for (const t of turns) messages.push({ role: "assistant", content: t.content });
+    const system = systemParam(req.system);
+    const baseId = this.fingerprint("messages.research", { model: MODEL, system: req.system, user: req.user, tools });
+    let done = turns.length > 0 && turns[turns.length - 1]!.stop_reason !== "pause_turn";
+    while (!done && turns.length < MAX_RESEARCH_TURNS) {
+      if (h.signal.aborted) throw new DocmakerError("CANCELED", "canceled");
+      const n = turns.length + 1;
+      h.progress(Math.min(0.95, (n - 1) / MAX_RESEARCH_TURNS), `research turn ${n}`);
+      let msg: MessageLike;
+      try {
+        msg = (await this.sdk.beta.messages
+          .stream({ model: MODEL, max_tokens: MAX_TOKENS_CAP, system, tools, messages, output_config: { effort: "high" }, ...this.fallbackParams() } as never, { signal: h.signal } as never)
+          .finalMessage()) as MessageLike;
+      } catch (e) {
+        throw mapSdkError(e, h.signal);
+      }
+      turns.push(msg as TurnLike);
+      await req.onTurn(n, msg);
+      await this.record(h, { fp: sha256Bytes(`${baseId}|turn|${n}`), endpoint: "messages.stream", stage: "research", lang: null, usage: addUsage(ZERO, msg), outputRef: `research/raw/turn-${n}.json` });
+      h.costs.assertWithinBudget("research", null);
+      if (msg.stop_reason === "refusal") throw new DocmakerError("LLM_REFUSAL", "the model declined the research step", { hint: REFUSAL_HINT });
+      if (msg.stop_reason === "pause_turn") {
+        messages.push({ role: "assistant", content: msg.content });
+        continue;
+      }
+      if (msg.stop_reason === "max_tokens") this.logger.warn("research: the dossier hit max_tokens and may be truncated");
+      done = true;
+    }
+    const built = buildResearchFromTurns(turns);
+    for (const e of built.serverErrors) this.logger.warn(`research: server tool error ${e}`);
+    h.progress(1, "research done", { sources: built.registry.length });
+    return { dossierMarkdown: built.dossierMarkdown, registry: built.registry, searchesUsed: built.searchesUsed, fetchesUsed: built.fetchesUsed, turns: turns.length };
+  }
+}
+
+export function createAnthropicSdk(apiKey: string | null): AnthropicLike {
+  try {
+    return new Anthropic(apiKey ? { apiKey, maxRetries: 2 } : { maxRetries: 2 }) as unknown as AnthropicLike;
+  } catch (e) {
+    throw new DocmakerError("CONFIG_MISSING_KEY", "no Anthropic API key configured", { cause: e, hint: "set ANTHROPIC_API_KEY with `docmaker setup` or the settings page" });
+  }
+}

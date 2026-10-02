@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "tulip-mania",
+  "title": "Tulip Mania",
+  "idea": "Tulip mania: how a flower became the first famous bubble in history, and why the legend is bigger than the crash",
+  "languages": [
+    "en",
+    "fr"
+  ],
+  "primaryLang": "en",
+  "targetMinutes": 1.5,
+  "styleId": "drama-commentary",
+  "asOf": "2026-10-02",
+  "seed": 1637,
+  "autoApproveGates": true
+}

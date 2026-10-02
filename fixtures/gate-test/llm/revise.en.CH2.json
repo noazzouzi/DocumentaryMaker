@@ -1,0 +1,47 @@
+{
+  "chapter_id": "CH2",
+  "title": "The Charges",
+  "video_title": "",
+  "segments": [
+    {
+      "id": "CH2-S01",
+      "type": "narration",
+      "text": "In June 2026, prosecutors charged Vance with misusing client funds. He denies the charges and has not been tried.",
+      "quote_id": "",
+      "fact_ids": [
+        "C1",
+        "E2",
+        "S1"
+      ],
+      "device": "none",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH2-S02",
+      "type": "clip",
+      "text": "We never touched a cent that was not ours.",
+      "quote_id": "Q1",
+      "fact_ids": [
+        "Q1"
+      ],
+      "device": "none",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH2-S03",
+      "type": "narration",
+      "text": "That same week, his bookkeeper Dara Quill walked out of the company.",
+      "quote_id": "",
+      "fact_ids": [
+        "P2",
+        "E3",
+        "S1"
+      ],
+      "device": "cliffhanger",
+      "subtitle_translation": ""
+    }
+  ],
+  "loops_opened": [],
+  "loops_closed": [],
+  "summary_for_next": "The Charges."
+}

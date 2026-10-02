@@ -1,0 +1,94 @@
+{
+  "language": "en",
+  "story_shape": "rise-fall",
+  "title": "Tulip Mania: The Flower That Fooled History",
+  "thesis": "Tulip mania was real for a few traders; the ruin of a nation is a legend built on a satire and a Victorian bestseller.",
+  "hook_teasers": [
+    {
+      "id": "T1",
+      "teaser": "A single bulb for 10,000 guilders",
+      "paid_off_in": "CH2"
+    },
+    {
+      "id": "T2",
+      "teaser": "The auction where nobody bought",
+      "paid_off_in": "CH3"
+    }
+  ],
+  "loops": [
+    {
+      "id": "L1",
+      "question": "How did a flower become a fortune, then nothing?",
+      "opened_in": "CH1",
+      "closed_in": "CH3"
+    }
+  ],
+  "chapters": [
+    {
+      "id": "CH1",
+      "act": "cold_open",
+      "title": "The Auction",
+      "target_words": 50,
+      "purpose": "Open on the Haarlem auction without buyers; contrast with the 10,000-guilder peak; open the central loop.",
+      "event_ids": [
+        "E4"
+      ],
+      "claim_ids": [],
+      "quote_ids": [],
+      "opens_loops": [
+        "L1"
+      ],
+      "closes_loops": [],
+      "exit_hook": "How does a flower become a fortune, then nothing at all?",
+      "ad_break_after": false
+    },
+    {
+      "id": "CH2",
+      "act": "act1_rise",
+      "title": "The Rise",
+      "target_words": 88,
+      "purpose": "From Clusius's garden to tavern contracts; Mackay's picture of a whole nation trading.",
+      "event_ids": [
+        "E1",
+        "E2",
+        "E3",
+        "E7"
+      ],
+      "claim_ids": [
+        "C1"
+      ],
+      "quote_ids": [],
+      "opens_loops": [],
+      "closes_loops": [],
+      "exit_hook": "Everyone, it seemed, was about to get rich.",
+      "ad_break_after": false
+    },
+    {
+      "id": "CH3",
+      "act": "act3_reckoning",
+      "title": "The Reckoning",
+      "target_words": 80,
+      "purpose": "The collapse, the guild ruling, and the twist: the ruin Mackay described is contested by Goldgar's archival study.",
+      "event_ids": [
+        "E5",
+        "E6",
+        "E8"
+      ],
+      "claim_ids": [
+        "C1",
+        "C2"
+      ],
+      "quote_ids": [],
+      "opens_loops": [],
+      "closes_loops": [
+        "L1"
+      ],
+      "exit_hook": "The bubble was real for a few; the legend was written for everyone else.",
+      "ad_break_after": false
+    }
+  ],
+  "callback_plan": [
+    "The auction without buyers (CH1) returns as the collapse in CH3"
+  ],
+  "next_video_bridge": "The South Sea Bubble: when a whole kingdom really did go broke."
+}

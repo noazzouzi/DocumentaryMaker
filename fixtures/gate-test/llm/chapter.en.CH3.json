@@ -1,0 +1,36 @@
+{
+  "chapter_id": "CH3",
+  "title": "No Verdict Yet",
+  "video_title": "",
+  "segments": [
+    {
+      "id": "CH3-S01",
+      "type": "narration",
+      "text": "A civil claim by the clients was settled without any admission of liability.",
+      "quote_id": "",
+      "fact_ids": [
+        "C2",
+        "S3"
+      ],
+      "device": "none",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH3-S02",
+      "type": "narration",
+      "text": "For now, the trail of the money ends in a courtroom, and the charges, which Vance denies, are still pending.",
+      "quote_id": "",
+      "fact_ids": [
+        "C1",
+        "S1"
+      ],
+      "device": "payoff",
+      "subtitle_translation": ""
+    }
+  ],
+  "loops_opened": [],
+  "loops_closed": [
+    "L1"
+  ],
+  "summary_for_next": "No Verdict Yet."
+}

@@ -52,3 +52,21 @@ export interface StyleRegistry { /* … */ readonly rejected?: readonly { dir: s
 ```
 
 **Local workaround.** Implemented as described; additive exports: `inspectStyleDir` (non-throwing lint of a dir, for `style validate`), `lintPromptPack`, `riskFlagsOffline`, `styleFontAssets` (asset-server paths `styles/<dir>/fonts/<file>` for user style fonts → `StyleRenderTokens.fonts`), `createRegistry`, `STYLE_RULES`.
+
+## 2026-10-02 llm (W2) → engine (W10), core (notes; additive API, no contract change required)
+
+**Problem.** A few §4.19 llm signatures cannot carry everything the engine needs; W2 added **optional/additive** exports instead of changing them.
+
+1. `SegmentSkeleton.primaryHash?` (optional): `writeChapter` for a secondary language copies it into `ScriptSegment.primaryHash`. Build skeletons with the new export `segmentSkeleton(primaryChapter)` (sets `primaryHash = hashJson(displayText)`), otherwise secondary segments get `primaryHash: null`.
+2. Video title: `writeChapter` returns only a `ChapterScript`; use the new `writeChapterWithTitle(ctx, input)` → `{ chapter, videoTitle, issues }` for the first chapter (`Script.title`).
+3. `syntheticBeats(script, langs, startOrder, planned?)`: the optional `planned` lets breath beats copy the previous narration beat's visual (§4.6). Prefer the new `assembleBeatPlans(script, planned, langs)` → planned + synthetic beats with `order` renumbered by script position (synthetic beats otherwise get orders after `startOrder`, not between the narration beats).
+4. `lintScript({..., primary?})`: pass the primary-language chapters for secondary languages to get the `lang-parity` rule.
+5. `deterministicFactChecks({..., personAcks?})` / `factCheck({..., personAcks?})`: person ids acknowledged through the `person-ack` gate (rule h). Without it, every named `publicFigure:false` person is a high item.
+6. `sliceBeats({..., style?})`: pass `style.data` to get beat-duration warnings for the secondary language.
+7. `LlmCallCtx.onReceipt?` (optional) and `LlmStep` gains `"transcreate"` (key `transcreate.<lang>.<segmentId>`).
+8. Deterministic fact-check ids hash `where|normWord(sentence + " " + rule + ":" + entity)|claimKind|origin`: the plain §6.3 formula collides when two rules (or two persons/quotes) flag the same sentence. Still stable across re-runs.
+9. `createLlmClient({provider:"fixture", fixtureDir})` accepts `<repoRoot>/fixtures/<id>` or its `llm/` directory. The `recheck` step uses `llm.research()` (web_search ≤ 10, no fetch) then a structured `RecheckWire` delta (`recheck.json` in fixtures).
+10. `writeOutline` already runs `validateOutline` + one repair round (key `outline.repair`; a missing fixture means "no repair"); `planBeats` likewise (`beats.<CHn>.repair`).
+
+**Proposed diff.** None required. Optionally (I): make `SegmentSkeleton.primaryHash` and `lintScript.primary` part of the §4.19 text.
+**Local workaround.** Implemented as optional parameters/new exports in `packages/llm` (all §4.19 signatures unchanged).

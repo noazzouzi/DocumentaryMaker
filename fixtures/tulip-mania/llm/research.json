@@ -1,0 +1,38 @@
+{
+  "dossier_markdown": "# Tulip mania (Dutch Republic, 1634–1637) — research notes\n- Contract prices for rare tulip bulbs rose sharply from 1634 and collapsed in February 1637 [https://en.wikipedia.org/wiki/Tulip_mania]\n- 1593: Carolus Clusius planted his tulip collection in the new Hortus Botanicus of Leiden [https://en.wikipedia.org/wiki/Tulip_mania]\n- By 1634 speculators entered the market; by November 1636 even common bulbs rose [https://en.wikipedia.org/wiki/Tulip_mania]\n- Traders met in 'colleges' in taverns; some contracts changed hands five times; no bulbs were delivered [https://en.wikipedia.org/wiki/Tulip_mania]\n- At its height a Semper Augustus bulb sold for 10,000 guilders; a skilled artisan earned about 300 guilders a year [https://en.wikipedia.org/wiki/Tulip_mania]\n- 3 February 1637, Haarlem: according to a contemporary satire, an auctioneer found no buyers despite lowering the price several times; the actual circumstances are unknown [https://en.wikipedia.org/wiki/Tulip_mania]\n- 5 February 1637: last date of the bubble, 98 sales recorded [https://en.wikipedia.org/wiki/Tulip_mania]\n- 24 February 1637: the florists' guild turned contracts written after 30 November 1636 into option contracts [https://en.wikipedia.org/wiki/Tulip_mania]\n- The satire 'Dialogues between Waermondt and Gaergoedt' is the main source of price data [https://en.wikipedia.org/wiki/Tulip_mania]\n- 1841: Charles Mackay popularised the story (investors ruined, sailor who ate a bulb) [https://www.gutenberg.org/ebooks/24518]\n- 2007: Anne Goldgar's archival study: traders were mostly wealthy merchants and craftsmen; Mackay's account is contested [https://books.google.com/books?id=gViwLbCJ7X0C] [https://en.wikipedia.org/wiki/Tulip_mania]",
+  "registry": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Tulip_mania",
+      "title": "Tulip mania",
+      "page_age": null,
+      "fetched": true,
+      "cited": 9,
+      "snippets": [
+        "A contemporary satire suggests that the crisis started to unravel at February 3 in Haarlem, where an auctioneer failed to find willing buyers, despite lowering the asking price several times.",
+        "The Semper Augustus was the most expensive tulip during the mania, at its height this tulip was even sold for ƒ10,000"
+      ]
+    },
+    {
+      "url": "https://books.google.com/books?id=gViwLbCJ7X0C",
+      "title": "Tulipmania: Money, Honor, and Knowledge in the Dutch Golden Age",
+      "page_age": null,
+      "fetched": true,
+      "cited": 1,
+      "snippets": [
+        "Tulipmania: Money, Honor, and Knowledge in the Dutch Golden Age, Anne Goldgar, University of Chicago Press, 2007"
+      ]
+    },
+    {
+      "url": "https://www.gutenberg.org/ebooks/24518",
+      "title": "Memoirs of Extraordinary Popular Delusions and the Madness of Crowds by Charles Mackay",
+      "page_age": null,
+      "fetched": true,
+      "cited": 1,
+      "snippets": [
+        "Nobles, citizens, farmers, mechanics, sea-men, footmen, maid-servants, even chimney-sweeps and old clothes-women, dabbled in tulips."
+      ]
+    }
+  ],
+  "searches_used": 6,
+  "fetches_used": 3
+}

@@ -1,0 +1,85 @@
+{
+  "chapter_id": "CH2",
+  "title": "L’ascension",
+  "video_title": "",
+  "segments": [
+    {
+      "id": "CH2-S01",
+      "type": "narration",
+      "text": "Tout part d’un botaniste. En 1593, Carolus Clusius plante ses tulipes dans le jardin botanique de Leyde.",
+      "quote_id": "",
+      "fact_ids": [
+        "P1",
+        "E1",
+        "S1"
+      ],
+      "device": "none",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH2-S02",
+      "type": "narration",
+      "text": "Fleurs rares, couleurs imprévisibles : dès 1634, les spéculateurs entrent sur le marché.",
+      "quote_id": "",
+      "fact_ids": [
+        "E2",
+        "S1"
+      ],
+      "device": "none",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH2-S03",
+      "type": "narration",
+      "text": "Les contrats changent de main dans les tavernes, parfois cinq fois, pour des bulbes encore en terre.",
+      "quote_id": "",
+      "fact_ids": [
+        "E3",
+        "S1"
+      ],
+      "device": "pattern_interrupt",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH2-S04",
+      "type": "narration",
+      "text": "En 1841, Charles Mackay écrira que tout le monde s’y mettait, jusqu’aux ramoneurs et aux fripières.",
+      "quote_id": "",
+      "fact_ids": [
+        "P2",
+        "E7",
+        "Q1",
+        "S3"
+      ],
+      "device": "none",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH2-S05",
+      "type": "narration",
+      "text": "Au sommet, un bulbe pouvait coûter plus de dix fois le salaire annuel d’un artisan.",
+      "quote_id": "",
+      "fact_ids": [
+        "N1",
+        "N2",
+        "S1"
+      ],
+      "device": "none",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH2-S06",
+      "type": "narration",
+      "text": "Tout le monde, semblait-il, allait faire fortune.",
+      "quote_id": "",
+      "fact_ids": [
+        "S1"
+      ],
+      "device": "cliffhanger",
+      "subtitle_translation": ""
+    }
+  ],
+  "loops_opened": [],
+  "loops_closed": [],
+  "summary_for_next": "Du jardin de Clusius à Leyde (1593) aux spéculateurs (1634) et aux contrats revendus cinq fois dans les tavernes ; Mackay prétendra que tout le monde spéculait."
+}

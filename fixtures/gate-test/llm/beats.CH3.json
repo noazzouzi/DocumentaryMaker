@@ -1,0 +1,106 @@
+{
+  "chapter_id": "CH3",
+  "beats": [
+    {
+      "id": "CH3-B001",
+      "segment_id": "CH3-S01",
+      "text": "A civil claim by the clients was settled",
+      "est_seconds": 2.4,
+      "purpose": "context",
+      "energy": 3,
+      "visual_kind": "document_screenshot",
+      "visual_query": "settlement document",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "ken_burns",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "C2",
+        "S3"
+      ],
+      "cue_tags": []
+    },
+    {
+      "id": "CH3-B002",
+      "segment_id": "CH3-S01",
+      "text": "without any admission of liability.",
+      "est_seconds": 2.1,
+      "purpose": "context",
+      "energy": 3,
+      "visual_kind": "stock_broll",
+      "visual_query": "handshake lawyers",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "ken_burns",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "C2"
+      ],
+      "cue_tags": []
+    },
+    {
+      "id": "CH3-B003",
+      "segment_id": "CH3-S02",
+      "text": "For now, the trail of the money ends in a courtroom,",
+      "est_seconds": 3.2,
+      "purpose": "payoff",
+      "energy": 3,
+      "visual_kind": "archival_photo",
+      "visual_query": "empty courtroom",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "ken_burns",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "C1"
+      ],
+      "cue_tags": []
+    },
+    {
+      "id": "CH3-B004",
+      "segment_id": "CH3-S02",
+      "text": "and the charges, which Vance denies, are still pending.",
+      "est_seconds": 3.3,
+      "purpose": "payoff",
+      "energy": 3,
+      "visual_kind": "text_card",
+      "visual_query": "pending stamp",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "ken_burns",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "C1"
+      ],
+      "cue_tags": []
+    }
+  ]
+}

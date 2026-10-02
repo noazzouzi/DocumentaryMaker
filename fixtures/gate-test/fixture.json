@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "gate-test",
+  "title": "Glimmerline (fictional gate test)",
+  "idea": "The fall of Glimmerline, a fictional influencer agency (safety-gate test fixture; every person and company is invented)",
+  "languages": [
+    "en"
+  ],
+  "primaryLang": "en",
+  "targetMinutes": 1.5,
+  "styleId": "drama-commentary",
+  "asOf": "2026-06-15",
+  "seed": 4242,
+  "autoApproveGates": false
+}

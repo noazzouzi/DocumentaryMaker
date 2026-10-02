@@ -1,0 +1,105 @@
+{
+  "chapter_id": "CH3",
+  "beats": [
+    {
+      "id": "CH3-B001",
+      "text": "Puis, soudain, tout s’arrête.",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "cue_anchor_words": [],
+      "motion_data_json": ""
+    },
+    {
+      "id": "CH3-B002",
+      "text": "Dès le début de février 1637,",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "cue_anchor_words": [],
+      "motion_data_json": "{\"events\": [{\"date\": \"1637-02-05\", \"label\": \"Dernières ventes\", \"event_id\": \"E5\"}, {\"date\": \"1637-02-24\", \"label\": \"Les contrats deviennent des options\", \"event_id\": \"E6\"}], \"active_index\": 1}"
+    },
+    {
+      "id": "CH3-B003",
+      "text": "les acheteurs disparaissent, les prix s’effondrent.",
+      "on_screen_text": "",
+      "emphasis_words": [
+        "effondrent"
+      ],
+      "cue_anchor_words": [],
+      "motion_data_json": ""
+    },
+    {
+      "id": "CH3-B004",
+      "text": "Mais voici le retournement :",
+      "on_screen_text": "LE RETOURNEMENT",
+      "emphasis_words": [],
+      "cue_anchor_words": [],
+      "motion_data_json": "{\"lines\": [\"LE RETOURNEMENT\"], \"emphasis\": [\"RETOURNEMENT\"]}"
+    },
+    {
+      "id": "CH3-B005",
+      "text": "la ruine dont parle Mackay n’a peut-être jamais eu lieu.",
+      "on_screen_text": "",
+      "emphasis_words": [
+        "jamais"
+      ],
+      "cue_anchor_words": [
+        "jamais"
+      ],
+      "motion_data_json": ""
+    },
+    {
+      "id": "CH3-B006",
+      "text": "L’historienne Anne Goldgar a lu les archives :",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "cue_anchor_words": [],
+      "motion_data_json": ""
+    },
+    {
+      "id": "CH3-B007",
+      "text": "les négociants étaient surtout de riches marchands et artisans.",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "cue_anchor_words": [],
+      "motion_data_json": ""
+    },
+    {
+      "id": "CH3-B008",
+      "text": "Selon elle, la plupart des récits",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "cue_anchor_words": [
+        "Selon"
+      ],
+      "motion_data_json": "{\"quote_id\": \"Q3\", \"text\": \"reposent sur un ou deux pamphlets de propagande contemporains et sur une quantité prodigieuse de plagiat\", \"speaker\": \"Anne Goldgar\", \"source\": \"Tulipmania\", \"date\": \"2007\", \"translated\": true}"
+    },
+    {
+      "id": "CH3-B009",
+      "text": "reposent sur un peu de propagande et beaucoup de plagiat.",
+      "on_screen_text": "",
+      "emphasis_words": [
+        "plagiat"
+      ],
+      "cue_anchor_words": [
+        "plagiat"
+      ],
+      "motion_data_json": ""
+    },
+    {
+      "id": "CH3-B010",
+      "text": "La bulle était réelle pour quelques-uns.",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "cue_anchor_words": [],
+      "motion_data_json": ""
+    },
+    {
+      "id": "CH3-B011",
+      "text": "La légende fut écrite pour tous les autres.",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "cue_anchor_words": [],
+      "motion_data_json": ""
+    }
+  ]
+}

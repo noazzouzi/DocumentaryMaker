@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "segment_id": "CH1-S02",
+      "where": "CH1-S02",
+      "surface": "narration",
+      "sentence": "Nobody bought a thing.",
+      "claim_kind": "fact",
+      "verdict": "partially_supported",
+      "risk": "low",
+      "fact_ids": [
+        "E4"
+      ],
+      "problem": "Only a contemporary satire reports the failed Haarlem auction; the actual circumstances of the crash are unknown. The previous sentence attributes it to the satire.",
+      "suggested_rewrite": ""
+    }
+  ],
+  "needs_more_research": [],
+  "title_thumbnail_issues": []
+}

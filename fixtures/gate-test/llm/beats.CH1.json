@@ -1,0 +1,163 @@
+{
+  "chapter_id": "CH1",
+  "beats": [
+    {
+      "id": "CH1-B001",
+      "segment_id": "CH1-S01",
+      "text": "In March 2026,",
+      "est_seconds": 0.8,
+      "purpose": "hook",
+      "energy": 3,
+      "visual_kind": "text_card",
+      "visual_query": "calendar march",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "ken_burns",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "E1"
+      ],
+      "cue_tags": []
+    },
+    {
+      "id": "CH1-B002",
+      "segment_id": "CH1-S01",
+      "text": "the influencer agency Glimmerline",
+      "est_seconds": 2.0,
+      "purpose": "hook",
+      "energy": 3,
+      "visual_kind": "stock_broll",
+      "visual_query": "empty office at night",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "ken_burns",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "E1"
+      ],
+      "cue_tags": []
+    },
+    {
+      "id": "CH1-B003",
+      "segment_id": "CH1-S01",
+      "text": "went dark overnight.",
+      "est_seconds": 1.2,
+      "purpose": "hook",
+      "energy": 3,
+      "visual_kind": "stock_broll",
+      "visual_query": "office lights switching off",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "ken_burns",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "E1"
+      ],
+      "cue_tags": []
+    },
+    {
+      "id": "CH1-B004",
+      "segment_id": "CH1-S02",
+      "text": "Its founder, Marlo Vance,",
+      "est_seconds": 1.5,
+      "purpose": "hook",
+      "energy": 3,
+      "visual_kind": "archival_photo",
+      "visual_query": "Marlo Vance",
+      "person_ids": [
+        "P1"
+      ],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "ken_burns",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "P1"
+      ],
+      "cue_tags": [
+        {
+          "type": "PERSON_INTRO",
+          "word": "Marlo",
+          "value": "Marlo Vance"
+        }
+      ]
+    },
+    {
+      "id": "CH1-B005",
+      "segment_id": "CH1-S02",
+      "text": "had promised his clients a fortune.",
+      "est_seconds": 2.1,
+      "purpose": "hook",
+      "energy": 3,
+      "visual_kind": "stock_broll",
+      "visual_query": "stacks of cash",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "ken_burns",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "P1"
+      ],
+      "cue_tags": []
+    },
+    {
+      "id": "CH1-B006",
+      "segment_id": "CH1-S03",
+      "text": "So where did the money go?",
+      "est_seconds": 1.6,
+      "purpose": "cliffhanger",
+      "energy": 3,
+      "visual_kind": "text_card",
+      "visual_query": "question mark",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "kinetic_text",
+      "motion_data_json": "{\"lines\": [\"WHERE DID IT GO?\"]}",
+      "on_screen_text": "WHERE DID IT GO?",
+      "emphasis_words": [],
+      "camera": "ken_burns",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "S1"
+      ],
+      "cue_tags": []
+    }
+  ]
+}

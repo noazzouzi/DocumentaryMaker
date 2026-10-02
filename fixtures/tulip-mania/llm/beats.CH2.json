@@ -1,0 +1,371 @@
+{
+  "chapter_id": "CH2",
+  "beats": [
+    {
+      "id": "CH2-B001",
+      "segment_id": "CH2-S01",
+      "text": "It all started with a botanist.",
+      "est_seconds": 1.9,
+      "purpose": "context",
+      "energy": 2,
+      "visual_kind": "archival_photo",
+      "visual_query": "carolus clusius portrait engraving",
+      "person_ids": [
+        "P1"
+      ],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "ken_burns",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "change_mood",
+      "music_mood": "mysterious",
+      "fact_ids": [
+        "P1",
+        "S1"
+      ],
+      "cue_tags": []
+    },
+    {
+      "id": "CH2-B002",
+      "segment_id": "CH2-S01",
+      "text": "In 1593, Carolus Clusius planted his tulips",
+      "est_seconds": 2.6,
+      "purpose": "context",
+      "energy": 3,
+      "visual_kind": "archival_photo",
+      "visual_query": "carolus clusius portrait",
+      "person_ids": [
+        "P1"
+      ],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [
+        "Clusius"
+      ],
+      "camera": "ken_burns",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "P1",
+        "E1"
+      ],
+      "cue_tags": [
+        {
+          "type": "PERSON_INTRO",
+          "word": "Carolus",
+          "value": "Carolus Clusius"
+        }
+      ]
+    },
+    {
+      "id": "CH2-B003",
+      "segment_id": "CH2-S01",
+      "text": "in the new botanical garden of Leiden.",
+      "est_seconds": 2.3,
+      "purpose": "context",
+      "energy": 2,
+      "visual_kind": "archival_photo",
+      "visual_query": "hortus botanicus leiden historic garden",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "ken_burns",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "E1",
+        "S1"
+      ],
+      "cue_tags": []
+    },
+    {
+      "id": "CH2-B004",
+      "segment_id": "CH2-S02",
+      "text": "Rare flowers, unpredictable colours,",
+      "est_seconds": 2.2,
+      "purpose": "context",
+      "energy": 3,
+      "visual_kind": "archival_photo",
+      "visual_query": "flamed tulip watercolour seventeenth century",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "ken_burns",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "S1"
+      ],
+      "cue_tags": []
+    },
+    {
+      "id": "CH2-B005",
+      "segment_id": "CH2-S02",
+      "text": "and by 1634, speculators had entered the market.",
+      "est_seconds": 2.9,
+      "purpose": "escalation",
+      "energy": 3,
+      "visual_kind": "archival_photo",
+      "visual_query": "dutch merchants seventeenth century painting",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "ken_burns",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "build",
+      "music_mood": "tense",
+      "fact_ids": [
+        "E2",
+        "S1"
+      ],
+      "cue_tags": [
+        {
+          "type": "TENSION_BUILD",
+          "word": "speculators",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "id": "CH2-B006",
+      "segment_id": "CH2-S03",
+      "text": "Contracts changed hands in taverns, sometimes five times,",
+      "est_seconds": 3.5,
+      "purpose": "escalation",
+      "energy": 4,
+      "visual_kind": "archival_photo",
+      "visual_query": "dutch tavern interior painting seventeenth century",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [
+        "five"
+      ],
+      "camera": "punch_in",
+      "transition_in": "cut",
+      "sfx": [
+        "whoosh"
+      ],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "E3",
+        "S1"
+      ],
+      "cue_tags": []
+    },
+    {
+      "id": "CH2-B007",
+      "segment_id": "CH2-S03",
+      "text": "for bulbs still in the ground.",
+      "est_seconds": 1.8,
+      "purpose": "punchline",
+      "energy": 3,
+      "visual_kind": "stock_broll",
+      "visual_query": "tulip bulbs in soil",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "ken_burns",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "E3"
+      ],
+      "cue_tags": [
+        {
+          "type": "IRONY",
+          "word": "ground",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "id": "CH2-B008",
+      "segment_id": "CH2-S04",
+      "text": "In 1841, Charles Mackay wrote that everyone joined in,",
+      "est_seconds": 3.3,
+      "purpose": "context",
+      "energy": 3,
+      "visual_kind": "motion_graphic",
+      "visual_query": "old book pages",
+      "person_ids": [
+        "P2"
+      ],
+      "youtube_quote_to_find": "",
+      "motion_template": "quote_card",
+      "motion_data_json": "{\"quote_id\": \"Q1\", \"text\": \"Nobles, citizens, farmers, mechanics, sea-men, footmen, maid-servants, even chimney-sweeps and old clothes-women, dabbled in tulips.\", \"speaker\": \"Charles Mackay\", \"source\": \"Extraordinary Popular Delusions\", \"date\": \"1841\"}",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "static",
+      "transition_in": "cut",
+      "sfx": [
+        "text_pop"
+      ],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "P2",
+        "E7",
+        "Q1",
+        "S3"
+      ],
+      "cue_tags": [
+        {
+          "type": "QUOTE",
+          "word": "wrote",
+          "value": "Charles Mackay"
+        }
+      ]
+    },
+    {
+      "id": "CH2-B009",
+      "segment_id": "CH2-S04",
+      "text": "down to chimney-sweeps and old clothes-women.",
+      "est_seconds": 2.7,
+      "purpose": "escalation",
+      "energy": 3,
+      "visual_kind": "archival_photo",
+      "visual_query": "seventeenth century dutch street scene painting",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [
+        "chimney-sweeps"
+      ],
+      "camera": "ken_burns",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "Q1",
+        "S3"
+      ],
+      "cue_tags": [
+        {
+          "type": "EMPHASIS",
+          "word": "chimney-sweeps",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "id": "CH2-B010",
+      "segment_id": "CH2-S05",
+      "text": "At the peak, a single bulb could cost more than ten times",
+      "est_seconds": 3.5,
+      "purpose": "escalation",
+      "energy": 4,
+      "visual_kind": "archival_photo",
+      "visual_query": "tulip bulb still life painting",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [
+        "ten"
+      ],
+      "camera": "punch_in",
+      "transition_in": "cut",
+      "sfx": [
+        "whoosh"
+      ],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "N1",
+        "N2",
+        "S1"
+      ],
+      "cue_tags": []
+    },
+    {
+      "id": "CH2-B011",
+      "segment_id": "CH2-S05",
+      "text": "what a skilled craftsman earned in a year.",
+      "est_seconds": 2.5,
+      "purpose": "punchline",
+      "energy": 4,
+      "visual_kind": "text_card",
+      "visual_query": "craftsman wages",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "kinetic_text",
+      "motion_data_json": "{\"lines\": [\"TEN YEARS OF WAGES\"], \"emphasis\": [\"TEN\"]}",
+      "on_screen_text": "TEN YEARS OF WAGES",
+      "emphasis_words": [],
+      "camera": "static",
+      "transition_in": "cut",
+      "sfx": [
+        "impact"
+      ],
+      "music_cue": "hit",
+      "music_mood": "tense",
+      "fact_ids": [
+        "N2",
+        "S1"
+      ],
+      "cue_tags": []
+    },
+    {
+      "id": "CH2-B012",
+      "segment_id": "CH2-S06",
+      "text": "Everyone, it seemed, was about to get rich.",
+      "est_seconds": 2.6,
+      "purpose": "cliffhanger",
+      "energy": 4,
+      "visual_kind": "stock_broll",
+      "visual_query": "gold coins pile candlelight",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "slow_push_in",
+      "transition_in": "cut",
+      "sfx": [
+        "riser"
+      ],
+      "music_cue": "build",
+      "music_mood": "tense",
+      "fact_ids": [
+        "S1"
+      ],
+      "cue_tags": []
+    }
+  ]
+}

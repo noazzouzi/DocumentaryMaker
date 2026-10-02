@@ -1,0 +1,104 @@
+{
+  "chapter_id": "CH1",
+  "beats": [
+    {
+      "id": "CH1-B001",
+      "text": "Haarlem, février 1637.",
+      "on_screen_text": "",
+      "emphasis_words": [
+        "Haarlem"
+      ],
+      "cue_anchor_words": [
+        "Haarlem",
+        "février"
+      ],
+      "motion_data_json": "{\"places\": [{\"label\": \"Haarlem\", \"lon\": 4.6462, \"lat\": 52.3874}], \"route\": false, \"region\": \"europe\"}"
+    },
+    {
+      "id": "CH1-B002",
+      "text": "D’après une satire imprimée cette année-là,",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "cue_anchor_words": [
+        "satire"
+      ],
+      "motion_data_json": "{\"source_id\": \"S1\", \"quote_id\": \"\", \"kind\": \"pamphlet\", \"outlet\": \"Satire anonyme\", \"title\": \"Dialogues entre Waermondt et Gaergoedt\", \"date\": \"1637\", \"paragraphs\": [\"Une satire anonyme, écrite juste après la bulle\"], \"highlight\": \"\", \"redact\": []}"
+    },
+    {
+      "id": "CH1-B003",
+      "text": "un commissaire-priseur baisse son prix,",
+      "on_screen_text": "",
+      "emphasis_words": [
+        "baisse"
+      ],
+      "cue_anchor_words": [],
+      "motion_data_json": ""
+    },
+    {
+      "id": "CH1-B004",
+      "text": "encore et encore.",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "cue_anchor_words": [],
+      "motion_data_json": ""
+    },
+    {
+      "id": "CH1-B005",
+      "text": "Personne n’achète.",
+      "on_screen_text": "PERSONNE N’ACHÈTE",
+      "emphasis_words": [],
+      "cue_anchor_words": [
+        "Personne"
+      ],
+      "motion_data_json": "{\"lines\": [\"PERSONNE N’ACHÈTE\"], \"emphasis\": [\"PERSONNE\"]}"
+    },
+    {
+      "id": "CH1-B006",
+      "text": "Au sommet de la folie,",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "cue_anchor_words": [],
+      "motion_data_json": ""
+    },
+    {
+      "id": "CH1-B007",
+      "text": "un seul bulbe de Semper Augustus",
+      "on_screen_text": "",
+      "emphasis_words": [
+        "Semper"
+      ],
+      "cue_anchor_words": [],
+      "motion_data_json": ""
+    },
+    {
+      "id": "CH1-B008",
+      "text": "s’était vendu 10 000 florins.",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "cue_anchor_words": [
+        "10"
+      ],
+      "motion_data_json": "{\"figure_id\": \"N1\", \"value\": 10000, \"from\": 0, \"currency\": \"NLG\", \"label\": \"un bulbe de Semper Augustus\", \"compact\": false}"
+    },
+    {
+      "id": "CH1-B009",
+      "text": "Comment une fleur devient-elle une fortune,",
+      "on_screen_text": "",
+      "emphasis_words": [
+        "fortune"
+      ],
+      "cue_anchor_words": [
+        "fortune"
+      ],
+      "motion_data_json": ""
+    },
+    {
+      "id": "CH1-B010",
+      "text": "puis plus rien du tout ?",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "cue_anchor_words": [],
+      "motion_data_json": ""
+    }
+  ]
+}

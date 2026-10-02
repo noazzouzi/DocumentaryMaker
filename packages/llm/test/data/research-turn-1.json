@@ -1,0 +1,102 @@
+{
+  "id": "msg_rec_01",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-opus-5-5",
+  "content": [
+    {
+      "type": "thinking",
+      "thinking": "Search for the Haarlem auction first.",
+      "signature": "sig-opaque-1"
+    },
+    {
+      "type": "server_tool_use",
+      "id": "srvtoolu_01",
+      "name": "web_search",
+      "input": {
+        "query": "tulip mania February 1637 Haarlem auction"
+      }
+    },
+    {
+      "type": "web_search_tool_result",
+      "tool_use_id": "srvtoolu_01",
+      "content": [
+        {
+          "type": "web_search_result",
+          "url": "https://en.wikipedia.org/wiki/Tulip_mania",
+          "title": "Tulip mania - Wikipedia",
+          "encrypted_content": "EqgfCioIARgBIiQ3YTAwMjY1Mi1jZjY3",
+          "page_age": "2 weeks ago"
+        },
+        {
+          "type": "web_search_result",
+          "url": "https://blog.example.org/tulips",
+          "title": "Ten fun tulip facts",
+          "encrypted_content": "EqgfCioIARgBIiQ3YTAwMjY1Mi1jZjY4",
+          "page_age": null
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "text": "Contract prices collapsed abruptly in February 1637.",
+      "citations": [
+        {
+          "type": "web_search_result_location",
+          "url": "https://en.wikipedia.org/wiki/Tulip_mania",
+          "title": "Tulip mania",
+          "encrypted_index": "Eo8BCioIAhgBIiQyYjA",
+          "cited_text": "in February 1637, tulip bulb contract prices collapsed abruptly"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "text": " A satire places the first failed auction in Haarlem on 3 February.",
+      "citations": [
+        {
+          "type": "web_search_result_location",
+          "url": "https://en.wikipedia.org/wiki/Tulip_mania",
+          "title": "Tulip mania",
+          "encrypted_index": "Eo8BCioIAhgBIiQyYjB",
+          "cited_text": "the crisis started to unravel at February 3 in Haarlem"
+        },
+        {
+          "type": "web_search_result_location",
+          "url": "https://en.wikipedia.org/wiki/Tulip_mania",
+          "title": "Tulip mania",
+          "encrypted_index": "Eo8BCioIAhgBIiQyYjC",
+          "cited_text": "the crisis started to unravel at February 3 in Haarlem"
+        }
+      ]
+    },
+    {
+      "type": "server_tool_use",
+      "id": "srvtoolu_02",
+      "name": "web_search",
+      "input": {
+        "query": "tulipomanie 1637"
+      }
+    },
+    {
+      "type": "web_search_tool_result",
+      "tool_use_id": "srvtoolu_02",
+      "content": {
+        "type": "web_search_tool_result_error",
+        "error_code": "too_many_requests"
+      }
+    }
+  ],
+  "stop_reason": "pause_turn",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 1800,
+    "output_tokens": 420,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 1500,
+    "server_tool_use": {
+      "web_search_requests": 2,
+      "web_fetch_requests": 0
+    }
+  }
+}

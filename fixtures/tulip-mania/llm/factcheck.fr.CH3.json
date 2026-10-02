@@ -1,0 +1,21 @@
+{
+  "items": [
+    {
+      "segment_id": "CH3-S02",
+      "where": "CH3-S02",
+      "surface": "narration",
+      "sentence": "Mais voici le retournement : la ruine dont parle Mackay n’a peut-être jamais eu lieu.",
+      "claim_kind": "opinion",
+      "verdict": "opinion_ok",
+      "risk": "none",
+      "fact_ids": [
+        "C1",
+        "C2"
+      ],
+      "problem": "Formulation prudente (« peut-être »), appuyée par l’étude d’archives de Goldgar.",
+      "suggested_rewrite": ""
+    }
+  ],
+  "needs_more_research": [],
+  "title_thumbnail_issues": []
+}

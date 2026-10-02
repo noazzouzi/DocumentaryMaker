@@ -1,0 +1,152 @@
+{
+  "topic": "Glimmerline (fictional)",
+  "as_of": "2026-06-15",
+  "one_line_premise": "A fictional influencer agency vanished overnight, and its founder now faces charges he denies.",
+  "central_question": "Where did the clients' money go?",
+  "sources": [
+    {
+      "id": "S1",
+      "url": "https://example.org/glimmerline/court-filing",
+      "title": "Glimmerline court filing (fictional)",
+      "publisher": "Example County Court",
+      "published_at": "2026-06-10",
+      "source_type": "court_document",
+      "reliability": "high",
+      "language": "en"
+    },
+    {
+      "id": "S2",
+      "url": "https://example.org/glimmerline/founder-interview",
+      "title": "Interview with Marlo Vance (fictional)",
+      "publisher": "Example News",
+      "published_at": "2026-04-02",
+      "source_type": "primary_interview",
+      "reliability": "medium",
+      "language": "en"
+    },
+    {
+      "id": "S3",
+      "url": "https://example.org/glimmerline/settlement-notice",
+      "title": "Glimmerline settlement notice (fictional)",
+      "publisher": "Example Daily",
+      "published_at": "2026-05-20",
+      "source_type": "major_news",
+      "reliability": "high",
+      "language": "en"
+    }
+  ],
+  "people": [
+    {
+      "id": "P1",
+      "name": "Marlo Vance",
+      "role_in_story": "Founder of the influencer agency Glimmerline",
+      "public_figure": true,
+      "is_minor_or_private_victim": false,
+      "image_queries": [
+        "Marlo Vance"
+      ]
+    },
+    {
+      "id": "P2",
+      "name": "Dara Quill",
+      "role_in_story": "Former bookkeeper of Glimmerline",
+      "public_figure": false,
+      "is_minor_or_private_victim": false,
+      "image_queries": [
+        "Dara Quill"
+      ]
+    }
+  ],
+  "timeline": [
+    {
+      "id": "E1",
+      "date": "2026-03",
+      "title": "Glimmerline shuts down",
+      "what_happened": "The agency goes dark overnight.",
+      "person_ids": [
+        "P1"
+      ],
+      "status": "established_fact",
+      "source_ids": [
+        "S1"
+      ],
+      "drama_value": 8
+    },
+    {
+      "id": "E2",
+      "date": "2026-06",
+      "title": "Vance is charged",
+      "what_happened": "Prosecutors charge Marlo Vance with misusing client funds; he denies the charges.",
+      "person_ids": [
+        "P1"
+      ],
+      "status": "charged_pending",
+      "source_ids": [
+        "S1"
+      ],
+      "drama_value": 9
+    },
+    {
+      "id": "E3",
+      "date": "2026-03",
+      "title": "The bookkeeper leaves",
+      "what_happened": "Dara Quill leaves the company the same week.",
+      "person_ids": [
+        "P2"
+      ],
+      "status": "established_fact",
+      "source_ids": [
+        "S1"
+      ],
+      "drama_value": 5
+    }
+  ],
+  "quotes": [
+    {
+      "id": "Q1",
+      "speaker_id": "P1",
+      "verbatim": "We never touched a cent that wasn't ours.",
+      "language": "en",
+      "date": "2026-04",
+      "context": "Interview after the shutdown",
+      "medium": "video_interview",
+      "source_id": "S2",
+      "youtube_search_query": ""
+    }
+  ],
+  "figures": [],
+  "claims": [
+    {
+      "id": "C1",
+      "summary": "Marlo Vance misused client funds",
+      "made_by": "Example County prosecutors",
+      "against": "Marlo Vance",
+      "status": "charged_pending",
+      "jurisdiction": "Example County Court",
+      "decision_date": "",
+      "subject_response": "Vance denies the charges",
+      "sensitivity": "high",
+      "source_ids": [
+        "S1"
+      ]
+    },
+    {
+      "id": "C2",
+      "summary": "Clients' civil claim against Glimmerline was settled",
+      "made_by": "Glimmerline clients",
+      "against": "Glimmerline",
+      "status": "settled_no_admission",
+      "jurisdiction": "Example County Court",
+      "decision_date": "2026-05",
+      "subject_response": "",
+      "sensitivity": "medium",
+      "source_ids": [
+        "S3"
+      ]
+    }
+  ],
+  "angles": [
+    "An agency that sold fame and lost the money"
+  ],
+  "gaps": []
+}

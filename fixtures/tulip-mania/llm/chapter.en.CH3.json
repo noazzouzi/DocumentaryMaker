@@ -1,0 +1,77 @@
+{
+  "chapter_id": "CH3",
+  "title": "The Reckoning",
+  "video_title": "",
+  "segments": [
+    {
+      "id": "CH3-S01",
+      "type": "narration",
+      "text": "Then, suddenly, the music stopped. In the first week of February 1637, buyers stopped showing up, and prices collapsed.",
+      "quote_id": "",
+      "fact_ids": [
+        "E5",
+        "S1"
+      ],
+      "device": "none",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH3-S02",
+      "type": "narration",
+      "text": "But here is the real twist: the ruin Mackay described may never have happened.",
+      "quote_id": "",
+      "fact_ids": [
+        "C1",
+        "S1",
+        "S3"
+      ],
+      "device": "reveal",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH3-S03",
+      "type": "narration",
+      "text": "Historian Anne Goldgar read the archived contracts: the traders were mostly wealthy merchants and craftsmen.",
+      "quote_id": "",
+      "fact_ids": [
+        "P3",
+        "C2",
+        "E8",
+        "S2",
+        "S1"
+      ],
+      "device": "payoff",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH3-S04",
+      "type": "narration",
+      "text": "She argues that most accounts rest on a little propaganda and a prodigious amount of plagiarism.",
+      "quote_id": "",
+      "fact_ids": [
+        "Q3",
+        "P3",
+        "S1"
+      ],
+      "device": "none",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH3-S05",
+      "type": "narration",
+      "text": "The bubble was real for a few. The legend was written for everyone else.",
+      "quote_id": "",
+      "fact_ids": [
+        "C2",
+        "S1"
+      ],
+      "device": "payoff",
+      "subtitle_translation": ""
+    }
+  ],
+  "loops_opened": [],
+  "loops_closed": [
+    "L1"
+  ],
+  "summary_for_next": "Prices collapse in the first week of February 1637; the guild turns contracts into options; Goldgar's archives contest Mackay's ruin."
+}

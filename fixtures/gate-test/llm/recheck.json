@@ -1,0 +1,16 @@
+{
+  "claims": [
+    {
+      "id": "C1",
+      "status": "charged_pending",
+      "jurisdiction": "Example County Court",
+      "decision_date": "",
+      "subject_response": "Vance denies the charges",
+      "changed": false,
+      "note": "",
+      "source_urls": [
+        "https://example.org/glimmerline/court-filing"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,85 @@
+{
+  "chapter_id": "CH2",
+  "title": "The Rise",
+  "video_title": "",
+  "segments": [
+    {
+      "id": "CH2-S01",
+      "type": "narration",
+      "text": "It all started with a botanist. In 1593, Carolus Clusius planted his tulips in the new botanical garden of Leiden.",
+      "quote_id": "",
+      "fact_ids": [
+        "P1",
+        "E1",
+        "S1"
+      ],
+      "device": "none",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH2-S02",
+      "type": "narration",
+      "text": "Rare flowers, unpredictable colours, and by 1634, speculators had entered the market.",
+      "quote_id": "",
+      "fact_ids": [
+        "E2",
+        "S1"
+      ],
+      "device": "none",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH2-S03",
+      "type": "narration",
+      "text": "Contracts changed hands in taverns, sometimes five times, for bulbs still in the ground.",
+      "quote_id": "",
+      "fact_ids": [
+        "E3",
+        "S1"
+      ],
+      "device": "pattern_interrupt",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH2-S04",
+      "type": "narration",
+      "text": "In 1841, Charles Mackay wrote that everyone joined in, down to chimney-sweeps and old clothes-women.",
+      "quote_id": "",
+      "fact_ids": [
+        "P2",
+        "E7",
+        "Q1",
+        "S3"
+      ],
+      "device": "none",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH2-S05",
+      "type": "narration",
+      "text": "At the peak, a single bulb could cost more than ten times what a skilled craftsman earned in a year.",
+      "quote_id": "",
+      "fact_ids": [
+        "N1",
+        "N2",
+        "S1"
+      ],
+      "device": "none",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH2-S06",
+      "type": "narration",
+      "text": "Everyone, it seemed, was about to get rich.",
+      "quote_id": "",
+      "fact_ids": [
+        "S1"
+      ],
+      "device": "cliffhanger",
+      "subtitle_translation": ""
+    }
+  ],
+  "loops_opened": [],
+  "loops_closed": [],
+  "summary_for_next": "From Clusius's Leiden garden (1593) to speculators (1634) and tavern contracts that changed hands five times; Mackay later claimed everyone traded."
+}

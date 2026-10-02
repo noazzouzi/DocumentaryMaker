@@ -1,0 +1,332 @@
+{
+  "chapter_id": "CH3",
+  "beats": [
+    {
+      "id": "CH3-B001",
+      "segment_id": "CH3-S01",
+      "text": "Then, suddenly, the music stopped.",
+      "est_seconds": 2.1,
+      "purpose": "transition",
+      "energy": 4,
+      "visual_kind": "stock_broll",
+      "visual_query": "candle blown out dark room",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "static",
+      "transition_in": "dip_to_black",
+      "sfx": [
+        "silence_drop"
+      ],
+      "music_cue": "drop_out",
+      "music_mood": "ominous",
+      "fact_ids": [
+        "S1"
+      ],
+      "cue_tags": []
+    },
+    {
+      "id": "CH3-B002",
+      "segment_id": "CH3-S01",
+      "text": "In the first week of February 1637,",
+      "est_seconds": 2.1,
+      "purpose": "escalation",
+      "energy": 4,
+      "visual_kind": "motion_graphic",
+      "visual_query": "calendar february 1637",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "timeline",
+      "motion_data_json": "{\"events\": [{\"date\": \"1637-02-05\", \"label\": \"Last recorded sales\", \"event_id\": \"E5\"}, {\"date\": \"1637-02-24\", \"label\": \"Contracts become options\", \"event_id\": \"E6\"}], \"active_index\": 1}",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "static",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "E5",
+        "E6",
+        "S1"
+      ],
+      "cue_tags": []
+    },
+    {
+      "id": "CH3-B003",
+      "segment_id": "CH3-S01",
+      "text": "buyers stopped showing up, and prices collapsed.",
+      "est_seconds": 2.9,
+      "purpose": "escalation",
+      "energy": 5,
+      "visual_kind": "archival_photo",
+      "visual_query": "flora wagon of fools painting",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [
+        "collapsed"
+      ],
+      "camera": "punch_in",
+      "transition_in": "cut",
+      "sfx": [
+        "impact"
+      ],
+      "music_cue": "hit",
+      "music_mood": "ominous",
+      "fact_ids": [
+        "E5",
+        "S1"
+      ],
+      "cue_tags": []
+    },
+    {
+      "id": "CH3-B004",
+      "segment_id": "CH3-S02",
+      "text": "But here is the real twist:",
+      "est_seconds": 1.6,
+      "purpose": "reveal",
+      "energy": 4,
+      "visual_kind": "text_card",
+      "visual_query": "plot twist",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "kinetic_text",
+      "motion_data_json": "{\"lines\": [\"THE TWIST\"], \"emphasis\": [\"TWIST\"]}",
+      "on_screen_text": "THE TWIST",
+      "emphasis_words": [],
+      "camera": "static",
+      "transition_in": "glitch",
+      "sfx": [
+        "glitch"
+      ],
+      "music_cue": "none",
+      "music_mood": "mysterious",
+      "fact_ids": [
+        "S1"
+      ],
+      "cue_tags": []
+    },
+    {
+      "id": "CH3-B005",
+      "segment_id": "CH3-S02",
+      "text": "the ruin Mackay described may never have happened.",
+      "est_seconds": 3.0,
+      "purpose": "reveal",
+      "energy": 5,
+      "visual_kind": "archival_photo",
+      "visual_query": "charles mackay book title page",
+      "person_ids": [
+        "P2"
+      ],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [
+        "never"
+      ],
+      "camera": "punch_in",
+      "transition_in": "cut",
+      "sfx": [
+        "impact"
+      ],
+      "music_cue": "hit",
+      "music_mood": "mysterious",
+      "fact_ids": [
+        "C1",
+        "S1",
+        "S3"
+      ],
+      "cue_tags": [
+        {
+          "type": "REVEAL",
+          "word": "never",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "id": "CH3-B006",
+      "segment_id": "CH3-S03",
+      "text": "Historian Anne Goldgar read the archived contracts:",
+      "est_seconds": 3.1,
+      "purpose": "payoff",
+      "energy": 3,
+      "visual_kind": "archival_photo",
+      "visual_query": "archive contract documents",
+      "person_ids": [
+        "P3"
+      ],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "ken_burns",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "P3",
+        "E8",
+        "S2"
+      ],
+      "cue_tags": []
+    },
+    {
+      "id": "CH3-B007",
+      "segment_id": "CH3-S03",
+      "text": "the traders were mostly wealthy merchants and craftsmen.",
+      "est_seconds": 3.4,
+      "purpose": "payoff",
+      "energy": 3,
+      "visual_kind": "archival_photo",
+      "visual_query": "dutch merchants portrait painting",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "ken_burns",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "C2",
+        "S1"
+      ],
+      "cue_tags": []
+    },
+    {
+      "id": "CH3-B008",
+      "segment_id": "CH3-S04",
+      "text": "She argues that most accounts",
+      "est_seconds": 1.8,
+      "purpose": "payoff",
+      "energy": 3,
+      "visual_kind": "motion_graphic",
+      "visual_query": "old books stack",
+      "person_ids": [
+        "P3"
+      ],
+      "youtube_quote_to_find": "",
+      "motion_template": "quote_card",
+      "motion_data_json": "{\"quote_id\": \"Q3\", \"text\": \"are based on one or two contemporary pieces of propaganda and a prodigious amount of plagiarism\", \"speaker\": \"Anne Goldgar\", \"source\": \"Tulipmania\", \"date\": \"2007\"}",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "static",
+      "transition_in": "cut",
+      "sfx": [
+        "text_pop"
+      ],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "Q3",
+        "P3",
+        "S1"
+      ],
+      "cue_tags": [
+        {
+          "type": "QUOTE",
+          "word": "argues",
+          "value": "Anne Goldgar"
+        }
+      ]
+    },
+    {
+      "id": "CH3-B009",
+      "segment_id": "CH3-S04",
+      "text": "rest on a little propaganda and a prodigious amount of plagiarism.",
+      "est_seconds": 4.0,
+      "purpose": "punchline",
+      "energy": 4,
+      "visual_kind": "archival_photo",
+      "visual_query": "seventeenth century satirical print tulips",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [
+        "plagiarism"
+      ],
+      "camera": "ken_burns",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "Q3",
+        "S1"
+      ],
+      "cue_tags": [
+        {
+          "type": "EMPHASIS",
+          "word": "plagiarism",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "id": "CH3-B010",
+      "segment_id": "CH3-S05",
+      "text": "The bubble was real for a few.",
+      "est_seconds": 1.8,
+      "purpose": "payoff",
+      "energy": 3,
+      "visual_kind": "stock_broll",
+      "visual_query": "single red tulip dark background",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "slow_push_in",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "change_mood",
+      "music_mood": "sad",
+      "fact_ids": [
+        "C2",
+        "S1"
+      ],
+      "cue_tags": []
+    },
+    {
+      "id": "CH3-B011",
+      "segment_id": "CH3-S05",
+      "text": "The legend was written for everyone else.",
+      "est_seconds": 2.5,
+      "purpose": "payoff",
+      "energy": 3,
+      "visual_kind": "stock_broll",
+      "visual_query": "tulip field netherlands aerial",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "zoom_out_reveal",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "build",
+      "music_mood": "sad",
+      "fact_ids": [
+        "S1"
+      ],
+      "cue_tags": []
+    }
+  ]
+}

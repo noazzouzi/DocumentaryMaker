@@ -1,0 +1,57 @@
+{
+  "chapter_id": "CH1",
+  "title": "The Auction",
+  "video_title": "Tulip Mania: The Flower That Fooled History",
+  "segments": [
+    {
+      "id": "CH1-S01",
+      "type": "narration",
+      "text": "Haarlem, February 1637. According to a satire printed that year, an auctioneer kept lowering his price. Again, and again, and again.",
+      "quote_id": "",
+      "fact_ids": [
+        "E4",
+        "S1"
+      ],
+      "device": "none",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH1-S02",
+      "type": "narration",
+      "text": "Nobody bought a thing. At the height of the mania, one Semper Augustus bulb had sold for 10,000 guilders.",
+      "quote_id": "",
+      "fact_ids": [
+        "E4",
+        "N1",
+        "S1"
+      ],
+      "device": "reveal",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH1-S03",
+      "type": "narration",
+      "text": "So how does a flower become a fortune, then nothing at all?",
+      "quote_id": "",
+      "fact_ids": [
+        "S1"
+      ],
+      "device": "open_loop",
+      "subtitle_translation": ""
+    },
+    {
+      "id": "CH1-S04",
+      "type": "music_breath",
+      "text": "",
+      "quote_id": "",
+      "fact_ids": [],
+      "device": "none",
+      "subtitle_translation": ""
+    }
+  ],
+  "loops_opened": [
+    "L1"
+  ],
+  "loops_closed": [],
+  "summary_for_next": "Haarlem, February 1637: an auction finds no buyers, weeks after a Semper Augustus bulb sold for 10,000 guilders. Central question: how does a flower become a fortune, then nothing?"
+}

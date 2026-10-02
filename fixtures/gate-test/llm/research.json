@@ -1,0 +1,37 @@
+{
+  "dossier_markdown": "# Glimmerline (fictional) — research notes\n- March 2026: the influencer agency Glimmerline shuts down overnight [https://example.org/glimmerline/court-filing]\n- June 2026: prosecutors charge founder Marlo Vance with misusing client funds; Vance denies the charges; no trial yet [https://example.org/glimmerline/court-filing]\n- Interview: Vance says \"We never touched a cent that wasn't ours.\" [https://example.org/glimmerline/founder-interview]\n- Bookkeeper Dara Quill (not a public figure) left the company the same week [https://example.org/glimmerline/court-filing]\n- A civil claim by clients was settled without admission of liability [https://example.org/glimmerline/settlement-notice]",
+  "registry": [
+    {
+      "url": "https://example.org/glimmerline/court-filing",
+      "title": "Glimmerline court filing (fictional)",
+      "page_age": null,
+      "fetched": true,
+      "cited": 3,
+      "snippets": [
+        "Prosecutors charged Marlo Vance with misusing client funds."
+      ]
+    },
+    {
+      "url": "https://example.org/glimmerline/founder-interview",
+      "title": "Interview with Marlo Vance (fictional)",
+      "page_age": null,
+      "fetched": true,
+      "cited": 1,
+      "snippets": [
+        "We never touched a cent that wasn't ours."
+      ]
+    },
+    {
+      "url": "https://example.org/glimmerline/settlement-notice",
+      "title": "Glimmerline settlement notice (fictional)",
+      "page_age": null,
+      "fetched": true,
+      "cited": 1,
+      "snippets": [
+        "settled without admission of liability"
+      ]
+    }
+  ],
+  "searches_used": 3,
+  "fetches_used": 3
+}

@@ -1,0 +1,309 @@
+{
+  "topic": "Tulip mania",
+  "as_of": "2026-10-02",
+  "one_line_premise": "In the winter of 1636–37 a flower briefly cost a fortune, then nothing; the legend that followed grew bigger than the crash.",
+  "central_question": "How did a tulip bulb become worth a fortune, and did its collapse really ruin the Dutch?",
+  "sources": [
+    {
+      "id": "S1",
+      "url": "https://en.wikipedia.org/wiki/Tulip_mania",
+      "title": "Tulip mania",
+      "publisher": "Wikipedia",
+      "published_at": "",
+      "source_type": "wikipedia",
+      "reliability": "medium",
+      "language": "en"
+    },
+    {
+      "id": "S2",
+      "url": "https://books.google.com/books?id=gViwLbCJ7X0C",
+      "title": "Tulipmania: Money, Honor, and Knowledge in the Dutch Golden Age",
+      "publisher": "University of Chicago Press",
+      "published_at": "2007",
+      "source_type": "book",
+      "reliability": "high",
+      "language": "en"
+    },
+    {
+      "id": "S3",
+      "url": "https://www.gutenberg.org/ebooks/24518",
+      "title": "Memoirs of Extraordinary Popular Delusions and the Madness of Crowds",
+      "publisher": "Project Gutenberg",
+      "published_at": "1841",
+      "source_type": "book",
+      "reliability": "low",
+      "language": "en"
+    }
+  ],
+  "people": [
+    {
+      "id": "P1",
+      "name": "Carolus Clusius",
+      "role_in_story": "Botanist who planted tulips in Leiden's Hortus Botanicus in 1593",
+      "public_figure": true,
+      "is_minor_or_private_victim": false,
+      "image_queries": [
+        "Carolus Clusius portrait",
+        "Charles de l'Ecluse engraving"
+      ]
+    },
+    {
+      "id": "P2",
+      "name": "Charles Mackay",
+      "role_in_story": "Scottish journalist whose 1841 book popularised the tulip mania story",
+      "public_figure": true,
+      "is_minor_or_private_victim": false,
+      "image_queries": [
+        "Charles Mackay author portrait"
+      ]
+    },
+    {
+      "id": "P3",
+      "name": "Anne Goldgar",
+      "role_in_story": "Historian, author of Tulipmania (2007), an archival study of the trade",
+      "public_figure": true,
+      "is_minor_or_private_victim": false,
+      "image_queries": [
+        "Tulipmania Goldgar book cover"
+      ]
+    }
+  ],
+  "timeline": [
+    {
+      "id": "E1",
+      "date": "1593",
+      "title": "Clusius plants tulips in Leiden",
+      "what_happened": "Carolus Clusius plants his tulip collection in the new Hortus Botanicus of Leiden.",
+      "person_ids": [
+        "P1"
+      ],
+      "status": "established_fact",
+      "source_ids": [
+        "S1"
+      ],
+      "drama_value": 4
+    },
+    {
+      "id": "E2",
+      "date": "1634",
+      "title": "Speculators enter the tulip market",
+      "what_happened": "Partly driven by French demand, speculators begin to trade bulb contracts.",
+      "person_ids": [],
+      "status": "established_fact",
+      "source_ids": [
+        "S1"
+      ],
+      "drama_value": 5
+    },
+    {
+      "id": "E3",
+      "date": "1636-11",
+      "title": "Even common bulbs rise",
+      "what_happened": "Contracts change hands in tavern 'colleges', some five times; even common bulbs rise in price.",
+      "person_ids": [],
+      "status": "established_fact",
+      "source_ids": [
+        "S1"
+      ],
+      "drama_value": 6
+    },
+    {
+      "id": "E4",
+      "date": "1637-02-03",
+      "title": "The Haarlem auction without buyers",
+      "what_happened": "According to a contemporary satire, an auctioneer in Haarlem finds no buyers despite lowering his price several times.",
+      "person_ids": [],
+      "status": "disputed",
+      "source_ids": [
+        "S1"
+      ],
+      "drama_value": 9
+    },
+    {
+      "id": "E5",
+      "date": "1637-02-05",
+      "title": "Last day of the bubble",
+      "what_happened": "98 sales are recorded at wildly varying prices; by the end of the first week of February prices have collapsed.",
+      "person_ids": [],
+      "status": "established_fact",
+      "source_ids": [
+        "S1"
+      ],
+      "drama_value": 8
+    },
+    {
+      "id": "E6",
+      "date": "1637-02-24",
+      "title": "The florists' guild converts contracts",
+      "what_happened": "The guild of Dutch florists turns contracts written after 30 November 1636 into options buyers can cancel for a fee.",
+      "person_ids": [],
+      "status": "established_fact",
+      "source_ids": [
+        "S1"
+      ],
+      "drama_value": 6
+    },
+    {
+      "id": "E7",
+      "date": "1841",
+      "title": "Mackay publishes his account",
+      "what_happened": "Charles Mackay's Extraordinary Popular Delusions popularises the tulip mania story.",
+      "person_ids": [
+        "P2"
+      ],
+      "status": "established_fact",
+      "source_ids": [
+        "S3"
+      ],
+      "drama_value": 5
+    },
+    {
+      "id": "E8",
+      "date": "2007",
+      "title": "Goldgar publishes Tulipmania",
+      "what_happened": "Anne Goldgar's archival study challenges the traditional account.",
+      "person_ids": [
+        "P3"
+      ],
+      "status": "established_fact",
+      "source_ids": [
+        "S2"
+      ],
+      "drama_value": 6
+    }
+  ],
+  "quotes": [
+    {
+      "id": "Q1",
+      "speaker_id": "P2",
+      "verbatim": "Nobles, citizens, farmers, mechanics, sea-men, footmen, maid-servants, even chimney-sweeps and old clothes-women, dabbled in tulips.",
+      "language": "en",
+      "date": "1841",
+      "context": "Mackay describing who joined the tulip trade",
+      "medium": "print",
+      "source_id": "S3",
+      "youtube_search_query": ""
+    },
+    {
+      "id": "Q2",
+      "speaker_id": "P2",
+      "verbatim": "eating a breakfast whose cost might have regaled a whole ship's crew for a twelvemonth",
+      "language": "en",
+      "date": "1841",
+      "context": "Mackay's anecdote of a sailor who ate a Semper Augustus bulb",
+      "medium": "print",
+      "source_id": "S3",
+      "youtube_search_query": ""
+    },
+    {
+      "id": "Q3",
+      "speaker_id": "P3",
+      "verbatim": "are based on one or two contemporary pieces of propaganda and a prodigious amount of plagiarism",
+      "language": "en",
+      "date": "2007",
+      "context": "Goldgar on most accounts of the period (quoted on Wikipedia)",
+      "medium": "print",
+      "source_id": "S1",
+      "youtube_search_query": ""
+    }
+  ],
+  "figures": [
+    {
+      "id": "N1",
+      "label": "Price of a Semper Augustus bulb at the height of the mania",
+      "value": 10000,
+      "unit": "guilders",
+      "as_of": "1637",
+      "source_ids": [
+        "S1"
+      ],
+      "chartable": true
+    },
+    {
+      "id": "N2",
+      "label": "Annual income of a skilled artisan",
+      "value": 300,
+      "unit": "guilders",
+      "as_of": "1637",
+      "source_ids": [
+        "S1"
+      ],
+      "chartable": true
+    },
+    {
+      "id": "N3",
+      "label": "Sales recorded on the last day of the bubble",
+      "value": 98,
+      "unit": "sales",
+      "as_of": "1637-02-05",
+      "source_ids": [
+        "S1"
+      ],
+      "chartable": false
+    },
+    {
+      "id": "N4",
+      "label": "Fee to cancel a contract in Haarlem",
+      "value": 3.5,
+      "unit": "%",
+      "as_of": "1637-05",
+      "source_ids": [
+        "S1"
+      ],
+      "chartable": false
+    }
+  ],
+  "claims": [
+    {
+      "id": "C1",
+      "summary": "Many investors were ruined by the crash and Dutch commerce suffered a severe shock",
+      "made_by": "Charles Mackay (1841)",
+      "against": "",
+      "status": "disputed",
+      "jurisdiction": "",
+      "decision_date": "",
+      "subject_response": "",
+      "sensitivity": "low",
+      "source_ids": [
+        "S3",
+        "S1"
+      ]
+    },
+    {
+      "id": "C2",
+      "summary": "Archived contracts show the trade was conducted mostly by wealthy merchants and skilled craftsmen, not by the whole population",
+      "made_by": "Anne Goldgar (2007)",
+      "against": "",
+      "status": "established_fact",
+      "jurisdiction": "",
+      "decision_date": "",
+      "subject_response": "",
+      "sensitivity": "low",
+      "source_ids": [
+        "S2",
+        "S1"
+      ]
+    },
+    {
+      "id": "C3",
+      "summary": "A sailor ate a Semper Augustus bulb, mistaking it for an onion",
+      "made_by": "Charles Mackay (1841)",
+      "against": "",
+      "status": "disputed",
+      "jurisdiction": "",
+      "decision_date": "",
+      "subject_response": "",
+      "sensitivity": "low",
+      "source_ids": [
+        "S3"
+      ]
+    }
+  ],
+  "angles": [
+    "The first famous bubble was smaller than its legend",
+    "A satire became the historical record"
+  ],
+  "gaps": [
+    "The actual circumstances of the February 1637 crash are unknown"
+  ]
+}

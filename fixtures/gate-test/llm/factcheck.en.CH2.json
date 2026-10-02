@@ -1,0 +1,50 @@
+{
+  "items": [
+    {
+      "segment_id": "CH2-S01",
+      "where": "CH2-S01",
+      "surface": "narration",
+      "sentence": "In June 2026, prosecutors charged Vance with misusing client funds.",
+      "claim_kind": "allegation",
+      "verdict": "status_missing_or_outdated",
+      "risk": "high",
+      "fact_ids": [
+        "C1"
+      ],
+      "problem": "The charge is pending as of 2026-06-15; the status may have changed. Re-check before publishing.",
+      "suggested_rewrite": "As of June 2026, prosecutors had charged Vance with misusing client funds; he denies the charges and has not been tried."
+    },
+    {
+      "segment_id": "CH2-S03",
+      "where": "CH2-S03",
+      "surface": "narration",
+      "sentence": "That same week, his bookkeeper Dara Quill walked out of the company.",
+      "claim_kind": "fact",
+      "verdict": "private_person_named",
+      "risk": "high",
+      "fact_ids": [
+        "P2"
+      ],
+      "problem": "Dara Quill is not a public figure; naming her needs an editorial decision (person-ack).",
+      "suggested_rewrite": "That same week, the company's bookkeeper walked out."
+    },
+    {
+      "segment_id": "CH2-S02",
+      "where": "CH2-S02",
+      "surface": "clip-quote",
+      "sentence": "We never touched a cent that was not ours.",
+      "claim_kind": "quote",
+      "verdict": "quote_mismatch",
+      "risk": "high",
+      "fact_ids": [
+        "Q1"
+      ],
+      "problem": "The clip text differs from the verbatim quote (\"wasn't\" vs \"was not\").",
+      "suggested_rewrite": "We never touched a cent that wasn't ours."
+    }
+  ],
+  "needs_more_research": [
+    "Marlo Vance charges status"
+  ],
+  "title_thumbnail_issues": []
+}

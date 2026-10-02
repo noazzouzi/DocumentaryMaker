@@ -1,0 +1,123 @@
+{
+  "chapter_id": "CH2",
+  "beats": [
+    {
+      "id": "CH2-B001",
+      "segment_id": "CH2-S01",
+      "text": "In June 2026, prosecutors charged Vance with misusing client funds.",
+      "est_seconds": 4.1,
+      "purpose": "context",
+      "energy": 3,
+      "visual_kind": "archival_photo",
+      "visual_query": "courthouse exterior",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "ken_burns",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "C1",
+        "E2"
+      ],
+      "cue_tags": []
+    },
+    {
+      "id": "CH2-B002",
+      "segment_id": "CH2-S01",
+      "text": "He denies the charges and has not been tried.",
+      "est_seconds": 2.7,
+      "purpose": "reveal",
+      "energy": 5,
+      "visual_kind": "text_card",
+      "visual_query": "Marlo Vance",
+      "person_ids": [
+        "P1"
+      ],
+      "youtube_quote_to_find": "",
+      "motion_template": "kinetic_text",
+      "motion_data_json": "{\"lines\": [\"THIEF?\"]}",
+      "on_screen_text": "THIEF?",
+      "emphasis_words": [],
+      "camera": "ken_burns",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "C1"
+      ],
+      "cue_tags": [
+        {
+          "type": "SHOCK",
+          "word": "denies",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "id": "CH2-B003",
+      "segment_id": "CH2-S03",
+      "text": "That same week, his bookkeeper Dara Quill",
+      "est_seconds": 2.5,
+      "purpose": "context",
+      "energy": 3,
+      "visual_kind": "archival_photo",
+      "visual_query": "Dara Quill",
+      "person_ids": [
+        "P2"
+      ],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "ken_burns",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "P2",
+        "E3"
+      ],
+      "cue_tags": [
+        {
+          "type": "PERSON_INTRO",
+          "word": "Dara",
+          "value": "Dara Quill"
+        }
+      ]
+    },
+    {
+      "id": "CH2-B004",
+      "segment_id": "CH2-S03",
+      "text": "walked out of the company.",
+      "est_seconds": 1.6,
+      "purpose": "cliffhanger",
+      "energy": 3,
+      "visual_kind": "stock_broll",
+      "visual_query": "person leaving office with box",
+      "person_ids": [],
+      "youtube_quote_to_find": "",
+      "motion_template": "none",
+      "motion_data_json": "",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "camera": "ken_burns",
+      "transition_in": "cut",
+      "sfx": [],
+      "music_cue": "none",
+      "music_mood": "tense",
+      "fact_ids": [
+        "E3"
+      ],
+      "cue_tags": []
+    }
+  ]
+}

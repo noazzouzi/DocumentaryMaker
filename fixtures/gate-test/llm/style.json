@@ -1,0 +1,27 @@
+{
+  "topic_type": "company_collapse",
+  "ranked": [
+    {
+      "style_id": "drama-commentary",
+      "score": 0.9,
+      "why": "A company collapse with legal stakes."
+    }
+  ],
+  "recommended_style_id": "drama-commentary",
+  "recommended_minutes": 15,
+  "title_options": [
+    "Glimmerline: Where Did the Money Go?"
+  ],
+  "thumbnail_text_options": [
+    "WHERE IS IT?"
+  ],
+  "risk_flags": [
+    "real_person_allegations",
+    "ongoing_trial"
+  ],
+  "theme_override": {
+    "accent": "",
+    "backdrop_recipe": "",
+    "texture": ""
+  }
+}

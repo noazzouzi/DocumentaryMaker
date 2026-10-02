@@ -1,0 +1,21 @@
+{
+  "items": [
+    {
+      "segment_id": "CH3-S02",
+      "where": "CH3-S02",
+      "surface": "narration",
+      "sentence": "But here is the real twist: the ruin Mackay described may never have happened.",
+      "claim_kind": "opinion",
+      "verdict": "opinion_ok",
+      "risk": "none",
+      "fact_ids": [
+        "C1",
+        "C2"
+      ],
+      "problem": "Hedged ('may') and supported by Goldgar's archival study.",
+      "suggested_rewrite": ""
+    }
+  ],
+  "needs_more_research": [],
+  "title_thumbnail_issues": []
+}

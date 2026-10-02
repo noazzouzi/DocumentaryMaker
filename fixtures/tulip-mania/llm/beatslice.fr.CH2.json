@@ -1,0 +1,119 @@
+{
+  "chapter_id": "CH2",
+  "beats": [
+    {
+      "id": "CH2-B001",
+      "text": "Tout part d’un botaniste.",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "cue_anchor_words": [],
+      "motion_data_json": ""
+    },
+    {
+      "id": "CH2-B002",
+      "text": "En 1593, Carolus Clusius plante ses tulipes",
+      "on_screen_text": "",
+      "emphasis_words": [
+        "Clusius"
+      ],
+      "cue_anchor_words": [
+        "Carolus"
+      ],
+      "motion_data_json": ""
+    },
+    {
+      "id": "CH2-B003",
+      "text": "dans le jardin botanique de Leyde.",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "cue_anchor_words": [],
+      "motion_data_json": ""
+    },
+    {
+      "id": "CH2-B004",
+      "text": "Fleurs rares, couleurs imprévisibles :",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "cue_anchor_words": [],
+      "motion_data_json": ""
+    },
+    {
+      "id": "CH2-B005",
+      "text": "dès 1634, les spéculateurs entrent sur le marché.",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "cue_anchor_words": [
+        "spéculateurs"
+      ],
+      "motion_data_json": ""
+    },
+    {
+      "id": "CH2-B006",
+      "text": "Les contrats changent de main dans les tavernes, parfois cinq fois,",
+      "on_screen_text": "",
+      "emphasis_words": [
+        "cinq"
+      ],
+      "cue_anchor_words": [],
+      "motion_data_json": ""
+    },
+    {
+      "id": "CH2-B007",
+      "text": "pour des bulbes encore en terre.",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "cue_anchor_words": [
+        "terre"
+      ],
+      "motion_data_json": ""
+    },
+    {
+      "id": "CH2-B008",
+      "text": "En 1841, Charles Mackay écrira que tout le monde s’y mettait,",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "cue_anchor_words": [
+        "écrira"
+      ],
+      "motion_data_json": "{\"quote_id\": \"Q1\", \"text\": \"Nobles, bourgeois, paysans, artisans, marins, valets, servantes, et jusqu’aux ramoneurs et aux fripières, spéculaient sur les tulipes.\", \"speaker\": \"Charles Mackay\", \"source\": \"Extraordinaires délires populaires\", \"date\": \"1841\", \"translated\": true}"
+    },
+    {
+      "id": "CH2-B009",
+      "text": "jusqu’aux ramoneurs et aux fripières.",
+      "on_screen_text": "",
+      "emphasis_words": [
+        "ramoneurs"
+      ],
+      "cue_anchor_words": [
+        "ramoneurs"
+      ],
+      "motion_data_json": ""
+    },
+    {
+      "id": "CH2-B010",
+      "text": "Au sommet, un bulbe pouvait coûter plus de dix fois",
+      "on_screen_text": "",
+      "emphasis_words": [
+        "dix"
+      ],
+      "cue_anchor_words": [],
+      "motion_data_json": ""
+    },
+    {
+      "id": "CH2-B011",
+      "text": "le salaire annuel d’un artisan.",
+      "on_screen_text": "DIX ANS DE SALAIRE",
+      "emphasis_words": [],
+      "cue_anchor_words": [],
+      "motion_data_json": "{\"lines\": [\"DIX ANS DE SALAIRE\"], \"emphasis\": [\"DIX\"]}"
+    },
+    {
+      "id": "CH2-B012",
+      "text": "Tout le monde, semblait-il, allait faire fortune.",
+      "on_screen_text": "",
+      "emphasis_words": [],
+      "cue_anchor_words": [],
+      "motion_data_json": ""
+    }
+  ]
+}

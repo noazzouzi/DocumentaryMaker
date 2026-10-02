@@ -1,0 +1,82 @@
+{
+  "language": "en",
+  "story_shape": "rise-fall",
+  "title": "Glimmerline: Where Did the Money Go?",
+  "thesis": "An agency that sold attention could not account for its clients' money; the courts have not ruled yet.",
+  "hook_teasers": [
+    {
+      "id": "T1",
+      "teaser": "The agency that vanished overnight",
+      "paid_off_in": "CH2"
+    }
+  ],
+  "loops": [
+    {
+      "id": "L1",
+      "question": "Where did the money go?",
+      "opened_in": "CH1",
+      "closed_in": "CH3"
+    }
+  ],
+  "chapters": [
+    {
+      "id": "CH1",
+      "act": "cold_open",
+      "title": "Gone Overnight",
+      "target_words": 50,
+      "purpose": "The shutdown.",
+      "event_ids": [
+        "E1"
+      ],
+      "claim_ids": [],
+      "quote_ids": [],
+      "opens_loops": [
+        "L1"
+      ],
+      "closes_loops": [],
+      "exit_hook": "Where did the money go?",
+      "ad_break_after": false
+    },
+    {
+      "id": "CH2",
+      "act": "act2a_cracks",
+      "title": "The Charges",
+      "target_words": 90,
+      "purpose": "Charges, denial, the bookkeeper.",
+      "event_ids": [
+        "E2",
+        "E3"
+      ],
+      "claim_ids": [
+        "C1"
+      ],
+      "quote_ids": [
+        "Q1"
+      ],
+      "opens_loops": [],
+      "closes_loops": [],
+      "exit_hook": "The bookkeeper left the same week.",
+      "ad_break_after": false
+    },
+    {
+      "id": "CH3",
+      "act": "act3_reckoning",
+      "title": "No Verdict Yet",
+      "target_words": 78,
+      "purpose": "Settlement; status pending.",
+      "event_ids": [],
+      "claim_ids": [
+        "C2"
+      ],
+      "quote_ids": [],
+      "opens_loops": [],
+      "closes_loops": [
+        "L1"
+      ],
+      "exit_hook": "The trail ends in a courtroom.",
+      "ad_break_after": false
+    }
+  ],
+  "callback_plan": [],
+  "next_video_bridge": ""
+}
