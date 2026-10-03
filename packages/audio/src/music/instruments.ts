@@ -93,7 +93,7 @@ export function renderScore(o: ScoreOptions): Score {
           const t = i / sr;
           const env = Math.min(1, t / 0.006) * Math.exp(-t / 0.35) * Math.min(1, (n - i) / (0.02 * sr));
           return env * (Math.sin(TAU * f * t) + 0.6 * Math.sin(TAU * (f / 2) * t));
-        }, { gain: 0.11 * lvl }));
+        }, { gain: (b === 0 ? 0.11 : 0.09) * lvl })); // the downbeat pulse is accented
       }
     }
   }

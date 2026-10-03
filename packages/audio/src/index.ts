@@ -1,12 +1,12 @@
 // @docmaker/audio — public API (packages/audio/src/index.ts). WAV I/O and loudness come from @docmaker/core/node.
 import type { LicenseInfo, LoudnessDoc, MusicMood, ProgramLayout, SfxEntry, SfxManifest, Timeline } from "@docmaker/core";
-import { notImplemented } from "./notImplemented";
 import { SFX_RECIPES as RECIPES } from "./sfx/recipes";
 import type { SfxRecipe as Recipe } from "./sfx/recipes";
 import { ensureSfxPackImpl, loadSfxEntriesImpl } from "./sfx/packs";
 import type { AudioCtx as Ctx } from "./util";
 import { assembleVoProgramImpl } from "./vo/assemble";
 import { generateMusicImpl } from "./music/generate";
+import { scanMusicLibraryImpl } from "./music/library";
 import { mixTimelineImpl } from "./mix/mixer";
 import { densityReportImpl } from "./qa/density";
 
@@ -28,7 +28,7 @@ export function generateMusic(o: MusicGenOptions, ctx: AudioCtx): Promise<{ wavP
   return generateMusicImpl(o, ctx);
 }
 export function scanMusicLibrary(dir: string, ctx: AudioCtx): Promise<{ file: string; title: string; moods: MusicMood[]; license: LicenseInfo; bpm: number | null; beatsMs: number[]; downbeatsMs: number[]; durationMs: number }[]> {
-  throw notImplemented("audio.scanMusicLibrary");
+  return scanMusicLibraryImpl(dir, ctx);
 }
 
 /** Places segment WAVs at frameToSample48k(segment.from) (+ REVEAL insertions), digital silence elsewhere, then bakes −16 LUFS. */
@@ -60,3 +60,5 @@ export { TruePeakLimiter } from "./mix/limiter";
 export { equalPowerPan, shouldMirror } from "./mix/pan";
 export { IMPACT_CATEGORIES, cutsWithSfx } from "./qa/density";
 export type { DensityReport } from "./qa/density";
+export { AUDIO_NORM_RECIPE, BEATS_LATENCY_MS, LIBRARY_EXTENSIONS, UNDECLARED_LICENSE, gridFromBeats } from "./music/library";
+export type { LibraryTrack } from "./music/library";
