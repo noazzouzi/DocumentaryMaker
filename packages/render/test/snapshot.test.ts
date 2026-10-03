@@ -1,6 +1,7 @@
 // Render inputs bound to what was hashed (review P3 "render" bucket): the timeline is read once and served from memory
 // at a content-addressed URL, the mix is pinned, and the chunk / generated-still keys cover the render backend, the
 // style font bytes and the renderer code.
+import { existsSync } from "node:fs";
 import { link, mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -9,7 +10,7 @@ import { sliceHash } from "@docmaker/remotion/compute";
 import { createAssetServer, resolveRequestPath } from "../src/assetServer";
 import { chunkHashPreset, presetRenderOptions } from "../src/presets";
 import { installRemotionNoiseFilter, isRemotionNoise } from "../src/remotion";
-import { generatedStillKey, pinFile, readTimelineSnapshot, renderAllowList, styleFontsDigest } from "../src/service";
+import { generatedStillKey, pinFile, unpinFile, readTimelineSnapshot, renderAllowList, styleFontsDigest } from "../src/service";
 import { tmpDir } from "./helpers";
 
 const SNAP = "render/en/master/snapshot/timeline.json";
@@ -99,6 +100,12 @@ describe("mix pin", () => {
       await link(newMix, snapMix);
       expect(await readFile(pinned, "utf8")).toBe("mix-of-job-1");
       expect(path.basename(pinned)).toMatch(new RegExp(`^pin-${process.pid}-[0-9a-f]{8}\\.wav$`));
+      // unpinning leaves nothing behind once no other job holds a pin
+      const other = await pinFile(snapMix, pins);
+      await unpinFile(pinned);
+      expect(await readdir(pins)).toEqual([path.basename(other)]);
+      await unpinFile(other);
+      expect(existsSync(pins)).toBe(false);
     } finally {
       await t.cleanup();
     }

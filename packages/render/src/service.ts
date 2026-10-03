@@ -7,7 +7,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { copyFile, link, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, link, mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -147,6 +147,12 @@ export async function pinFile(src: string, dir: string): Promise<string> {
     await copyFile(src, dest);
   }
   return dest;
+}
+
+/** Removes a pin, and its directory once no other job holds one (nothing is left behind in render/<lang>/<preset>/). */
+export async function unpinFile(pinned: string): Promise<void> {
+  await rm(pinned, { force: true });
+  await rmdir(path.dirname(pinned)).catch(() => undefined); // ENOTEMPTY: another job's pin
 }
 
 /** Mix targets from project.json (`audio.targetLufs`, `audio.truePeakGate`), else the spec defaults (−14 LUFS, −1 dBTP). */
@@ -499,7 +505,7 @@ export class RenderService {
         }
       });
     } finally {
-      if (mixAbs) await rm(mixAbs, { force: true });
+      if (mixAbs) await unpinFile(mixAbs);
     }
   }
 
