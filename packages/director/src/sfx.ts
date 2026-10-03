@@ -284,10 +284,14 @@ export function selectSfx(ctx: Ctx, env: SfxEnv, cands: SfxCand[]): SfxResult {
     const rollKey = `${c.sourceItemId}|${cat}`;
     const rollMember = ROLL.has(cat) && rollLast.has(rollKey) && Math.abs(rollLast.get(rollKey)! - c.event) <= ctx.fps;
     const intensity = intensityAt(ctx, c.event);
-    if (!rollMember && c.priority < 5) {
+    // §9.5 step 4: the per-minute and impact caps hold for every SFX, priority 5 included (structural impacts compete
+    // among themselves in rank order, see `ordered`); a bleep is a censor tone, not an accent, and is never capped
+    if (!rollMember && cat !== "bleep") {
       if (!rateOk(ctx, heads.map((h) => h.f), c.event, X.perMin[1] * intensity)) return false;
       if (IMPACTS.has(cat) && !rateOk(ctx, heads.filter((h) => h.impact).map((h) => h.f), c.event, X.impactsPerMin[1] * intensity)) return false;
     }
+    // a reveal riser builds into its impact: without the impact it would build into nothing
+    if (c.combo === "reveal" && !IMPACTS.has(cat) && !accepted.some((a) => a.c.combo === "reveal" && a.c.sourceItemId === c.sourceItemId && IMPACTS.has(a.cat))) return false;
     if (accepted.some((a) => Math.abs(a.c.event - c.event) < X.minGapFrames && !designed(a.c, c))) return false;
     if (c.transition && accepted.filter((a) => a.c.transition).length >= maxTransition && c.priority < 5) return false;
     accepted.push({ c, e, from: pl.from, dur: pl.dur, peak: pl.peak, cat });
@@ -298,11 +302,13 @@ export function selectSfx(ctx: Ctx, env: SfxEnv, cands: SfxCand[]): SfxResult {
     return true;
   };
 
+  // capped priority-5 impacts compete in this order: bleeps (uncapped), reveal payoffs, SHOCK plates, then the rest
+  const rank5 = (c: SfxCand) => (c.priority < 5 ? 0 : c.category === "bleep" ? 4 : c.combo === "reveal" ? 3 : c.reason === "SHOCK plate" ? 2 : 1);
   // 1–4: deterministic order; transition candidates beyond the silent-cut share drop lowest priority first
   const trans = cands.filter((c) => c.transition).sort((a, b) => b.priority - a.priority || ctx.R(`sfxdrop:${a.key}`)() - ctx.R(`sfxdrop:${b.key}`)() || (a.key < b.key ? -1 : 1));
   const keepTrans = new Set(trans.slice(0, maxTransition).map((c) => c.key));
   const ordered = cands.filter((c) => !c.transition || keepTrans.has(c.key) || c.priority >= 5)
-    .sort((a, b) => b.priority - a.priority || a.event - b.event || (a.key < b.key ? -1 : 1));
+    .sort((a, b) => b.priority - a.priority || rank5(b) - rank5(a) || a.event - b.event || (a.key < b.key ? -1 : 1));
   // phase A: priority ≥ 2
   for (const c of ordered) if (c.priority >= 2) tryAccept(c, false);
   // phase B: about (1 − silentCutShare) of cuts carry an SFX — cut whooshes get the budget before detail sounds

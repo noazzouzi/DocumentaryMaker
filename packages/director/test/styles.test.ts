@@ -45,5 +45,18 @@ describe("built-in styles (loaded with @docmaker/styles, deep-frozen inputs)", a
         for (const o of out.timeline.overlays) if (COMPONENT_META[o.component].overshootAllowed) expect(st.data.motion.overshootAllowedIn).toContain(o.component);
       }
     });
+
+    it(`${st.data.manifest.id}: priority-5 impacts stay inside the style's impactsPerMin (no DENSITY_MAX on its own output)`, () => {
+      for (const make of [() => tulipInputs().input, () => policyScenario({ seconds: 600, chapters: 5 }).input]) {
+        const input = make();
+        const out = direct({ ...input, style: st.data, renderTokens: renderTokensOf(st.data) });
+        expect(out.lint.filter((l) => l.rule === "DENSITY_MAX" && /impacts|SFX/.test(l.msg)), st.data.manifest.id).toEqual([]);
+        // bleeps are the only uncapped priority-5 sounds; every reveal riser still lands on its impact
+        const sfx = out.timeline.audio.sfx;
+        for (const r of sfx.filter((x) => x.combo === "reveal" && x.category === "riser")) {
+          expect(sfx.some((x) => x.combo === "reveal" && x.sourceItemId === r.sourceItemId && x.category !== "riser"), r.id).toBe(true);
+        }
+      }
+    });
   }
 });
