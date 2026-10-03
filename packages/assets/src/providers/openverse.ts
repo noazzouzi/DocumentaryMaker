@@ -1,8 +1,24 @@
 // Openverse (keyless; optional client credentials → bearer token). Images (and audio for music beds).
 import type { AssetProvider, AssetQuery, Candidate, ProviderContext } from "@docmaker/core";
 import { licenseInfo, parseCcLicense } from "../license";
-import { nowIso } from "../util";
+import { nowIso, stripHtml } from "../util";
 import { downloadOriginal, qs, type SearchResult } from "./common";
+import { commonsThumbFromOriginal, commonsThumbStep } from "./wikimedia";
+
+/** An Openverse result whose file lives on upload.wikimedia.org → the standard-step thumbnail (null when not applicable). */
+export function commonsViaOpenverse(url: string, width: number | null, height: number | null): { url: string; width: number; height: number | null } | null {
+  let host = "";
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+  if (host !== "upload.wikimedia.org") return null;
+  const step = commonsThumbStep(width);
+  const thumb = step !== null ? commonsThumbFromOriginal(url, step) : null;
+  if (!thumb || !width || step === null) return null;
+  return { url: thumb, width: step, height: height ? Math.round((height * step) / width) : null };
+}
 
 export const OPENVERSE_API = "https://api.openverse.org/v1";
 
@@ -21,10 +37,12 @@ export function parseOpenverse(json: unknown, kind: "image" | "audio" = "image")
       const license = lic
         ? licenseInfo(lic.code, { version: lic.version, url: r.license_url ?? null, attributionText: r.attribution ?? null })
         : licenseInfo("UNKNOWN", { url: r.license_url ?? null });
+      // Files hosted on Wikimedia Commons are fetched as standard-step thumbnails (originals are throttled with HTTP 429).
+      const wm = kind === "image" ? commonsViaOpenverse(r.url!, r.width ?? null, r.height ?? null) : null;
       const candidate: Candidate = {
-        provider: "openverse", providerAssetId: r.id, kind, title: r.title ?? "", description: "",
-        tags: (r.tags ?? []).map((t) => t.name).filter((t) => typeof t === "string"), previewUrl: r.thumbnail ?? r.url!, downloadUrl: r.url!,
-        width: r.width ?? null, height: r.height ?? null, durationSec: typeof r.duration === "number" ? r.duration / 1000 : null, license,
+        provider: "openverse", providerAssetId: r.id, kind, title: stripHtml(r.title ?? ""), description: "",
+        tags: (r.tags ?? []).map((t) => t.name).filter((t) => typeof t === "string"), previewUrl: r.thumbnail ?? r.url!, downloadUrl: wm?.url ?? r.url!,
+        width: wm ? wm.width : r.width ?? null, height: wm ? wm.height : r.height ?? null, durationSec: typeof r.duration === "number" ? r.duration / 1000 : null, license,
         author: r.creator ? { name: r.creator, url: r.creator_url ?? null } : null, sourcePageUrl: r.foreign_landing_url ?? "",
         retrievedAt: nowIso(), youtube: null,
       };

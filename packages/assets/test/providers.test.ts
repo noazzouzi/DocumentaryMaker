@@ -11,8 +11,8 @@ import {
 } from "../src/index";
 import { iaSearchUrl } from "../src/providers/archives";
 import { falGenerate } from "../src/providers/paid";
-import { commonsDownloadUrl } from "../src/providers/wikimedia";
-import { openverseUrl } from "../src/providers/openverse";
+import { commonsDownload, commonsDownloadUrl, commonsThumbStep } from "../src/providers/wikimedia";
+import { commonsViaOpenverse, openverseUrl } from "../src/providers/openverse";
 import { pexelsUrl, pickPexelsFile, pixabayUrl } from "../src/providers/stock";
 import { DATA, makeConfig, quietLogger } from "./helpers";
 
@@ -103,19 +103,38 @@ describe("Wikimedia Commons (recorded)", () => {
     expect((first.raw as { year: number }).year).toBe(2020);
     expect(first.candidate.title).not.toMatch(/^File:|_/);
   });
-  it("downloads originals ≤ 3840 px, else a 3840 px thumbnail", () => {
+  it("never downloads originals: standard-step thumbnails only, with the real thumbnail size", () => {
     const rs = parseCommons(j("commons-search.json"));
     const big = rs[0]!.candidate;
-    expect(big.downloadUrl).toMatch(/\/3840px-/);
+    expect(big.downloadUrl).toMatch(/\/3840px-Johnny_Depp-2821\.jpg/);
     expect(big.width).toBe(3840);
-    expect(rs[1]!.candidate.downloadUrl).toMatch(/upload\.wikimedia\.org\/wikipedia\/commons\/2\/21\//);
-    expect(commonsDownloadUrl({ url: "https://u/x.jpg", width: 9000 })).toBe("https://u/x.jpg"); // no thumb → original
+    // A small file whose API thumbnail is the unscaled original → a thumbnail built at the next step down.
+    expect(rs[1]!.candidate.downloadUrl).toBe("https://upload.wikimedia.org/wikipedia/commons/thumb/2/21/Johnny_Depp_2020.jpg/330px-Johnny_Depp_2020.jpg");
+    expect(rs[1]!.candidate.width).toBe(330);
+    for (const r of rs) expect(r.candidate.downloadUrl).toMatch(/\/thumb\//);
+    // 1921–3840 px originals → the 1920 step (non-standard widths such as 2560 return HTTP 400).
+    const mid = commonsDownload({ url: "https://upload.wikimedia.org/wikipedia/commons/a/ab/X.jpg", width: 3000, height: 2000, thumburl: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/X.jpg/960px-X.jpg" });
+    expect(mid).toEqual({ url: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/X.jpg/1920px-X.jpg", width: 1920, height: 1280 });
+    // TIFF thumbnails keep their lossy-page1- prefix (the 960 px search thumbnail used to be downloaded and scored as 3840).
+    const tif = commonsDownload({
+      url: "https://upload.wikimedia.org/wikipedia/commons/1/1a/A_Busy_River_Scene_RMG_BHC0711.tiff", width: 6000, height: 3900,
+      thumburl: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/A_Busy_River_Scene_RMG_BHC0711.tiff/lossy-page1-960px-A_Busy_River_Scene_RMG_BHC0711.tiff.jpg",
+    });
+    expect(tif).toEqual({ url: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/A_Busy_River_Scene_RMG_BHC0711.tiff/lossy-page1-3840px-A_Busy_River_Scene_RMG_BHC0711.tiff.jpg", width: 3840, height: 2496 });
+    expect(commonsDownload({ url: "https://upload.wikimedia.org/wikipedia/commons/1/1a/T.tif", width: 1500, height: 1000 }).url).toBe("https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/T.tif/lossy-page1-1280px-T.tif.jpg");
+    expect(commonsDownloadUrl({ url: "https://u/x.jpg", width: 9000 })).toBe("https://u/x.jpg"); // nothing to derive a thumbnail from
+    expect(commonsThumbStep(100)).toBeNull();
+  });
+  it("Openverse: Commons-hosted files become standard-step thumbnails; HTML is stripped from titles", () => {
+    const rs = parseOpenverse({ results: [{ id: "ov1", title: "<div class='fn'> Charles de l'Écluse</div>", url: "https://upload.wikimedia.org/wikipedia/commons/c/c3/Clusius.jpg", width: 2400, height: 3000, license: "pdm" }] });
+    expect(rs[0]!.candidate).toMatchObject({ title: "Charles de l'Écluse", downloadUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/Clusius.jpg/1920px-Clusius.jpg", width: 1920, height: 2400 });
+    expect(commonsViaOpenverse("https://live.staticflickr.com/1/2.jpg", 2000, 1000)).toBeNull();
   });
   it("identity search uses haswbstatement:P180=<QID>; generic search filters bitmaps", () => {
     const id = new URL(commonsUrl(q({ entityQid: "Q312004", text: "Carolus Clusius" })));
     expect(id.searchParams.get("gsrsearch")).toBe("haswbstatement:P180=Q312004 filetype:bitmap");
     expect(id.searchParams.get("gsrnamespace")).toBe("6");
-    expect(id.searchParams.get("iiurlwidth")).toBe("768");
+    expect(id.searchParams.get("iiurlwidth")).toBe("960");
     expect(id.searchParams.get("iiextmetadatafilter")).toContain("Restrictions");
     expect(new URL(commonsUrl(q())).searchParams.get("gsrsearch")).toBe("tulip field filetype:bitmap");
   });
