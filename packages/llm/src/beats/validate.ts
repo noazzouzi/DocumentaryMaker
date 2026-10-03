@@ -6,6 +6,7 @@ import {
 } from "@docmaker/core";
 import { checkMotion, kineticFrom } from "./motion";
 import { computePlanKey } from "./synthetic";
+import { mentionsPerson } from "../text";
 
 const issue = (level: LintIssue["level"], rule: string, where: string, msg: string): LintIssue => ({ level, rule, where, msg });
 export const isSynthetic = (p: Pick<BeatPlan, "origin" | "id">) => p.origin === "clip" || p.origin === "breath" || /-(CLIP|BR)$/.test(p.id);
@@ -96,6 +97,17 @@ export function validateBeats(i: ValidateBeatsInput): { issues: LintIssue[]; pla
       if (run === 3) issues.push(issue("warn", "V_SAME_VISUAL", p.id, "4+ consecutive beats on the same visual — add a pattern interrupt"));
     }
     let plan = p;
+    // a person beat is not only what the model tagged: a fact-sheet person named in the beat text, on screen or in the
+    // visual query is added to personIds (feeds the AI-image rewrite below and the assets fal refusal)
+    if (i.primary) {
+      const named = factSheet.people
+        .filter((x) => !plan.personIds.includes(x.id) && [t.text, t.onScreenText, plan.visualQuery].some((s) => s.trim() !== "" && mentionsPerson(s, x)))
+        .map((x) => x.id);
+      if (named.length > 0) {
+        issues.push(issue("warn", "V_PERSON_INFERRED", p.id, `names ${named.join(", ")} but person_ids omitted them; added`));
+        plan = { ...plan, personIds: [...plan.personIds, ...named] };
+      }
+    }
     // no photorealistic AI depiction of real people → motion graphic / text card
     if (i.primary && plan.visualKind === "ai_illustration" && plan.personIds.length > 0) {
       issues.push(issue("error", "V_AI_PERSON", p.id, "AI illustration of a real person is not allowed; rewritten to a graphic"));

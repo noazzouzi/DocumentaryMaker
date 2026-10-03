@@ -119,6 +119,21 @@ describe("validateBeats", () => {
     expect(v.texts[1]!.motionData).toMatchObject({ lines: ["Nobody asked what a flower was"] });
   });
 
+  it("a person named on screen or in the visual query counts even without person_ids (AI rewrite + personIds filled)", () => {
+    const name = FS.people[0]!.name;
+    for (const o of [{ onScreenText: name.toUpperCase() }, {}]) {
+      const b = base();
+      b.plans[1] = plan("CH2-B002", "CH2-S01", { visualKind: "ai_illustration", personIds: [], visualQuery: "onScreenText" in o ? "biotech CEO on stage" : `${name} on stage` });
+      b.texts[1] = text("CH2-B002", SLICES[1]!, o);
+      const v = validate(b.plans, b.texts);
+      expect(v.issues.filter((x) => x.rule === "V_PERSON_INFERRED").map((x) => x.where)).toEqual(["CH2-B002"]);
+      expect(v.issues.filter((x) => x.rule === "V_AI_PERSON")).toHaveLength(1);
+      expect(v.plans[1]).toMatchObject({ personIds: ["P1"], visualKind: "text_card" });
+    }
+    const unnamed = validate(base().plans, base().texts);
+    expect(unnamed.issues.filter((x) => x.rule === "V_PERSON_INFERRED")).toEqual([]);
+  });
+
   it("cue anchors, durations, same-visual runs, cue budgets and bleeps", () => {
     const b = base();
     b.plans[0] = plan("CH2-B001", "CH2-S01", { cueTags: [{ type: "REVEAL", value: "" }, { type: "SENSITIVE", value: "bleep" }], visualQuery: "same" });
