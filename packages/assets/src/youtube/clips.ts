@@ -1,10 +1,11 @@
 // resolveClips (§7.7): YouTube search → transcript → passage finder → (M3) download + clip-v1 conform. Never fatal.
 import path from "node:path";
 import type { ClipResolution, ClipWordsDoc, FactSheet, FrozenAsset, Project, Quote, Script, WordTiming, YoutubeRef } from "@docmaker/core";
-import { isDocmakerError } from "@docmaker/core";
+import { DocmakerError, isDocmakerError } from "@docmaker/core";
 import { conformClip, DEFAULT_HANDLE_MS } from "../conform";
 import { freezeFile } from "../freeze";
 import { attributionText, licenseInfo } from "../license";
+import { isBlockedPerson, nameStripper, type NameStripper } from "../privacy";
 import type { AssetsCtx } from "../types";
 import { errMsg, makeTmpDir, nowIso, rmrf } from "../util";
 import { detectCuts, snapToCuts } from "./cuts";
@@ -13,6 +14,8 @@ import { dropYtSource, parseYoutubeId, ytDownload, ytFetchTranscript, ytSearch, 
 
 const MAX_HITS = 5;
 const MAX_VIDEO_SEC = 30 * 60;
+/** Once a match scores at least this, no further transcripts are fetched (a tie within 0.05 is then unlikely to matter). */
+export const TIE_CHECK_BELOW = 0.85;
 
 /** Search hits ordered: verified channels first, ≤ 30 min, then views. */
 export function orderHits(hits: YtSearchHit[]): YtSearchHit[] {
@@ -47,11 +50,13 @@ export interface ClipsResult { clips: ClipResolution[]; frozen: FrozenAsset[]; c
 /** Optional LLM tie-breaker (llm.pickPassage bound by the engine): chooses among candidate windows of one quote. */
 export type PassagePicker = (i: { verbatim: string; windows: { index: number; text: string; startMs: number; endMs: number }[] }) => Promise<{ bestIndex: number; confidence: number }>;
 
-export async function resolveClips(i: { project: Project; script: Script; facts: FactSheet; skipSegments: ReadonlySet<string>; projectDir: string; passagePicker?: PassagePicker | null }, ctx: AssetsCtx): Promise<ClipsResult> {
+export async function resolveClips(i: { project: Project; script: Script; facts: FactSheet; skipSegments: ReadonlySet<string>; projectDir: string; passagePicker?: PassagePicker | null; personAcks?: readonly string[] }, ctx: AssetsCtx): Promise<ClipsResult> {
   const out: ClipsResult = { clips: [], frozen: [], clipWords: [], upgradedQuotes: [] };
   const offline = ctx.config.offline || i.project.assets.offline;
   const policy = i.project.assets.licensePolicy;
   const quotes = new Map<string, Quote>(i.facts.quotes.map((q) => [q.id, q]));
+  const acks = i.personAcks ?? [];
+  const names = nameStripper(i.facts, acks);
   const segs = i.script.chapters.flatMap((c) => c.segments).filter((s) => s.type === "clip" && !i.skipSegments.has(s.id));
   for (const seg of segs) {
     const quote = seg.quoteId ? quotes.get(seg.quoteId) : undefined;
@@ -68,8 +73,14 @@ export async function resolveClips(i: { project: Project; script: Script; facts:
       out.clips.push({ ...base, quoteId: quote.id, status: "skipped-policy", reason: "YouTube clips are disabled (allowYoutubeFairUse=false)" });
       continue;
     }
+    // Privacy (§4.3/§7.3): a quote by a minor/private victim, or by a non-public person without person-ack, is never searched.
+    const speaker = i.facts.people.find((p) => p.id === quote.speakerId);
+    if (speaker && isBlockedPerson(speaker, acks)) {
+      out.clips.push({ ...base, quoteId: quote.id, status: "skipped-policy", reason: speaker.isMinorOrPrivateVictim ? "the speaker is a minor or private victim: never searched" : "the speaker is not a public figure: searching needs the person-ack gate" });
+      continue;
+    }
     try {
-      const r = await resolveOne(seg.id, quote, i, ctx);
+      const r = await resolveOne(seg.id, quote, { ...i, names }, ctx);
       out.clips.push(r.clip);
       if (r.frozen) out.frozen.push(r.frozen);
       if (r.words) out.clipWords.push(r.words);
@@ -84,20 +95,26 @@ export async function resolveClips(i: { project: Project; script: Script; facts:
   return out;
 }
 
-async function resolveOne(segmentId: string, quote: Quote, i: { project: Project; facts: FactSheet; projectDir: string; passagePicker?: PassagePicker | null }, ctx: AssetsCtx): Promise<{ clip: ClipResolution; frozen: FrozenAsset | null; words: ClipWordsDoc | null }> {
+async function resolveOne(segmentId: string, quote: Quote, i: { project: Project; facts: FactSheet; projectDir: string; passagePicker?: PassagePicker | null; names: NameStripper }, ctx: AssetsCtx): Promise<{ clip: ClipResolution; frozen: FrozenAsset | null; words: ClipWordsDoc | null }> {
   const speaker = i.facts.people.find((p) => p.id === quote.speakerId)?.name ?? "";
-  const q = quote.youtubeSearchQuery.trim() || `${speaker} ${quote.verbatim.split(/\s+/).slice(0, 12).join(" ")}`.trim();
+  // Blocked names never leave the machine, whether in the LLM's search query or in the quoted words.
+  const q = i.names.strip(quote.youtubeSearchQuery.trim()) || `${speaker} ${i.names.strip(quote.verbatim).split(/\s+/).slice(0, 12).join(" ")}`.trim();
+  if (q === "") throw new DocmakerError("VALIDATION", "nothing searchable left in the quote after removing protected names");
   const maxClipMs = Math.round(i.project.assets.maxClipSeconds * 1000);
   const hits = orderHits(await ytSearch(q, { config: ctx.config, signal: ctx.signal, logger: ctx.logger })).slice(0, MAX_HITS);
   const found: { hit: YtSearchHit; words: WordTiming[]; kind: YoutubeRef["transcriptKind"]; lang: string | null; p: NonNullable<ReturnType<typeof findPassage>> }[] = [];
+  // First ≥ 0.6 wins (§7.7): further hits are only read while a close alternative could still matter (best < 0.85), and local
+  // ASR (bestaudio download + CPU transcription) runs at most once per quote, never once a match exists.
+  let localAsrUsed = false;
   for (const hit of hits) {
-    const t = await ytFetchTranscript(hit.id, quote.language || "en", { config: ctx.config, signal: ctx.signal, logger: ctx.logger });
+    const bestSoFar = found.reduce((m, f) => Math.max(m, f.p.score), 0);
+    if (found.length > 0 && bestSoFar >= TIE_CHECK_BELOW) break;
+    const t = await ytFetchTranscript(hit.id, quote.language || "en", { config: ctx.config, signal: ctx.signal, logger: ctx.logger }, {
+      allowLocalAsr: found.length === 0 && !localAsrUsed, onLocalAsr: () => { localAsrUsed = true; },
+    });
     if (t.words.length === 0) continue;
     const p = findPassage(quote.verbatim, t.words, { maxClipMs });
-    if (p && p.score >= PASSAGE_ACCEPT) {
-      found.push({ hit, words: t.words, kind: t.kind, lang: t.lang, p });
-      if (p.score >= 0.95) break; // near-exact: no need to look further
-    }
+    if (p && p.score >= PASSAGE_ACCEPT) found.push({ hit, words: t.words, kind: t.kind, lang: t.lang, p });
   }
   const base = { segmentId, quoteId: quote.id, source: "auto" as const };
   if (found.length === 0) {

@@ -123,7 +123,7 @@ export async function ytInfo(videoId: string, ctx: YtCtx): Promise<Record<string
   return JSON.parse(out) as Record<string, unknown>;
 }
 
-export async function ytFetchTranscript(videoId: string, lang: string, ctx: YtCtx): Promise<{ words: WordTiming[]; kind: "manual" | "asr-orig" | "asr" | "translated" | "local-asr" | "none"; lang: string | null }> {
+export async function ytFetchTranscript(videoId: string, lang: string, ctx: YtCtx, opts?: { allowLocalAsr?: boolean; onLocalAsr?: () => void }): Promise<{ words: WordTiming[]; kind: "manual" | "asr-orig" | "asr" | "translated" | "local-asr" | "none"; lang: string | null }> {
   const info = await ytInfo(videoId, ctx);
   const track = pickSubtitleTrack(info as Parameters<typeof pickSubtitleTrack>[0], lang);
   if (track) {
@@ -143,7 +143,8 @@ export async function ytFetchTranscript(videoId: string, lang: string, ctx: YtCt
   }
   // No usable subtitles: transcribe the audio locally when the Python sidecar (faster-whisper) is installed.
   const durationSec = Number(info.duration ?? 0) || 0;
-  if (sidecarReady(ctx.config) && durationSec > 0 && durationSec <= LOCAL_ASR_MAX_SEC) {
+  if ((opts?.allowLocalAsr ?? true) && sidecarReady(ctx.config) && durationSec > 0 && durationSec <= LOCAL_ASR_MAX_SEC) {
+    opts?.onLocalAsr?.();
     try {
       const words = await ytLocalAsr(videoId, lang, ctx);
       if (words.length > 0) return { words, kind: "local-asr", lang: lang || null };

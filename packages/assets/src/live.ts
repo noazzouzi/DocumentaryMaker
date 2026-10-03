@@ -2,9 +2,10 @@
 // supplies licence data — the server re-derives the Candidate from candidates/<beatId>.json or this cache).
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { BeatPlansDoc, CandidateRecord as CandidateRecordSchema, CandidatesDoc, DocmakerError, isDocmakerError, LocalIndexDoc, P, Project, sha16 } from "@docmaker/core";
+import { ApprovalsDoc, BeatPlansDoc, CandidateRecord as CandidateRecordSchema, CandidatesDoc, DocmakerError, FactSheet, isDocmakerError, LocalIndexDoc, P, Project, sha16 } from "@docmaker/core";
 import type { AssetProvider, AssetProviderId, AssetQuery, BeatPlan, CandidateRecord, FrozenAsset, LicensePolicy } from "@docmaker/core";
 import { LicensePolicyEngine } from "./license";
+import { blockedPersons, nameStripper } from "./privacy";
 import { materializeCandidate, providerContext } from "./materialize";
 import { allProviders, OFFLINE_PROVIDERS } from "./providers";
 import { createLocalProvider } from "./providers/local";
@@ -53,21 +54,50 @@ async function providerFor(id: AssetProviderId, projectDir: string): Promise<Ass
   return p;
 }
 
-export async function liveSearch(i: { query: AssetQuery; providers: AssetProviderId[]; allowPaid: boolean; policy: LicensePolicy; editorial: Project["editorial"]; projectDir: string }, ctx: AssetsCtx): Promise<CandidateRecord[]> {
+/** person-ack items of approvals.json (the engine's gate record). */
+async function personAcksOf(projectDir: string): Promise<string[]> {
+  const doc = await readJson(path.join(projectDir, P.approvals), ApprovalsDoc);
+  return [...new Set((doc?.approvals ?? []).filter((a) => a.gate === "person-ack").flatMap((a) => a.items))];
+}
+
+/**
+ * Privacy filter for a client query (§4.3/§7.3): blocked persons' names are stripped from text/localText, and their personIds
+ * and Wikidata QIDs are dropped, before anything reaches a provider.
+ */
+export function sanitizeLiveQuery(query: AssetQuery, facts: FactSheet | null, personAcks: readonly string[]): AssetQuery {
+  const blocked = blockedPersons(facts, personAcks);
+  if (blocked.length === 0) return query;
+  const names = nameStripper(facts, personAcks);
+  const blockedIds = new Set(blocked.map((p) => p.id));
+  const blockedQids = new Set(blocked.map((p) => p.wikidataQid).filter((q): q is string => !!q));
+  const qidOwner = query.entityQid ? facts?.people.find((p) => p.wikidataQid === query.entityQid) : undefined;
+  return {
+    ...query,
+    text: names.strip(query.text),
+    localText: query.localText === null ? null : names.strip(query.localText) || null,
+    personIds: query.personIds.filter((id) => !blockedIds.has(id)),
+    entityQid: query.entityQid && (blockedQids.has(query.entityQid) || (qidOwner && blockedIds.has(qidOwner.id))) ? null : query.entityQid,
+  };
+}
+
+export async function liveSearch(i: { query: AssetQuery; providers: AssetProviderId[]; allowPaid: boolean; policy: LicensePolicy; editorial: Project["editorial"]; projectDir: string; facts?: FactSheet | null; personAcks?: readonly string[] }, ctx: AssetsCtx): Promise<CandidateRecord[]> {
   const project = await readJson(path.join(i.projectDir, P.project), Project);
+  const facts = i.facts !== undefined ? i.facts : await readJson(path.join(i.projectDir, P.factsheet), FactSheet);
+  const query = sanitizeLiveQuery(i.query, facts, i.personAcks ?? (await personAcksOf(i.projectDir)));
   const offline = ctx.config.offline || (project?.assets.offline ?? false);
   const engine = new LicensePolicyEngine(i.policy, { monetized: i.editorial.monetized, fairUseAcknowledged: i.editorial.fairUseAcknowledged });
-  const plan = (await planOf(i.projectDir, i.query.beatId)) ?? pseudoPlan(i.query);
+  const plan = (await planOf(i.projectDir, query.beatId)) ?? pseudoPlan(query);
   const quota = new QuotaBuckets(ctx.config);
   const records: CandidateRecord[] = [];
   for (const id of i.providers) {
     if (offline && !OFFLINE_PROVIDERS.includes(id)) continue;
     const p = await providerFor(id, i.projectDir);
     if (p.paid && !i.allowPaid) continue;
-    if (!p.kinds.includes(i.query.kind) || !p.isConfigured(ctx.secrets, ctx.config)) continue;
+    if (!p.kinds.includes(query.kind) || !p.isConfigured(ctx.secrets, ctx.config)) continue;
+    if (query.text.trim() === "" && query.entityQid === null && id !== "local" && id !== "procedural") continue; // nothing searchable left
     try {
       if (id !== "local" && id !== "procedural") await quota.acquire(id, p.limits, ctx.signal);
-      for (const r of await p.search(i.query, providerContext(ctx))) records.push({ candidate: r.candidate, score: null, raw: r.raw });
+      for (const r of await p.search(query, providerContext(ctx))) records.push({ candidate: r.candidate, score: null, raw: r.raw });
     } catch (e) {
       if (isDocmakerError(e) && e.code === "CANCELED") throw e;
       ctx.logger.warn("live search provider failed", { provider: id, error: errMsg(e) });

@@ -359,7 +359,7 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
   // ---- clips (primary clip segments); manual resolutions from user-picks win per segment
   const userClipSegs = new Set(i.userPicks.clips.map((c) => c.segmentId));
   ctx.progress(0.9, "clips");
-  const clipRes = await resolveClips({ project, script: i.primaryScript, facts, skipSegments: userClipSegs, projectDir: i.projectDir, passagePicker: i.passagePicker ?? null }, ctx);
+  const clipRes = await resolveClips({ project, script: i.primaryScript, facts, skipSegments: userClipSegs, projectDir: i.projectDir, passagePicker: i.passagePicker ?? null, personAcks: i.personAcks }, ctx);
   for (const a of clipRes.frozen) frozen.set(a.id, a);
   const clips: ClipResolution[] = [...clipRes.clips];
   const clipWords: ClipWordsDoc[] = [...clipRes.clipWords];

@@ -76,7 +76,8 @@ export function parseCcLicense(raw: string | null | undefined, versionHint?: str
   }
   if (/^(cc0|cc-0|cc zero|cc0 1\.0|cc0-1\.0)/.test(s) || s === "cc-zero") return { code: "CC0", version: "1.0" };
   if (/^(pdm|public ?domain|pd(-|\s|$)|no restrictions|no known (copyright )?restrictions)/.test(s) || /^pd-/.test(s)) return { code: "PDM", version: null };
-  const m = /^(?:cc[\s-]*)?(by(?:[\s-](?:nc|sa|nd))*)(?:[\s-]*(\d+(?:\.\d+)?))?/.exec(s.replace(/_/g, "-"));
+  // The licence parts must end the string or be followed by a version: free text ("by permission of…", "byline") is not a licence.
+  const m = /^(?:cc[\s-]*)?(by(?:[\s-](?:nc|sa|nd))*)(?=[\s-]*$|[\s-]*\d)(?:[\s-]*(\d+(?:\.\d+)?))?/.exec(s.replace(/_/g, "-"));
   if (m) return ccFromParts(m[1]!, m[2] ?? versionHint ?? null);
   return null;
 }

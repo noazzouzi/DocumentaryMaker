@@ -312,6 +312,59 @@ describe("yt-dlp wrapper and clip resolution (fake binary)", () => {
     expect(picked.clips[0]!.status).toBe("skipped-policy"); // no fair-use acknowledgement: nothing downloaded
   });
 
+  it("privacy: a quote by a private victim is never searched; blocked names are stripped from the search query", async () => {
+    fake.setMode({ search, json3: transcript, duration: 12 });
+    const project: Project = makeProject();
+    project.assets = { ...project.assets, offline: false, licensePolicy: { ...project.assets.licensePolicy, allowYoutubeFairUse: true } };
+    const script = makeScript({ chapters: 1, segmentsPerChapter: 2, withClip: true });
+    const facts = makeFactSheet();
+    facts.people.push({ id: "P9", name: "Mira Victimsdottir", roleInStory: "victim", publicFigure: false, isMinorOrPrivateVictim: true, imageQueries: [], wikidataQid: null, aliases: [] });
+    const n0 = fake.calls().length;
+    // 1) the speaker is a private victim → skipped-policy before any yt-dlp call
+    const victimFacts = { ...facts, quotes: facts.quotes.map((q) => (q.id === "Q1" ? { ...q, speakerId: "P9", youtubeSearchQuery: "Mira Victimsdottir interview fever" } : q)) };
+    const r1 = await resolveClips({ project, script, facts: victimFacts, skipSegments: new Set(), projectDir }, ctx);
+    expect(r1.clips[0]).toMatchObject({ status: "skipped-policy", assetId: null, youtube: null });
+    expect(fake.calls().length).toBe(n0);
+    // 2) a public speaker, but the LLM query names the victim → the name never reaches yt-dlp
+    const namedFacts = { ...facts, quotes: facts.quotes.map((q) => (q.id === "Q1" ? { ...q, youtubeSearchQuery: "Carolus Clusius on Mira Victimsdottir fever" } : q)) };
+    const r2 = await resolveClips({ project, script, facts: namedFacts, skipSegments: new Set(), projectDir }, ctx);
+    expect(r2.clips[0]!.youtube?.videoId).toBe("AAAAAAAAAAA");
+    const calls = fake.calls().slice(n0);
+    expect(calls.some((a) => a.includes("ytsearch10:Carolus Clusius on fever"))).toBe(true);
+    expect(calls.flat().some((a) => /mira|victimsdottir/i.test(a))).toBe(false);
+  });
+
+  it("stops reading transcripts once a strong match exists", async () => {
+    const three = ["AAAAAAAAAAA", "BBBBBBBBBBB", "CCCCCCCCCCC"].map((id, k) => ({ ...search[0], id, view_count: 100 - k }));
+    fake.setMode({ search: three, json3: transcript, duration: 12 });
+    const project: Project = makeProject();
+    project.assets = { ...project.assets, offline: false, licensePolicy: { ...project.assets.licensePolicy, allowYoutubeFairUse: true } };
+    const n0 = fake.calls().length;
+    const r = await resolveClips({ project, script: makeScript({ chapters: 1, segmentsPerChapter: 2, withClip: true }), facts: makeFactSheet(), skipSegments: new Set(), projectDir }, ctx);
+    expect(r.clips[0]!.youtube).toMatchObject({ videoId: "AAAAAAAAAAA", matchScore: 1 });
+    expect(fake.calls().slice(n0).filter((a) => a.includes("--write-subs"))).toHaveLength(1);
+  });
+
+  it("local ASR runs at most once per quote", async () => {
+    const three = ["AAAAAAAAAAA", "BBBBBBBBBBB", "CCCCCCCCCCC"].map((id, k) => ({ ...search[0], id, view_count: 100 - k }));
+    fake.setMode({ search: three, duration: 12, noSubs: true });
+    const venvBin = path.join(config.paths.pyVenv, "bin");
+    mkdirSync(venvBin, { recursive: true });
+    const pieces = [{ text: " unrelated", startMs: 0, endMs: 500, p: 0.9 }, { text: " words", startMs: 500, endMs: 900, p: 0.9 }];
+    writeFileSync(path.join(venvBin, "python"), `#!/bin/sh\nout=""\nwhile [ $# -gt 0 ]; do if [ "$1" = "--out" ]; then out="$2"; fi; shift; done\nprintf '%s' '${JSON.stringify({ words: pieces, durationSec: 12, rtf: 0.1 })}' > "$out"\n`);
+    chmodSync(path.join(venvBin, "python"), 0o755);
+    try {
+      const project: Project = makeProject();
+      project.assets = { ...project.assets, offline: false, licensePolicy: { ...project.assets.licensePolicy, allowYoutubeFairUse: true } };
+      const n0 = fake.calls().length;
+      const r = await resolveClips({ project, script: makeScript({ chapters: 1, segmentsPerChapter: 2, withClip: true }), facts: makeFactSheet(), skipSegments: new Set(), projectDir }, ctx);
+      expect(r.clips[0]!.status).toBe("not-found");
+      expect(fake.calls().slice(n0).filter((a) => a.includes("ba/b"))).toHaveLength(1);
+    } finally {
+      cleanup(path.join(config.paths.pyVenv));
+    }
+  }, 60_000);
+
   it("manual clips: URL (yt-dlp) and local file, both behind the fair-use gate", async () => {
     fake.setMode({ search, json3: transcript, duration: 12 });
     const project: Project = makeProject();

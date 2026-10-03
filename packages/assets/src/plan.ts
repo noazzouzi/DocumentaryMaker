@@ -1,7 +1,7 @@
 // Query planning (§7.3 table) and shot counts.
-import { normWord } from "@docmaker/core";
 import type { AssetProviderId, AssetQuery, BeatPlan, EntitiesDoc, FactSheet, Person, StyleData, VisualKind } from "@docmaker/core";
 import { falAllowedForBeat } from "./denylist";
+import { isBlockedPerson, nameStripper } from "./privacy";
 import { clamp } from "./util";
 
 export const GRAPHIC_KINDS: readonly VisualKind[] = ["motion_graphic", "text_card", "social_post", "document_screenshot", "map"];
@@ -17,28 +17,22 @@ export function isBreathBeat(plan: Pick<BeatPlan, "origin" | "id">): boolean {
   return plan.origin === "breath" || plan.id.endsWith("-BR");
 }
 
-/** Persons whose identity may be searched: never minors/private victims; non-public only after person-ack. */
+/** Persons of the beat whose identity may be searched: never minors/private victims; non-public only after person-ack. */
 export function searchablePersons(plan: Pick<BeatPlan, "personIds">, facts: FactSheet, personAcks: readonly string[]): { allowed: Person[]; blocked: Person[] } {
   const allowed: Person[] = [];
   const blocked: Person[] = [];
   for (const id of plan.personIds) {
     const p = facts.people.find((x) => x.id === id);
     if (!p) continue;
-    if (p.isMinorOrPrivateVictim || (!p.publicFigure && !personAcks.includes(p.id))) blocked.push(p);
+    if (isBlockedPerson(p, personAcks)) blocked.push(p);
     else allowed.push(p);
   }
   return { allowed, blocked };
 }
 
-/** Removes the name tokens of blocked persons from a query (the LLM may have written them into visualQuery). */
+/** Removes the names of `blocked` persons from a query (the LLM may have written them into visualQuery). */
 export function stripNames(text: string, blocked: readonly Person[]): string {
-  if (blocked.length === 0) return text;
-  const bad = new Set<string>();
-  for (const p of blocked) for (const n of [p.name, ...p.aliases]) for (const w of n.split(/\s+/)) {
-    const t = normWord(w);
-    if (t.length >= 2) bad.add(t);
-  }
-  return text.split(/\s+/).filter((w) => !bad.has(normWord(w))).join(" ").trim();
+  return nameStripper({ people: [] }, [], blocked).strip(text);
 }
 
 /** Provider order per visual kind (§7.3). Stock is excluded for people beats. */
@@ -70,7 +64,9 @@ export function planQueries(i: { plan: BeatPlan; facts: FactSheet; entities: Ent
   const { plan, facts, entities, personAcks } = i;
   if (isClipBeat(plan)) return []; // resolveClips handles YouTube quotes
   const { allowed, blocked } = searchablePersons(plan, facts, personAcks);
-  const visual = stripNames(plan.visualQuery, blocked) || plan.visualKind.replace(/_/g, " ");
+  // Blocked persons of the WHOLE fact sheet are stripped from every free-text query, listed in personIds or not.
+  const names = nameStripper(facts, personAcks, blocked);
+  const visual = names.strip(plan.visualQuery) || plan.visualKind.replace(/_/g, " ");
   const out: AssetQuery[] = [];
   if (isGraphicsBeat(plan)) {
     out.push({ ...BASE(plan, "image", "generated", `${visual} abstract background texture`, 4), orientation: "landscape" });
@@ -82,7 +78,7 @@ export function planQueries(i: { plan: BeatPlan; facts: FactSheet; entities: Ent
         const ent = entities.entities.find((e) => e.personId === p.id);
         out.push({
           ...BASE(plan, "image", "portrait", p.name, 20), personIds: [p.id], orientation: "any", entityQid: ent?.qid ?? p.wikidataQid ?? null,
-          localText: p.imageQueries.find((q) => q !== p.name) ?? null,
+          localText: p.imageQueries.map((q) => names.strip(q)).find((q) => q !== "" && q !== p.name) ?? null,
         });
       }
       out.push({ ...BASE(plan, "image", "archival", visual, 20), orientation: allowed.length > 0 ? "any" : "landscape" });

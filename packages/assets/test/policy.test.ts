@@ -16,6 +16,7 @@ describe("parseCcLicense", () => {
     ["CC0", null, "CC0", "1.0"], ["https://creativecommons.org/licenses/by-nc/2.0/", null, "CC-BY-NC", "2.0"],
     ["http://creativecommons.org/publicdomain/mark/1.0/", null, "PDM", "1.0"], ["http://creativecommons.org/licenses/publicdomain/", null, "PDM", null],
     ["https://creativecommons.org/publicdomain/zero/1.0/", null, "CC0", "1.0"], ["CC BY 4.0", null, "CC-BY", "4.0"], ["by-nc-sa", "2.5", "CC-BY-NC-SA", "2.5"],
+    ["CC-BY-SA-3.0", null, "CC-BY-SA", "3.0"], ["CC BY-SA 3.0 DE", null, "CC-BY-SA", "3.0"], ["cc_by_nc_4.0", null, "CC-BY-NC", "4.0"],
   ])("%s → %s", (raw, v, code, version) => {
     expect(parseCcLicense(raw, v)).toEqual({ code, version });
   });
@@ -23,6 +24,9 @@ describe("parseCcLicense", () => {
     expect(parseCcLicense("GFDL")).toBeNull();
     expect(parseCcLicense("")).toBeNull();
     expect(parseCcLicense("All rights reserved")).toBeNull();
+  });
+  it("free text starting with \"by\" is not a CC licence", () => {
+    for (const raw of ["by permission of the author", "byline", "bysa", "By courtesy of the museum", "by-sa-x", "cc by sa permission"]) expect(parseCcLicense(raw)).toBeNull();
   });
   it("derives flags", () => {
     const nc = licenseInfo("CC-BY-NC-SA", { version: "4.0" });
