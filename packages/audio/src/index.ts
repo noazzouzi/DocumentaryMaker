@@ -1,22 +1,21 @@
 // @docmaker/audio — public API (packages/audio/src/index.ts). WAV I/O and loudness come from @docmaker/core/node.
-// P0 API stub (SPEC §4.19): every function throws DocmakerError("INTERNAL", "not implemented: …") until its owner lands it.
+import type { LicenseInfo, LoudnessDoc, MusicMood, ProgramLayout, SfxEntry, SfxManifest, Timeline } from "@docmaker/core";
 import { notImplemented } from "./notImplemented";
-import type { LicenseInfo, LoudnessDoc, Logger, MusicMood, Progress, ProgramLayout, RuntimeConfig, SfxCategory, SfxEntry, SfxManifest, Timeline } from "@docmaker/core";
+import { SFX_RECIPES as RECIPES } from "./sfx/recipes";
+import type { SfxRecipe as Recipe } from "./sfx/recipes";
+import { ensureSfxPackImpl, loadSfxEntriesImpl } from "./sfx/packs";
+import type { AudioCtx as Ctx } from "./util";
 
-export interface AudioCtx { config: RuntimeConfig; logger: Logger; signal: AbortSignal; progress: Progress }
+export type AudioCtx = Ctx;
+export type SfxRecipe = Recipe;
+export const SFX_RECIPES: readonly SfxRecipe[] = RECIPES;
 
-export interface SfxRecipe {
-  category: SfxCategory; variants: { variant: number; durationSec: number; seed: number }[];
-  syncPoint: "peak" | "onset" | "end"; loopable: boolean;
-  args(o: { durationSec: number; seed: number; sampleRate: 48000 }): string[]; // ffmpeg lavfi argument builder (port of make_sfx.sh)
-}
-export const SFX_RECIPES: readonly SfxRecipe[] = [];
 /** Generates <home>/sfx/<pack>/<version>/ once (machine lock), analyses peaks, writes manifest.json. */
 export function ensureSfxPack(pack: "procedural" | "remotion-sfx-cc0" | "hyperframes-pixabay" | "user", ctx: AudioCtx): Promise<SfxManifest> {
-  throw notImplemented("audio.ensureSfxPack");
+  return ensureSfxPackImpl(pack, ctx);
 }
 export function loadSfxEntries(packs: readonly string[], ctx: AudioCtx): Promise<SfxEntry[]> {
-  throw notImplemented("audio.loadSfxEntries");
+  return loadSfxEntriesImpl(packs, ctx);
 } // merged, sorted by id
 
 export interface MusicGenOptions { mood: MusicMood; bpm: number; bars: number; seed: number; key: "A minor" | "D minor" | "E minor" | "C major"; energy: "low" | "mid" | "high" }
@@ -39,3 +38,10 @@ export function mixTimeline(t: Timeline, i: { projectDir: string; outMixRel: str
 export function densityReport(t: Timeline): { sfxPerMin: number[]; impactsPerMin: number[]; silentCutShare: number; chapterRmsDb: Record<string, number> } {
   throw notImplemented("audio.densityReport");
 }
+
+// ---- additive exports
+export { CATEGORY_PEAK_DBFS, M1_CATEGORIES, NON_PROCEDURAL_CATEGORIES, renderedDurationSec } from "./sfx/recipes";
+export { PROCEDURAL_LICENSE, PROCEDURAL_PACK, PROCEDURAL_VERSION, proceduralDir, recipesStamp } from "./sfx/generate";
+export { OPTIONAL_PACKS, installedEntriesById, readInstalledManifest } from "./sfx/packs";
+export type { SfxPackId } from "./sfx/packs";
+export { syncPointMs } from "./sfx/analyze";
