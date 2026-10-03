@@ -23,7 +23,7 @@ import { selectSfx, sfxCandidates } from "./sfx";
 import { applyHits, buildShots, numberShots, snapRevealCuts, textlessUnderText } from "./shots";
 import { effectiveUpscale, isImpact, maxGapFrames, punchEvents, sfxEvents, timelineVisualEvents } from "./stats";
 import { decideLayouts, relayoutChanges } from "./stills";
-import { assignTransitions, keyOf } from "./transitions";
+import { assignTransitions, hiddenTransitions, keyOf } from "./transitions";
 import type { DirectorInput, DirectorOutput, DirectorStats } from "./types";
 import { DIRECTOR_VERSION } from "./version";
 import { visualChangePass } from "./visual-change";
@@ -156,6 +156,7 @@ export function direct(I: DirectorInput): DirectorOutput {
   // 7. overlays
   const { st, bleeps } = buildOverlays(ctx, shots);
   textlessUnderText(shots, st.items); // no keyword headline under a text overlay (the words would be drawn twice)
+  hiddenTransitions(ctx, shots, st.items); // no transition (or its SFX) under an opaque full-frame card
   // 6. reveals, shocks, fx, punches
   const book = new FxBook();
   climaxFx(ctx, book, reveals, snapped);
@@ -173,6 +174,7 @@ export function direct(I: DirectorInput): DirectorOutput {
   placePunches(ctx, { shots, st, book, quiet, room });
   // 8. visual change → re-layout split shots, final cameras around the accepted punches
   visualChangePass(ctx, shots, st, book);
+  hiddenTransitions(ctx, shots, st.items); // again for the zoom cuts of step 6 and the splits of step 8
   relayoutChanges(ctx, shots);
   const punchAmt = (s: Shot) => Math.max(0, ...book.live().filter((f) => (f.fx === "zoom" || f.fx === "punch") && f.target !== "all" && f.from < s.end && f.from + f.dur > s.from).map((f) => f.amt));
   assignCameras(ctx, shots, { reserve: punchAmt });

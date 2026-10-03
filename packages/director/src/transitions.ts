@@ -1,5 +1,5 @@
 // Step 5 — TRANSITIONS (§9.3): structural → proposals → seeded quota fill → constraint re-check (failure → cut).
-import { DEFERRED_TRANSITIONS, lerp, weightedPick, type Direction, type Transition, type TransitionKey } from "@docmaker/core";
+import { COMPONENT_META, DEFERRED_TRANSITIONS, framesAt, lerp, weightedPick, type Direction, type OverlayComponentId, type Transition, type TransitionKey } from "@docmaker/core";
 import { clamp, round2, takeExplicitFlash, type Ctx, type Shot, type TSource } from "./ctx";
 
 export const VELOCITY: ReadonlySet<string> = new Set(["whip", "zoomThrough", "zoomThroughInverse", "cutTheCurve", "pushCut"]);
@@ -221,4 +221,32 @@ function build(ctx: Ctx, key: TransitionKey, d: number, B: Shot, hook: boolean, 
     case "dissolve": case "blurDissolve": case "push": case "wipe":
       return { kind: "overlap", presentation: key, durationFrames: clamp(d + (d % 2), 4, 30), direction: "left" };
   }
+}
+
+/**
+ * A transition under an opaque full-frame card (fully entered before the seam, still up after it) cannot be seen, and
+ * its SFX would play over a static card: it becomes a plain cut (its quota slot, accent and SFX slot are freed).
+ * Returns the ids of the shots whose transition was dropped.
+ */
+export function hiddenTransitions(ctx: Ctx, shots: Shot[], overlays: readonly { component: OverlayComponentId; from: number; dur: number; dropped: boolean }[]): string[] {
+  const cards = overlays.filter((o) => !o.dropped && COMPONENT_META[o.component].fullFrame && COMPONENT_META[o.component].band === "graphics");
+  const out: string[] = [];
+  for (let i = 1; i < shots.length; i++) {
+    const s = shots[i]!;
+    const t = s.transition;
+    if (t.kind === "cut" && t.accent.type === "none") continue;
+    const pad = t.kind === "cut" ? ctx.F30(4) : Math.ceil(t.durationFrames / 2) + 1;
+    const hidden = cards.some((o) => {
+      const m = COMPONENT_META[o.component];
+      return o.from + framesAt(ctx.fps, m.enter30) <= s.from - pad && o.from + o.dur - framesAt(ctx.fps, m.exit30) >= s.from + pad;
+    });
+    if (!hidden) continue;
+    s.transition = { kind: "cut", accent: { type: "none" } };
+    s.tkey = "cut";
+    s.tsource = "none";
+    s.explicitFlash = false;
+    s.zoomCut = false; // an invisible zoom cut is no punch
+    out.push(s.id);
+  }
+  return out;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FrozenAsset, msToFrame, type Timeline } from "@docmaker/core";
+import { COMPONENT_META, FrozenAsset, msToFrame, type Timeline } from "@docmaker/core";
 import { TEST_STYLE } from "@docmaker/core/testing";
 import { direct } from "../src/index";
 import { effectiveUpscale } from "../src/stats";
@@ -224,5 +224,24 @@ describe("full-frame cards", () => {
       const hidden = t.video.filter((c) => c.beatId !== o.beatId && c.beatId?.endsWith("-CLIP") === false && (c.source.kind === "image" || c.source.kind === "video") && c.from > o.from && c.from < o.from + o.dur);
       for (const c of hidden) expect(o.from + o.dur, `${o.id} over ${c.id}`).toBeLessThanOrEqual(Math.max(c.from, o.from + 4 * t.fps));
     }
+  });
+});
+
+describe("transitions under full-frame cards", () => {
+  it("no transition or transition SFX at a seam hidden by an opaque full-frame card", () => {
+    let seams = 0;
+    for (const out of Object.values(runs())) {
+      const t = out.timeline;
+      const cards = t.overlays.filter((o) => COMPONENT_META[o.component].fullFrame && o.band === "graphics");
+      for (const c of t.video.slice(1)) {
+        const hidden = cards.some((o) => o.from + o.enterFrames <= c.from - 4 && o.from + o.dur - o.exitFrames >= c.from + 4);
+        if (!hidden) continue;
+        seams++;
+        const tr = c.transitionIn;
+        expect(tr.kind === "cut" && tr.accent.type === "none", `${c.id} ${JSON.stringify(tr)}`).toBe(true);
+        expect(t.audio.sfx.filter((x) => x.sourceItemId === c.id && /whoosh|swish/.test(x.category)).map((x) => x.id), c.id).toEqual([]);
+      }
+    }
+    expect(seams).toBeGreaterThan(0);
   });
 });

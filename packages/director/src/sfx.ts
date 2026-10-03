@@ -1,7 +1,7 @@
 // Step 11c — SFX auto-attach and selection (§9.5): candidates from the final events → silence rule → silent-cut share
 // → greedy caps / min gap → variants (no repeat) → placement → fill to the floor.
 import {
-  COMPONENT_META, ids, lerp, type SfxCategory, type SfxCue, type SfxEntry,
+  COMPONENT_META, framesAt, ids, lerp, type SfxCategory, type SfxCue, type SfxEntry,
 } from "@docmaker/core";
 import { anchorAt, clamp, cueFrame, cueWord, intensityAt, rateOk, type Ctx, type Shot } from "./ctx";
 import type { Fx } from "./fx";
@@ -270,9 +270,14 @@ export function selectSfx(ctx: Ctx, env: SfxEnv, cands: SfxCand[]): SfxResult {
   const rollLast = new Map<string, number>();
   const heads: { f: number; impact: boolean }[] = []; // density events (rolls of one item count once)
   const acceptedKeys = new Set<string>();
+  // seams hidden under an opaque full-frame card: a cut whoosh would play over a static card
+  const cards = env.overlays.filter((o) => COMPONENT_META[o.component].fullFrame && COMPONENT_META[o.component].band === "graphics");
+  const hiddenSeam = (f: number) => cards.some((o) => o.from + framesAt(ctx.fps, COMPONENT_META[o.component].enter30) <= f - ctx.F30(4)
+    && o.from + o.dur - framesAt(ctx.fps, COMPONENT_META[o.component].exit30) >= f + ctx.F30(4));
   const tryAccept = (c: SfxCand, texture: boolean): boolean => {
     const cat = resolveCat(c.category);
     if (!cat || acceptedKeys.has(c.key)) return false;
+    if (c.transition && hiddenSeam(c.event)) return false;
     if ((c.impactLike || texture) && c.priority < 5 && inClean(c.event)) return false;
     const entries = byCat.get(cat)!;
     const idx0 = ((useCount.get(cat) ?? 0) + Math.floor(ctx.R(`sfxv:${c.key}`)() * entries.length)) % entries.length;
