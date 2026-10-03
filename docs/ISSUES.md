@@ -222,3 +222,17 @@ export async function readWavRange(path: string, startFrame: number, frames: num
 // encodeBlock: write s24 through a Uint8Array/DataView loop instead of Buffer.writeIntLE per sample
 ```
 **Local workaround.** None needed: the mixer works block-wise on everything it renders and only the decoded sources are held whole.
+
+## 2026-10-03 export (W9) → engine (W10), I — notes; no blocking contract change
+
+**Problem / notes.** The §4.19 export signatures are unchanged; these are the conventions the engine and the integration need to know.
+
+1. **Conform-map keys** (additive to the §4.19 comment `assetId | "gen:<clipId>" | "ovl:<itemId>" | "stem:<name>" | "vo:<segmentId>"`): V1 pictures are keyed per framing, `pic:<assetId>:<framing>` (the same image can appear with two crops); the bare `assetId` is an alias of its first framing. Audio assets (VO segments, VO program, music, SFX) are keyed by `assetId` (not `vo:<segmentId>`). Extra keys: `wav:<assetId>` (48 kHz stereo WAV extracted from a clip MP4 for A4), `sfxrl:<assetId>` (channel-mirrored SFX for RL pan sweeps). Helpers are exported: `pictureKey`, `clipWavKey`, `mirroredSfxKey`, `overlayKey`, `stemKey`, `planConform`.
+2. **Stems** passed to `conformForNle(…, { stems })` are placed at `export/<lang>/stems/<name>.wav` (hardlinked when already 48 kHz s16 with the right channel count), not in `media/`. `writeExportBundle` drops the A5–A8 tracks and removes `stems/` when `"stems"` is not in `formats`.
+3. **`writeExportBundle(...).files` are absolute paths** (the engine emits them as `artifact` events as-is; make them project-relative there if the UI expects that).
+4. **Missing media never throw**: a source that cannot be conformed is logged (`logger.warn`) and skipped; `toExportTimeline` then writes an offline placeholder (`media/missing_<key>.<ext>`) plus a "media missing — relink" marker. Generated/solid sources without a rendered still get an ffmpeg gradient/colour PNG, so the export works without a render client (the engine's "markers only" log line is now pessimistic).
+5. **`conformForNle` caches** its work in `export/<lang>/media/.conform.json` (input signature per output) and deletes stale `NNN_slug_id8.ext` files of earlier exports.
+6. **Publish kit fallbacks**: `writePublishKit` has no access to the style suggestion, so without `Project.publish[lang]` it falls back to the timeline title / chapter titles, marked "unreviewed". **Person acknowledgements**: the report lists non-public persons and minors from the fact sheet with the rule that applies (gate approvals are not an input of `writeEditorialReport`).
+
+**Proposed diff.** None required. Optional (I): pass the style suggestion (`StyleSuggestion.titles[0]`…) to `writePublishKit` as an extra optional field if the spec's "style suggestion fallback" is wanted.
+**Local workaround.** As described (additive keys, fallbacks inside the package).
