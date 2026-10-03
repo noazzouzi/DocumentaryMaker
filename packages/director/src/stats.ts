@@ -1,6 +1,7 @@
 // Timeline measurements shared by DirectorStats and lintTimeline (pure functions of a Timeline).
 import { COMPONENT_META, isSfxImpact, sfxDensityEvents, type CameraMove, type StyleData, type Timeline } from "@docmaker/core";
 import { keyOf } from "./transitions";
+import { DEAD_AIR_MAX_SEC, bareStretches, isBareSource, isForeground } from "./dead-air";
 
 export const camMaxOf = (c: CameraMove) => Math.max(...c.keys.map((k) => k.scale));
 
@@ -78,4 +79,13 @@ export function cutsWithSfx(t: Timeline): number {
   let n = 0;
   for (const c of t.video.slice(1)) if (ev.some((f) => f >= c.from - 2 && f <= c.from + 3)) n++;
   return n;
+}
+
+/** Bare-backdrop stretches (s) of a finished timeline longer than DEAD_AIR_MAX_SEC (QA / tests read-back of §9.3 step 7c). */
+export function deadAirStretches(t: Timeline): { from: number; end: number }[] {
+  return bareStretches(
+    t.video.map((c) => ({ from: c.from, end: c.from + c.dur, bare: isBareSource(c.source.kind === "generated" ? c.source : { kind: c.source.kind }) })),
+    t.overlays.filter((o) => isForeground(o.component)).map((o) => ({ from: o.from, end: o.from + o.dur })),
+    Math.round(DEAD_AIR_MAX_SEC * t.fps),
+  );
 }

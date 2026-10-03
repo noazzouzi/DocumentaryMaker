@@ -7,6 +7,7 @@ import { arbitrate, salienceRoom, type ImpactEvent } from "./arbitration";
 import { buildSilences, clipAudio, duckingSpec, musicItems, silenceItems, voClips, voSpans } from "./audio";
 import { assignCameras, camMax } from "./camera";
 import { buildCaptions } from "./captions";
+import { fillDeadAir } from "./dead-air";
 import { anchorAt, buildCtx, isAiAsset, round3, type Ctx, type Shot } from "./ctx";
 import { reconcileAiLabels } from "./disclosure";
 import { FxBook, climaxFx, impactShakes, montagePunches, outroFade, type Fx } from "./fx";
@@ -155,6 +156,8 @@ export function direct(I: DirectorInput): DirectorOutput {
   assignCameras(ctx, shots, { reserve: plannedReserve(ctx, shots) });
   // 7. overlays
   const { st, bleeps } = buildOverlays(ctx, shots);
+  // 7c. no bare backdrop longer than DEAD_AIR_MAX_SEC (cards enter earlier / hold, real shots hold, kinetic text)
+  if (fillDeadAir(ctx, shots, st, { shotsMayChange: true }).shotsChanged) assignCameras(ctx, shots, { reserve: plannedReserve(ctx, shots) });
   textlessUnderText(shots, st.items); // no keyword headline under a text overlay (the words would be drawn twice)
   hiddenTransitions(ctx, shots, st.items); // no transition (or its SFX) under an opaque full-frame card
   // 6. reveals, shocks, fx, punches
@@ -188,6 +191,7 @@ export function direct(I: DirectorInput): DirectorOutput {
   }
   // 9. arbitration
   const arb = arbitrate(ctx, shots, st, book, impacts);
+  fillDeadAir(ctx, shots, st, { shotsMayChange: false }); // arbitration may have dropped or delayed a card
   outroFade(ctx, book, I.riskFlags.includes("suicide_self_harm"));
   const droppedOv = new Set(st.items.filter((o) => o.dropped).map((o) => o.id));
   // 10. captions
