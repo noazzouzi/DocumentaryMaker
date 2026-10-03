@@ -41,7 +41,7 @@ export async function createDemoProject(rt: Runtime, o: DemoOptions): Promise<De
     voice: Object.fromEntries(languages.map((l) => [l, demoVoice(o.tts, l, rt.config.paths.models)])),
     captions: "burn",
     editorial: { ...p.editorial, asOf: fx.asOf },
-    render: { ...p.render, defaultPreset: o.preset },
+    render: { ...p.render, defaultPreset: o.preset, concurrency: o.concurrency ?? p.render.concurrency },
   }));
   return { project, langs: requested, preset: o.preset, onlyChapters: o.onlyChapters && o.onlyChapters.length ? o.onlyChapters : null };
 }

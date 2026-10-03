@@ -34,6 +34,8 @@ export interface DemoOptions {
   preset: RenderPresetId; // default "draft"
   onlyChapters: string[] | null; // e.g. ["CH1","CH2"] → JobOptions.onlyChapters (hashed)
   slug?: string;
+  /** Additive: project.render.concurrency for the demo renders (≤ 2 on shared machines; null/undefined → auto). */
+  concurrency?: number | null;
 }
 export interface ImpactReport { staleStages: { stage: StageId; lang: Lang | null }[]; estimatedRerunUsd: number; lostUserEdits: string[] }
 
