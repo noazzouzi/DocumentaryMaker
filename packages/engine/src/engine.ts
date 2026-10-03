@@ -225,9 +225,17 @@ class EngineImpl implements Engine {
       const p = patch as Partial<Project>;
       const next = { ...project, ...p } as Project;
       const after = await this.stageStatuses(slug, next);
+      const direct: StageStatus[] = [];
       for (const a of after) {
         const b = before.find((x) => x.stage === a.stage && x.lang === a.lang && x.variant === a.variant);
-        if (b && b.status === "done" && !b.stale && a.stale) staleStages.push({ stage: a.stage, lang: a.lang });
+        if (b && b.status === "done" && !b.stale && a.stale) direct.push(a);
+      }
+      // downstream closure: everything done after a stale stage (same language for per-language stages)
+      const idx = (s: StageId) => STAGE_LIST.findIndex((d) => d.id === s);
+      for (const s of before) {
+        if (s.status !== "done") continue;
+        const hit = direct.some((d) => idx(s.stage) >= idx(d.stage) && (d.lang === null || s.lang === null ? d.lang === null || d.lang === project.primaryLang || s.lang !== null : s.lang === d.lang));
+        if (hit) staleStages.push({ stage: s.stage, lang: s.lang });
       }
       const rewrites = ["styleId", "targetMinutes", "languages", "primaryLang"].some((k) => k in p && canonicalJson((p as Record<string, unknown>)[k]) !== canonicalJson((project as Record<string, unknown>)[k]));
       if (rewrites) {
