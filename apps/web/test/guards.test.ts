@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
 import { checkRequest, isAllowedHost, originMatchesHost, parseHost, portsFromEnv } from "../src/server/guards";
 import { proxy } from "../src/proxy";
-import nextConfig from "../next.config";
 
 const base = { method: "GET", pathname: "/api/projects", host: "127.0.0.1:3210", origin: null, secFetchSite: null, contentLength: null };
 
@@ -88,6 +87,10 @@ describe("proxy()", () => {
 
 describe("anti-framing headers (clickjacking)", () => {
   it("next.config sends X-Frame-Options DENY and CSP frame-ancestors 'none' on every path, upload route included", async () => {
+    // non-literal specifier: a static import would pull next's global types (readonly NODE_ENV) into this typecheck
+    const configPath = "../next.config";
+    type Rule = { source: string; headers: { key: string; value: string }[]; has?: unknown[]; missing?: unknown[] };
+    const nextConfig = ((await import(/* @vite-ignore */ configPath)) as { default: { headers?: () => Promise<Rule[]> } }).default;
     const rules = await nextConfig.headers!();
     const all = rules.find((r) => r.source === "/:path*");
     expect(all).toBeDefined();

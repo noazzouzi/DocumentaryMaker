@@ -106,11 +106,11 @@ describe("teleprompter", () => {
     const root = await tempProjects();
     const calls: { slug: string; lang: string; mirror: boolean }[] = [];
     fakeEngine({
-      async teleprompter(s, lang, o) {
+      async teleprompter(s: string, lang: string, o: { mirror: boolean }) {
         calls.push({ slug: s, lang, mirror: o.mirror });
         return writeProjectFile(root, s, `voice/${lang}/teleprompter.html`, "<!doctype html><title>t</title><script>scroll()</script>");
       },
-    });
+    } as never);
     const ctx = params({ slug: "my-film", lang: "fr" });
     const r = await teleprompterRoute.GET(req("/api/projects/my-film/teleprompter/fr?mirror=1"), ctx);
     expect(r.status).toBe(200);
@@ -122,7 +122,7 @@ describe("teleprompter", () => {
     expect(calls).toEqual([{ slug: "my-film", lang: "fr", mirror: true }, { slug: "my-film", lang: "fr", mirror: false }]);
   });
   it("404 without a script; 400 on a bad language", async () => {
-    fakeEngine({ async teleprompter() { throw new DocmakerError("UPSTREAM_MISSING", "no en script yet"); } });
+    fakeEngine({ async teleprompter() { throw new DocmakerError("UPSTREAM_MISSING", "no en script yet"); } } as never);
     expect((await teleprompterRoute.GET(req("/x"), params({ slug: "my-film", lang: "en" }))).status).toBe(404);
     expect((await teleprompterRoute.GET(req("/x"), params({ slug: "my-film", lang: "de" }))).status).toBe(400);
   });
