@@ -137,6 +137,7 @@ describe("gate-test fixture (fictional people)", () => {
     const ctx = makeCtx(new FixtureLlm(fixtureDir("gate-test")));
     const out = await recheck(ctx, { factSheet: r.factSheet, claimIds: ["C1"], asOf: "2026-10-02" });
     expect(out.changed).toEqual([]);
+    expect(out.checked).toEqual(["C1"]); // covered by the output
     expect(out.factSheet.claims.find((c) => c.id === "C1")!.asOf).toBe("2026-10-02");
     expect(out.factSheet.claims.find((c) => c.id === "C2")!.asOf).toBe(r.factSheet.claims.find((c) => c.id === "C2")!.asOf);
     expect(out.factSheet.sources).toHaveLength(r.factSheet.sources.length);

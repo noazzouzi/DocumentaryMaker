@@ -697,14 +697,14 @@ class EngineImpl implements Engine {
    * fact sheet (asOf = today; the script and fact-check become stale, as they should). Unchanged claims leave the fact sheet
    * untouched (no needless re-outlining) and are recorded as a dated recheck approval, valid for 30 days.
    */
-  async recheckClaims(slug: string, by: "cli" | "web" = "cli"): Promise<{ changed: string[]; checked: string[] }> {
+  async recheckClaims(slug: string, by: "cli" | "web" = "cli"): Promise<{ changed: string[]; checked: string[]; omitted: string[] }> {
     const store = await this.open(slug);
     const project = await readProject(store);
     const facts = await docs.factsheet(store);
     if (!facts) throw new DocmakerError("UPSTREAM_MISSING", "no fact sheet yet", { hint: "run the research stage first" });
     const pending = await pendingClaims(store, project, new Date(8.64e15));
     const ids = pending.map((c) => c.id);
-    if (ids.length === 0) return { changed: [], checked: [] };
+    if (ids.length === 0) return { changed: [], checked: [], omitted: [] };
     this.rt.refresh();
     const costs = await ProjectCosts.open(store, project, null, () => {});
     const llm = this.rt.llmFor(project);
@@ -714,13 +714,17 @@ class EngineImpl implements Engine {
       const next = { ...r.factSheet, claims: r.factSheet.claims.map((c) => (r.changed.includes(c.id) ? { ...c, asOf: today } : c)) };
       await store.writeJson(P.factsheet, FactSheetSchema, next, { writer: "user" });
     }
-    const unchanged = ids.filter((id) => !r.changed.includes(id));
+    // only claims the re-check output actually covered count as re-checked; omitted ones stay pending (the gate holds)
+    const covered = new Set(r.checked);
+    const unchanged = ids.filter((id) => covered.has(id) && !r.changed.includes(id));
+    const omitted = ids.filter((id) => !covered.has(id));
+    if (omitted.length) this.rt.logger.warn("the re-check output omitted claims: they stay pending", { claims: omitted });
     if (unchanged.length) {
       await persistApproval(this.rt, store, "recheck", {
         stage: "render", lang: null, planHash: "", by, note: `re-checked on ${today}: status unchanged`, items: unchanged, itemNotes: {},
       }, { fixtureAllowed: false, stage: "render" });
     }
-    return { changed: r.changed, checked: ids };
+    return { changed: r.changed, checked: ids.filter((id) => covered.has(id)), omitted };
   }
 
   async cacheGc(o: { dryRun: boolean }): Promise<{ removed: number; freedBytes: number; totalBytes: number; capBytes: number }> {
@@ -813,7 +817,7 @@ export type EngineExt = Engine & {
   teleprompter(slug: string, lang: Lang, o: { mirror: boolean }): Promise<string>;
   costReport(slug: string): Promise<{ receipts: { stage: StageId; lang: Lang | null; usd: number; calls: number }[]; totalUsd: number; maxUsdTotal: number; maxUsdPerStage: number; estimates: CostEstimate[] }>;
   credits(slug: string, lang: Lang): Promise<string>;
-  recheckClaims(slug: string, by?: "cli" | "web"): Promise<{ changed: string[]; checked: string[] }>;
+  recheckClaims(slug: string, by?: "cli" | "web"): Promise<{ changed: string[]; checked: string[]; omitted: string[] }>;
   cacheGc(o: { dryRun: boolean }): Promise<{ removed: number; freedBytes: number; totalBytes: number; capBytes: number }>;
   setupComponent(what: SetupComponent, arg: string | null, o: { signal: AbortSignal; progress: (pct: number, msg: string) => void }): Promise<string>;
   readonly rt: Runtime; readonly jobs: JobManager;

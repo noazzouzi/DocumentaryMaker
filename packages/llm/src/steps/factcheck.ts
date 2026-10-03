@@ -75,9 +75,13 @@ export async function factCheck(ctx: StepCtx, i: {
 }
 
 /** 6b: re-research the status of pending claims (web_search ≤ 10), then a structured delta merged into the fact sheet. */
-export async function recheck(ctx: StepCtx, i: { factSheet: FactSheet; claimIds: string[]; asOf: string }): Promise<{ factSheet: FactSheet; changed: string[] }> {
+/**
+ * `changed`: re-checked claims whose status (or decision date, subject response) changed. `checked`: every requested claim
+ * the structured output actually covered (changed or not) — a claim the output omitted was NOT re-checked.
+ */
+export async function recheck(ctx: StepCtx, i: { factSheet: FactSheet; claimIds: string[]; asOf: string }): Promise<{ factSheet: FactSheet; changed: string[]; checked: string[] }> {
   const targets = i.factSheet.claims.filter((c) => i.claimIds.includes(c.id));
-  if (targets.length === 0) return { factSheet: i.factSheet, changed: [] };
+  if (targets.length === 0) return { factSheet: i.factSheet, changed: [], checked: [] };
   const claimsJson = json(targets.map((c) => ({
     id: c.id, summary: c.summary, made_by: c.madeBy, against: c.against, status: c.status, jurisdiction: c.jurisdiction,
     decision_date: c.decisionDate, subject_response: c.subjectResponse, as_of: c.asOf,
@@ -95,9 +99,11 @@ export async function recheck(ctx: StepCtx, i: { factSheet: FactSheet; claimIds:
   const nextSourceId = () => `S${sources.reduce((m, s) => Math.max(m, Number(s.id.slice(1))), 0) + 1}`;
   const byUrl = new Map(notes.registry.map((r) => [r.url, r]));
   const changed: string[] = [];
+  const checked: string[] = [];
   const claims = i.factSheet.claims.map((c) => {
     const w = wire.claims.find((x) => x.id.trim().toUpperCase() === c.id);
     if (!w || !i.claimIds.includes(c.id)) return c;
+    checked.push(c.id);
     const sourceIds = [...c.sourceIds];
     for (const url of w.source_urls) {
       const r = byUrl.get(url.trim());
@@ -119,5 +125,5 @@ export async function recheck(ctx: StepCtx, i: { factSheet: FactSheet; claimIds:
     if (w.changed || next.status !== c.status || next.decisionDate !== c.decisionDate || next.subjectResponse !== c.subjectResponse) changed.push(c.id);
     return next;
   });
-  return { factSheet: FactSheet.parse({ ...i.factSheet, sources, claims }), changed };
+  return { factSheet: FactSheet.parse({ ...i.factSheet, sources, claims }), changed, checked };
 }

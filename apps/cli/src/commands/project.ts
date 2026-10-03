@@ -342,7 +342,12 @@ export function registerProject(program: Command, ctx: CliContext): void {
       const project = await engine.getProject(slug);
       if (o.recheck) {
         const r = await engine.recheckClaims(slug);
-        ctx.io.out(r.checked.length ? `rechecked ${r.checked.join(", ")}; changed: ${r.changed.join(", ") || "none"}\n` : "no pending claim to recheck\n");
+        if (r.checked.length === 0 && r.omitted.length === 0) return void ctx.io.out("no pending claim to recheck\n");
+        if (r.checked.length) ctx.io.out(`rechecked ${r.checked.join(", ")}; changed: ${r.changed.join(", ") || "none"}\n`);
+        if (r.omitted.length) {
+          ctx.io.err(`not re-checked (missing from the re-check output, still pending): ${r.omitted.join(", ")}\n`);
+          process.exitCode = EXIT.error;
+        }
         return;
       }
       const lang = (parseLangs(str(o.lang), false)[0] ?? project.primaryLang) as Lang;
