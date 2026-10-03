@@ -146,8 +146,10 @@ function buildTemplate(ctx: Ctx, b: BeatCtx, tpl: Exclude<MotionTemplate, "none"
       });
       if (evs.length < 2) return null;
       const s = syncItems(evs.map((e) => e.spoken), ctx.F30(12));
+      // the first event lands with the entry: a timeline that opens on an empty line is dead air until the date is spoken
+      const ats = s.ats.map((a, k) => (k === 0 ? Math.min(a, enter + ctx.F30(4)) : a));
       const active = clamp(md.active_index as number, -1, evs.length - 1);
-      return out({ events: evs.map((e, k) => ({ dateLabel: e.dateLabel, label: e.label, at: s.ats[k]! })), activeIndex: active }, { subBeats: s.ats.map((a) => from + a), contentFrames: Math.max(...s.ats) + ctx.F30(30) });
+      return out({ events: evs.map((e, k) => ({ dateLabel: e.dateLabel, label: e.label, at: ats[k]! })), activeIndex: active }, { subBeats: ats.map((a) => from + a), contentFrames: Math.max(...ats) + ctx.F30(30) });
     }
     case "bar_chart": case "line_chart": {
       const bars = (md.bars as { label: string; value: number; figure_id: string; highlight: boolean }[]).map((x) => {

@@ -39,5 +39,11 @@ describe("date labels (viewer-facing, localized, precision kept)", () => {
     const tl = runs().policy.timeline.overlays.find((o) => o.component === "TimelineGraphic");
     expect(tl, "the policy scenario has a timeline template").toBeTruthy();
     expect((tl!.props as { events: { dateLabel: string }[] }).events.map((e) => e.dateLabel)).toContain("3 Feb 1637");
+    // the first event lands with the entry (never an empty line waiting for the spoken date)
+    for (const out of Object.values(runs())) {
+      for (const o of out.timeline.overlays.filter((x) => x.component === "TimelineGraphic")) {
+        expect((o.props as { events: { at: number }[] }).events[0]!.at).toBeLessThanOrEqual(o.enterFrames + 4);
+      }
+    }
   });
 });

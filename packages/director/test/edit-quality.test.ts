@@ -40,6 +40,11 @@ describe("dead air (bare generated backdrops)", () => {
     // its words still appear when they are spoken (absolute frames unchanged by the earlier entry)
     const words = (quote.props as { words: { at: number }[] }).words;
     for (const w of words) expect(quote.from + w.at).toBeGreaterThanOrEqual(beatShot.from);
+    // the CH3-B002 timeline opens on its first event (localized date), the second waits for its spoken date
+    const tl = t.overlays.find((o) => o.beatId === "CH3-B002" && o.component === "TimelineGraphic")!;
+    const evs = (tl.props as { events: { at: number; dateLabel: string }[] }).events;
+    expect(evs.map((e) => e.dateLabel)).toEqual(["5 Feb 1637", "24 Feb 1637"]);
+    expect(evs[0]!.at).toBeLessThanOrEqual(tl.enterFrames + 4);
   });
   for (const name of ["rich", "policy", "tulip"] as const) {
     it(`${name}: no backdrop-only stretch longer than 1.2 s, no lint error`, () => {
