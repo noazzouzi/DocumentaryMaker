@@ -249,3 +249,36 @@ export const DEFERRED_TRANSITIONS: Partial<Record<TransitionKey, TransitionKey>>
 No director code change is needed (it reads the map); its tests that assume the mapping need updating (W6). Remotion keeps its own fallback: `resolveCover()` maps a presentation unknown to an older build through `DEFERRED_TRANSITIONS`, else to `flash`, with a `computeTimeline` warning.
 **Facts for the director / web (W6, W11).** Every cover window is centred on the cut (`floor(d/2)` frames before it; dips switch mid-hold) and accepts any `d ≥ 2`; the spec durations are dotWipe ≈ 13 f, iris ≈ 12 f, paperRip 10–15 f, whipStreaks ≈ 8 f, filmBurn 15–30 f. dotWipe, iris and paperRip fully cover the frame on the frame before the cut **and** on the cut frame (unit-tested geometry + render test); filmBurn over-exposes to near white there; whipStreaks hides the switch under a motion-smear wash. `direction` is the motion direction (dotWipe wave, paperRip sheet entry / tear, whipStreaks); iris ignores it. `color`: dotWipe uses it (default black); iris uses it only when dark (luminance < 0.5), else black.
 **Local workaround.** None needed in remotion; until core changes, these covers only appear when a user override (`setTransition`) or a hand-written timeline asks for them.
+
+## 2026-10-03 web (W11) → engine (W10), core/package.json (F/I), spec §14 (I)
+
+Notes from `apps/web`. No contract signature was changed; every item below is worked around inside `apps/web`.
+
+**Problem 1 — no voice listing in the Engine API.** `GET /api/voices?provider=&lang=` (§14.3) must return `VoiceInfo[]`, but `Engine` has no such method and the web app cannot import `@docmaker/voice` (not a dependency, and the host process should not load sherpa).
+**Proposed diff.** `Engine.listVoices(provider: VoiceProviderId, lang: Lang | null): Promise<VoiceInfo[]>` (additive).
+**Local workaround.** The route calls `engine.listVoices` when present; otherwise it answers `[]` with `X-Docmaker-Degraded: voices-unavailable` and the voice page falls back to a free-text voice id.
+
+**Problem 2 — setup actions cannot be jobs.** §14.2 lists "setup actions as jobs (browser, SFX pack, Kokoro/Piper, Python sidecar, yt-dlp, CLIP)", but `JobRequest` has no field naming the setup target and the engine refuses `kind:"setup"` ("setup jobs are run by the CLI").
+**Proposed diff.** `JobOptions.setup?: { target: "browser" | "sfx" | "tts" | "python" | "yt-dlp" | "whisper" | "clip"; arg: string | null }` (hashed nowhere) + worker support.
+**Local workaround.** `/setup` and `/settings` show the exact `pnpm docmaker setup …` commands; `POST /api/projects/[slug]/jobs` answers 400 for `kind:"setup"` with that hint.
+
+**Problem 3 — Next 16 renamed `middleware` to `proxy`, and the proxy buffers request bodies.** The guards of §14.3 live in `apps/web/src/proxy.ts` (`export function proxy`). Next clones and buffers every proxied body up to `proxyClientMaxBodySize` (10 MB), which would break the streamed ≤ 2 GiB uploads.
+**Proposed diff (spec text).** §14.3 "Guards (middleware)" → "Guards (`src/proxy.ts`)"; note that `/api/projects/[slug]/upload` is excluded from the proxy matcher and runs the same `checkRequest` itself.
+**Local workaround.** Implemented as described (`src/server/guards.ts` is shared; unit-tested).
+
+**Problem 4 — apps/web/package.json (F/I).** (a) No `test:ui` script for the M3 Playwright smoke: please add `"test:ui": "playwright test"` (config and spec are in `apps/web/playwright.config.ts`, `apps/web/e2e/smoke.spec.ts`; they use `DOCMAKER_BROWSER_EXECUTABLE`, port 3212, and per-run homes). (b) No direct `zod` dependency: request bodies are validated with schemas derived from core (`Project.omit(…).partial().strict()`, `Approval.omit(…)`, …) and small hand validators — fine, no change needed unless I prefers `zod` explicitly.
+
+**Problem 5 — small read APIs the web needs (additive).** The web reads these server-side from the project directory today:
+- takes of a language: `Engine.listTakes(slug, lang): Promise<VoiceTrack[]>` (web lists `voice/<lang>/(take|scratch)-*/take.json`);
+- key status: `Engine.secretStatus(): Promise<{ name: SecretName; set: boolean; masked: string }[]>` (web derives it from the doctor's `key:<name>` checks, `hint === null` ⇔ set);
+- candidates of a beat: the web added a read-only `GET /api/projects/[slug]/assets/candidates/[beatId]` (raw provider payload stripped) because `assets/candidates/*.json` is not user-editable;
+- `assets/credits.<lang>.md` and `export/<lang>/` listings are read directly (allowlisted paths only).
+
+**Problem 6 — `runDemo` blocks until the job ends.** The web's "Run demo" needs the slug and job id immediately.
+**Proposed diff.** `Engine.startDemo(opts: DemoOptions): Promise<{ slug: string; jobId: string }>` (additive; `runDemo` = startDemo + wait).
+**Local workaround.** `POST /api/demo` (additive route) picks the slug (`demo-<fixture>-<utc>`), starts `runDemo` without awaiting it, and returns 202 `{slug, jobId}` once `status()`/`listJobs()` shows the job (≤ 20 s).
+
+**Notes (no change required).**
+1. Turbopack prints "dynamic filesystem access causes tracing of the whole project" warnings for `packages/styles/src/load.ts`, `packages/engine/src/project.ts` and `packages/assets/src/conform.ts` (output-file tracing only; harmless for a local tool). Owners may add `/*turbopackIgnore: true*/` to those `path.join` calls.
+2. Approvals: the route always sets `by:"web"`; for editorial gates whose `planHash` the engine recomputes (style-confirm, person-ack, recheck, fair-use, factcheck-ack) a missing `planHash` defaults to 64 zeros; `outline-approval` and `cost` must send the reviewed hash (the outline page sends `docHash(outline)` as loaded).
+3. After a voice job or a take activation the web submits `pipeline layout→mix` (§5.3); after a pick change it submits `pipeline assets→direct` (coalesced by the engine).

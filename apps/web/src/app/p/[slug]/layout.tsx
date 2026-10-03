@@ -1,5 +1,6 @@
 // Project shell: title, slug, languages and the tab bar.
 import type React from "react";
+import { notFound } from "next/navigation";
 import { EngineUnavailable } from "@/components/EngineUnavailable";
 import { ProjectNav } from "@/components/ProjectNav";
 import { attempt, loadEngine } from "@/server/page";
@@ -11,6 +12,7 @@ export default async function ProjectLayout({ children, params }: { children: Re
   const r = await loadEngine();
   if (!r.ok) return <EngineUnavailable error={r.error} />;
   const p = await attempt(() => r.engine.getProject(slug));
+  if (!p.ok && (p.error.code === "UPSTREAM_MISSING" || p.error.code === "VALIDATION")) notFound();
   if (!p.ok) return <EngineUnavailable error={p.error} />;
   const project = p.value;
   return (
