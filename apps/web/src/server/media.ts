@@ -87,7 +87,8 @@ export function fileResponse(
     "Cache-Control": "no-cache",
     "X-Content-Type-Options": "nosniff",
     // opened directly (as a document), a served file is sandboxed: an SVG with script cannot act on the app origin
-    "Content-Security-Policy": "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'",
+    "Content-Security-Policy": "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'none'",
+    "X-Frame-Options": "DENY",
     "Content-Disposition": `${o.download ? "attachment" : "inline"}; filename="${path.basename(f.abs).replace(/[^\w.-]/g, "_")}"`,
   };
   const inm = req.headers.get("if-none-match");

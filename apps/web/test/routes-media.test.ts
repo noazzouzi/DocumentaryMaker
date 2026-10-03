@@ -49,6 +49,8 @@ describe("media route", () => {
     expect(r.headers.get("accept-ranges")).toBe("bytes");
     expect(r.headers.get("content-type")).toBe("video/mp4");
     expect(r.headers.get("content-security-policy")).toMatch(/^sandbox;/); // opened as a document: no script on the app origin
+    expect(r.headers.get("content-security-policy")).toContain("frame-ancestors 'none'"); // and never framed cross-site
+    expect(r.headers.get("x-frame-options")).toBe("DENY");
     expect(r.headers.get("content-length")).toBe("1000");
     expect(new Uint8Array(await r.arrayBuffer())).toEqual(bytes);
   });

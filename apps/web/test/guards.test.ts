@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
 import { checkRequest, isAllowedHost, originMatchesHost, parseHost, portsFromEnv } from "../src/server/guards";
 import { proxy } from "../src/proxy";
+import nextConfig from "../next.config";
 
 const base = { method: "GET", pathname: "/api/projects", host: "127.0.0.1:3210", origin: null, secFetchSite: null, contentLength: null };
 
@@ -82,5 +83,18 @@ describe("proxy()", () => {
     expect(ok.headers.get("x-middleware-next")).toBe("1");
     const csrf = proxy(new NextRequest("http://127.0.0.1:3210/api/projects", { method: "POST", headers: { host: "127.0.0.1:3210", origin: "http://evil.example" } }));
     expect(csrf.status).toBe(403);
+  });
+});
+
+describe("anti-framing headers (clickjacking)", () => {
+  it("next.config sends X-Frame-Options DENY and CSP frame-ancestors 'none' on every path, upload route included", async () => {
+    const rules = await nextConfig.headers!();
+    const all = rules.find((r) => r.source === "/:path*");
+    expect(all).toBeDefined();
+    const h = Object.fromEntries(all!.headers.map((x) => [x.key.toLowerCase(), x.value]));
+    expect(h["x-frame-options"]).toBe("DENY");
+    expect(h["content-security-policy"]).toBe("frame-ancestors 'none'");
+    expect(all!.missing ?? []).toEqual([]);
+    expect(all!.has ?? []).toEqual([]);
   });
 });
