@@ -2,10 +2,15 @@
 // Pure (no audio decoding): levels are the nominal ones of §11.1 (VO −16 LUFS, music and clip audio −18 LUFS before
 // their gains, SFX files ≈ −20 LUFS before theirs) weighted by the same gain tables as the mix, so a calm chapter shows up
 // lower than a dense one. The real loudness of the mix is in the LoudnessDoc ("the mix was checked by meters only").
-import { computeGainTables } from "@docmaker/core";
+// SFX are counted with the director's rule (sfxDensityEvents: roll members collapse to one event, priority 5 counts).
+// The bins are fixed calendar minutes and informative only: the cap verdict (sliding 60-s window × act intensity) is the
+// director's lint DENSITY_MAX, which the qa stage reports.
+import { computeGainTables, isSfxImpact, SFX_IMPACT_CATEGORIES, sfxDensityEvents } from "@docmaker/core";
 import type { SfxCategory, Timeline } from "@docmaker/core";
 
-export const IMPACT_CATEGORIES: ReadonlySet<SfxCategory> = new Set<SfxCategory>(["impact", "impact.soft", "boom.sub", "boom.low", "thud"]);
+export const IMPACT_CATEGORIES: ReadonlySet<SfxCategory> = SFX_IMPACT_CATEGORIES;
+/** A partial last minute shorter than this is reported as its raw count, not extrapolated to a per-minute rate. */
+export const MIN_RATE_WINDOW_SEC = 30;
 const VO_DB = -16;
 const BED_DB = -18;
 const SFX_FILE_DB = -20;
@@ -30,15 +35,20 @@ export function densityReportImpl(t: Timeline): DensityReport {
   const N = t.durationInFrames;
   const W = 60 * t.fps;
   const windows = Math.max(1, Math.ceil(N / W));
-  const sfx = new Array<number>(windows).fill(0);
-  const imp = new Array<number>(windows).fill(0);
-  for (const c of t.audio.sfx) {
-    const w = Math.min(windows - 1, Math.max(0, Math.floor(c.eventFrame / W)));
-    sfx[w]!++;
-    if (IMPACT_CATEGORIES.has(c.category)) imp[w]!++;
-  }
-  // per-minute rates: full minutes are counts; a partial last minute is scaled to a rate
-  const rate = (arr: number[]) => arr.map((v, w) => r2((v * W) / Math.max(1, Math.min(N, (w + 1) * W) - w * W)));
+  const bin = (frames: readonly number[]) => {
+    const arr = new Array<number>(windows).fill(0);
+    for (const f of frames) arr[Math.min(windows - 1, Math.max(0, Math.floor(f / W)))]!++;
+    return arr;
+  };
+  const sfx = bin(sfxDensityEvents(t));
+  const imp = bin(sfxDensityEvents(t, isSfxImpact));
+  // per-minute rates: full minutes are counts; a partial last minute of ≥ 30 s is scaled to a rate, a shorter one
+  // (a chapter-only or teaser render) keeps its raw count — 22 cues in 29 s are not "45 per minute"
+  const minLen = Math.round(MIN_RATE_WINDOW_SEC * t.fps);
+  const rate = (arr: number[]) => arr.map((v, w) => {
+    const len = Math.min(N, (w + 1) * W) - w * W;
+    return len >= W || len < minLen ? v : r2((v * W) / Math.max(1, len));
+  });
   const cuts = Math.max(0, t.video.length - 1);
   const silentCutShare = cuts === 0 ? 0 : r2(1 - cutsWithSfx(t) / cuts);
 

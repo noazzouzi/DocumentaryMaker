@@ -2989,7 +2989,7 @@ Consequences: (1) **any layout change triggers a full re-direct** (the layout ha
 | `AI_DISCLOSURE` | error | every on-screen AI asset (`isAiAsset`) is covered by `SourceLabel{kind:"illustration"}`, and no illustration label sits over non-AI picture; the director re-derives the labels from the final picture track after overrides |
 | `PRIVATE_PERSON` | error | overlay text/props name a person with `isMinorOrPrivateVictim`, or a non-public figure without `person-ack` |
 | `CLIP_SHARE` | error / warn | clip seconds > `maxClipShare.error` × runtime (error), > `warn` (warning); any clip > `maxClipSeconds` (error) |
-| `DENSITY_MAX` | warn | per 60 s: SFX ≤ `perMin[1]`, impacts ≤ `impactsPerMin[1]`, punches ≤ `punch.perMin[1]`, slams ≤ `keywordSlamPerMin` |
+| `DENSITY_MAX` | warn | per sliding 60 s, each cap × the act intensity of the window: SFX ≤ `perMin[1]`, impacts ≤ `impactsPerMin[1]`, punches ≤ `punch.perMin[1]`, slams ≤ `keywordSlamPerMin`. SFX are counted by core `sfxDensityEvents` (roll members — tick/keys/pop/shutter/click of one item within 1 s — count once; priority 5 counts; bleeps count but are never refused) |
 | `DENSITY_MIN` | warn | per 60 s (acts ≥ 90 s only): SFX ≥ `perMin[0]`, punches ≥ `punch.perMin[0]` after the fill passes |
 | `TEXT_COLLISION` | warn | a generated `keywordCard` headline overlaps a centred non-full-frame text graphic (KineticText…); the director gives such shots the textless `darkNoise` base (step 7) |
 | `STATIC_HOLD` | warn | no picture or full-frame graphics hold > `maxStaticHoldSec` without camera motion, video motion or `continuousMotion` |
@@ -6193,7 +6193,7 @@ write mix.wav (s24 stereo 48 kHz) + stems/{vo,music,sfx,clip}.wav; re-measure �
 ```
 - `alimiter` is not true-peak (it measured 0.0 dBFS in research): the Node limiter plus the post-AAC gate are used instead.
 - **Post-AAC gate** (render `loudnessGate`, §12.3): measure `ebur128=peak=true` on the final MP4 audio; TP > `truePeakGate` (−1.0) → re-mux with `volume=(gate − TP − 0.3)dB`, ≤ 2 attempts; still failing → `LOUDNESS_GATE` warning in QA; integrated loudness must stay within −14 ± 1 LUFS.
-- `densityReport(t)` (qa stage): per-chapter RMS (a serious chapter ≈ 5 dB lower), clipping count, SFX/impacts per minute, silent-cut share; QA states "the mix was checked by meters only".
+- `densityReport(t)` (qa stage): per-chapter RMS (a serious chapter ≈ 5 dB lower), clipping count, SFX/impacts per calendar minute (counted with `sfxDensityEvents`; a partial last minute ≥ 30 s is scaled to a rate, a shorter one keeps its raw count), silent-cut share; QA states "the mix was checked by meters only". The bins are informative: the `sfx-density` verdict is the director lint `DENSITY_MAX` (sliding window × act intensity).
 
 ---
 

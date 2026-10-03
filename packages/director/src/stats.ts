@@ -1,5 +1,5 @@
 // Timeline measurements shared by DirectorStats and lintTimeline (pure functions of a Timeline).
-import { COMPONENT_META, type CameraMove, type StyleData, type Timeline } from "@docmaker/core";
+import { COMPONENT_META, isSfxImpact, sfxDensityEvents, type CameraMove, type StyleData, type Timeline } from "@docmaker/core";
 import { keyOf } from "./transitions";
 
 export const camMaxOf = (c: CameraMove) => Math.max(...c.keys.map((k) => k.scale));
@@ -44,23 +44,9 @@ export function punchEvents(t: Timeline, style: StyleData): number[] {
   return out.sort((a, b) => a - b);
 }
 
-/** SFX events for density: rolls (ticks, keys) of one source item within 1 s count once. */
-export function sfxEvents(t: Timeline, filter: (cat: string) => boolean = () => true): number[] {
-  const out: number[] = [];
-  const last = new Map<string, number>();
-  for (const x of [...t.audio.sfx].sort((a, b) => a.eventFrame - b.eventFrame || (a.id < b.id ? -1 : 1))) {
-    if (!filter(x.category)) continue;
-    const key = `${x.sourceItemId ?? x.id}|${x.category}`;
-    const prev = last.get(key);
-    last.set(key, x.eventFrame);
-    if ((x.category === "tick" || x.category === "keys" || x.category === "pop" || x.category === "shutter" || x.category === "click") && prev !== undefined && x.eventFrame - prev <= t.fps) continue;
-    out.push(x.eventFrame);
-  }
-  return out;
-}
-
-const IMPACT_CATS = new Set(["impact", "impact.soft", "boom.sub", "boom.low", "thud"]);
-export const isImpact = (cat: string) => IMPACT_CATS.has(cat);
+/** SFX events for density: rolls (ticks, keys) of one source item within 1 s count once (the shared core rule). */
+export const sfxEvents = (t: Timeline, filter: (cat: string) => boolean = () => true): number[] => sfxDensityEvents(t, filter);
+export const isImpact = isSfxImpact;
 
 /** Effective source upscale of a clip: layout base × camera max × (1 + max punch/zoom amt over the clip). */
 export function effectiveUpscale(t: Timeline, i: number): number | null {

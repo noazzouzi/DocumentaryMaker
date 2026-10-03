@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Timeline } from "@docmaker/core";
+import { sfxDensityEvents, type SfxCue, type Timeline } from "@docmaker/core";
 import { makeTimeline } from "@docmaker/core/testing";
 import { densityReport } from "../src/index";
 
@@ -8,10 +8,11 @@ describe("densityReport", () => {
     const t = makeTimeline({ seconds: 150, fps: 30 });
     const r = densityReport(t);
     expect(r.sfxPerMin.length).toBe(3);
-    const total = t.audio.sfx.length;
+    const ev = sfxDensityEvents(t);
+    const total = ev.length;
     // full minutes are counts, the last 30 s is scaled ×2
     const counts = [0, 0, 0];
-    for (const c of t.audio.sfx) counts[Math.min(2, Math.floor(c.eventFrame / 1800))]!++;
+    for (const f of ev) counts[Math.min(2, Math.floor(f / 1800))]!++;
     expect(r.sfxPerMin).toEqual([counts[0], counts[1], counts[2]! * 2]);
     expect(counts.reduce((a, b) => a + b, 0)).toBe(total);
     expect(r.impactsPerMin.every((v, i) => v <= r.sfxPerMin[i]!)).toBe(true);
@@ -39,5 +40,36 @@ describe("densityReport", () => {
     none.audio.sfx = [];
     expect(densityReport(none).silentCutShare).toBe(1);
     expect(densityReport(none).sfxPerMin).toEqual([0, 0]);
+  });
+
+  // regression: a 29-s chapter render (22 cues, 7 of them NumberCounter tick roll members) was reported as
+  // "45.36 SFX per minute" — extrapolated from a partial minute and counted with a different rule from the director
+  it("counts with the director's rule and does not extrapolate a partial minute shorter than 30 s", () => {
+    const base = makeTimeline({ seconds: 120, fps: 30 });
+    const t: Timeline = structuredClone(base);
+    t.durationInFrames = 873; // 29.1 s
+    const proto = base.audio.sfx[0]!;
+    const cue = (id: string, f: number, category: SfxCue["category"], sourceItemId: string): SfxCue =>
+      ({ ...proto, id, from: f, dur: 10, eventFrame: f, peakOffsetFrames: 0, category, sourceItemId, priority: 2 });
+    const sfx: SfxCue[] = [];
+    // a counter: 8 ticks 3 frames apart → 1 head + 7 roll members
+    for (let k = 0; k < 8; k++) sfx.push(cue(`sfx:ov:counter:tick:${k}`, 300 + 3 * k, "tick", "ov:counter"));
+    // 13 other accents, one of them a priority-5 impact (it counts: the caps hold for priority 5 too)
+    for (let k = 0; k < 13; k++) sfx.push(cue(`sfx:x${k}:whoosh.light`, 20 + 60 * k, "whoosh.light", `x${k}`));
+    sfx.push({ ...cue("sfx:plate:impact", 850, "impact", "plate"), priority: 5 });
+    t.audio.sfx = sfx;
+    expect(sfx.length).toBe(22);
+    expect(sfxDensityEvents(t).length).toBe(15);
+    const r = densityReport(t);
+    expect(r.sfxPerMin).toEqual([15]); // raw count, not 15 × 60 / 29.1
+    expect(r.impactsPerMin).toEqual([1]);
+    // a partial minute of ≥ 30 s is still scaled to a rate
+    const t45: Timeline = { ...t, durationInFrames: 1350 };
+    expect(densityReport(t45).sfxPerMin).toEqual([20]);
+    // a roll of one item more than 1 s apart is two events; two items' ticks at once are two events
+    t.audio.sfx = [cue("a", 100, "tick", "ov:a"), cue("b", 131, "tick", "ov:a"), cue("c", 131, "tick", "ov:b"), cue("d", 133, "pop", "ov:b")];
+    expect(sfxDensityEvents(t)).toEqual([100, 131, 131, 133]);
+    t.audio.sfx = [cue("a", 100, "tick", "ov:a"), cue("b", 130, "tick", "ov:a"), cue("c", 160, "tick", "ov:a")];
+    expect(sfxDensityEvents(t)).toEqual([100]);
   });
 });

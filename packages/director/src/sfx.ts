@@ -1,7 +1,7 @@
 // Step 11c — SFX auto-attach and selection (§9.5): candidates from the final events → silence rule → silent-cut share
 // → greedy caps / min gap → variants (no repeat) → placement → fill to the floor.
 import {
-  COMPONENT_META, framesAt, ids, lerp, type SfxCategory, type SfxCue, type SfxEntry,
+  COMPONENT_META, framesAt, ids, lerp, SFX_IMPACT_CATEGORIES, SFX_ROLL_CATEGORIES, type SfxCategory, type SfxCue, type SfxEntry,
 } from "@docmaker/core";
 import { anchorAt, clamp, cueFrame, cueWord, intensityAt, rateOk, type Ctx, type Shot } from "./ctx";
 import type { Fx } from "./fx";
@@ -18,7 +18,7 @@ export interface SfxCand {
   anchorWord: string | null; texture: boolean; impactLike: boolean;
 }
 
-const IMPACTS = new Set<SfxCategory>(["impact", "impact.soft", "boom.sub", "boom.low", "thud"]);
+const IMPACTS = SFX_IMPACT_CATEGORIES;
 const FALLBACK: Partial<Record<SfxCategory, SfxCategory[]>> = {
   "impact.soft": ["impact", "thud"], "boom.low": ["boom.sub", "impact"], "boom.sub": ["boom.low", "impact"], thud: ["impact.soft", "impact"],
   "whoosh.heavy": ["whoosh.light"], "whoosh.whip": ["whoosh.light"], "whoosh.up": ["whoosh.light"], "swell.reverse": ["riser"],
@@ -265,7 +265,7 @@ export function selectSfx(ctx: Ctx, env: SfxEnv, cands: SfxCand[]): SfxResult {
     (a.combo !== null && a.combo === b.combo) || a.sourceItemId === b.sourceItemId
     || (a.category === "riser" && b.impactLike) || (b.category === "riser" && a.impactLike);
 
-  const ROLL = new Set<SfxCategory>(["tick", "keys", "pop", "shutter", "click"]);
+  const ROLL = SFX_ROLL_CATEGORIES; // same roll rule as sfxDensityEvents (lint, stats, QA)
   const LONG = new Set<SfxCategory>(["riser", "drone", "swell.reverse", "ambience.room", "ambience.crowd"]);
   const rollLast = new Map<string, number>();
   const heads: { f: number; impact: boolean }[] = []; // density events (rolls of one item count once)

@@ -94,7 +94,7 @@ async function renderContentHash(ctx: Pick<StageCtx, "store">, lang: Lang, prese
 /**
  * SFX density uses the director's definition (§9.5 step 4, lint DENSITY_MAX): roll-collapsed SFX events in a sliding 60 s
  * window, capped at perMin[1] × the act intensity of the window. The director's lint already measures exactly that, so
- * QA reports its verdict; the fixed per-minute bins of densityReport (raw cues, partial last minute extrapolated) are
+ * QA reports its verdict; the fixed per-minute bins of densityReport (same roll-collapsed events, calendar minutes) are
  * informative only and never warn on their own.
  */
 export function sfxDensityCheck(lintIssues: readonly LintIssue[] | null, binsPerMin: readonly number[], perMinCap: number): QaCheck {

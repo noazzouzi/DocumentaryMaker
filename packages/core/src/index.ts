@@ -27,6 +27,7 @@ export * from "./util/time";
 export * from "./util/tokenize";
 export * from "./util/anchors";
 export * from "./util/gain";
+export * from "./util/sfx-density";
 export * from "./util/integrity";
 export * from "./util/migrate";
 export * from "./util/errors";
