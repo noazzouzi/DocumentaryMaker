@@ -3,7 +3,7 @@
 // person-ack, recheck, and the render gate summary.
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { FactCheck, FactSheet, Outline, P, Script, docHash } from "@docmaker/core";
+import { ApprovalsDoc, FactCheck, FactSheet, Outline, P, Script, docHash } from "@docmaker/core";
 import { ProjectStore } from "@docmaker/core/node";
 import { factcheckGateState, fixOnly, pendingClaims, pendingPersons } from "../src/gates";
 import { fixtureProject, pipelineReq, runToEnd, testEngine, testEnv, type TestEnv } from "./helpers";
@@ -92,11 +92,31 @@ describe("editorial gates on gate-test", () => {
     // short and identical notes are refused
     await expect(e.approve(slug, "factcheck-ack", { ...base, by: "cli", items, itemNotes: Object.fromEntries(items.map((id, k) => [id, `ok ${k}`])) })).rejects.toThrow(/at least 10/);
     if (items.length > 1) await expect(e.approve(slug, "factcheck-ack", { ...base, by: "cli", items, itemNotes: Object.fromEntries(items.map((id) => [id, "the same note everywhere"])) })).rejects.toThrow(/identical notes/);
+    // …unless they are the approval's explicitly shared note (CLI --note, web "same note for all")
+    if (items.length > 1) {
+      const shared = "Reviewed with counsel: wording kept for every item.";
+      await e.approve(slug, "factcheck-ack", { ...base, by: "cli", note: shared, items, itemNotes: Object.fromEntries(items.map((id) => [id, shared])) });
+    }
     await e.approve(slug, "factcheck-ack", { ...base, by: "cli", items, itemNotes: notes2 });
     const after = await factcheckGateState(store, await e.getProject(slug), "en");
     expect(after.open).toEqual([]);
     const fc = await store.readJson(P.factcheck("en"), FactCheck);
     expect(fc.items.filter((i) => items.includes(i.id)).every((i) => i.resolution === "acknowledged" && i.note.length >= 10)).toBe(true);
+    // the approval records the verdict and risk of each item; a changed verdict re-arms the gate as stale even though the
+    // acknowledgement carried over by id
+    const recorded = (await store.readJson(P.approvals, ApprovalsDoc)).approvals.at(-1)!;
+    const target = fc.items.find((i) => i.id === items[0])!;
+    expect(recorded.itemNotes[`sig:${target.id}`]).toBe(`${target.verdict}|${target.risk}`);
+    const renderGate = async () => (await e.status(slug)).stages.find((s) => s.stage === "render" && s.lang === "en")!;
+    expect((await renderGate()).blockedBy).not.toBe("factcheck-ack");
+    // (users cannot edit verdicts; a fact-check re-run whose carry-over kept the acknowledgement is simulated here)
+    const fcDoc2 = await e.readDoc(slug, P.factcheck("en"), FactCheck);
+    const otherVerdict = target.verdict === "contradicted" ? "unsupported" : "contradicted";
+    await store.writeJson(P.factcheck("en"), FactCheck, { ...fcDoc2.value, items: fcDoc2.value.items.map((i) => (i.id === target.id ? { ...i, verdict: otherVerdict } : i)) }, { writer: "stage", stage: "factcheck" });
+    expect(await renderGate()).toMatchObject({ blockedBy: "factcheck-ack", blockedReason: "stale" });
+    // a new review (existing notes kept) clears it
+    await e.approve(slug, "factcheck-ack", { ...base, by: "cli", items, itemNotes: {} });
+    expect((await renderGate()).blockedBy).not.toBe("factcheck-ack");
     // an edit after the acknowledgement re-arms the gate as stale
     const sc2 = await e.readDoc(slug, P.script("en"), Script);
     const edited = structuredClone(sc2.value);

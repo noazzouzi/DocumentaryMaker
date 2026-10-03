@@ -1,6 +1,6 @@
 // Pure helpers: pipeline planning, QA parsers, doctor parsers, worker env, render tokens, music planning, utilities.
 import { describe, expect, it } from "vitest";
-import { ENV_KEYS, type BeatPlan, type JobRequest, type StylePlugin } from "@docmaker/core";
+import { ENV_KEYS, type Approval, type ApprovalsDoc, type BeatPlan, type FactCheck, type FactCheckItem, type JobRequest, type StylePlugin } from "@docmaker/core";
 import { TEST_STYLE, makeProject } from "@docmaker/core/testing";
 import { planInvocations, stageRange } from "../src/pipeline";
 import { blackViolations, parseBlackdetect, parseFreezedetect, sheetFrames } from "../src/stages/qa";
@@ -12,6 +12,7 @@ import { clipNarratedOf, finalTakeGated } from "../src/stages/voice";
 import { newRefErrors } from "../src/runner";
 import { JOB_ID_RE, newJobId, orderLangs, pickOptions } from "../src/util";
 import { demoSlug } from "../src/demo";
+import { ACK_SIG_PREFIX, ackCoverage, ackSignature, changedSinceAck, reopenChanged } from "../src/gates";
 import { makeScript } from "@docmaker/core/testing";
 
 const req = (o: Partial<JobRequest>): JobRequest => ({ slug: "p", kind: "pipeline", stage: null, from: null, to: null, langs: [], force: false, options: {}, preset: null, ...o });
@@ -151,5 +152,37 @@ describe("utilities", () => {
     const b = { level: "error" as const, rule: "REF_CLIP", where: "y", msg: "n" };
     expect(newRefErrors([a], [a, b, { ...b, level: "warn" as const }])).toEqual([b]);
     expect(demoSlug("tulip-mania", new Date("2026-10-03T04:05:06Z"))).toBe("demo-tulip-mania-20261003-040506");
+  });
+});
+
+describe("factcheck-ack coverage", () => {
+  const item = (id: string, verdict: FactCheckItem["verdict"], risk: FactCheckItem["risk"], resolution: FactCheckItem["resolution"] = "acknowledged"): FactCheckItem => ({
+    id, where: "CH1-S01", surface: "narration", sentence: `sentence ${id}`, claimKind: "number", verdict, risk, factIds: [], problem: "p", suggestedRewrite: "",
+    origin: "llm", rule: null, resolution, note: resolution === "open" ? "" : "Checked against the 1637 notary deed.",
+  });
+  const approval = (lang: "en" | "fr" | null, ids: string[], sigs: Record<string, string>): Approval => ({
+    gate: "factcheck-ack", stage: "factcheck", lang, planHash: "a".repeat(64), approvedAt: "2026-10-01T00:00:00.000Z", by: "cli", note: "", items: ids,
+    itemNotes: Object.fromEntries(Object.entries(sigs).map(([id, s]) => [ACK_SIG_PREFIX + id, s])),
+  });
+
+  it("covers an item only for the verdict and risk it was approved with", () => {
+    const doc: ApprovalsDoc = { schemaVersion: 1, approvals: [approval("en", ["FC-1", "FC-2"], { "FC-1": "unsupported|high", "FC-2": "needs_attribution|high" }), approval("fr", ["FC-3"], { "FC-3": "unsupported|high" })] };
+    const cov = ackCoverage(doc, "en");
+    expect([...cov.keys()].sort()).toEqual(["FC-1", "FC-2"]);
+    const gating = [item("FC-1", "contradicted", "high"), item("FC-2", "needs_attribution", "high"), item("FC-4", "unsupported", "high", "dismissed")];
+    expect(changedSinceAck(gating, cov).map((i) => i.id)).toEqual(["FC-1"]);
+    expect(ackSignature(gating[0]!)).toBe("contradicted|high");
+    // an approval without recorded signatures (legacy) covers nothing: the item needs a new review
+    const legacy: ApprovalsDoc = { schemaVersion: 1, approvals: [approval(null, ["FC-2"], {})] };
+    expect(changedSinceAck(gating, ackCoverage(legacy, "en")).map((i) => i.id)).toEqual(["FC-2"]);
+  });
+
+  it("re-opens carried-over resolutions whose verdict or risk changed", () => {
+    const prev = { items: [item("FC-1", "unsupported", "high"), item("FC-2", "needs_attribution", "medium", "dismissed"), item("FC-3", "unsupported", "high")] } as FactCheck;
+    const next = [item("FC-1", "contradicted", "high"), item("FC-2", "needs_attribution", "high", "dismissed"), item("FC-3", "unsupported", "high"), item("FC-5", "unsupported", "high", "open")];
+    const out = reopenChanged(next, prev);
+    expect(out.map((i) => i.resolution)).toEqual(["open", "open", "acknowledged", "open"]);
+    expect(out[0]!.note).toBe("Checked against the 1637 notary deed."); // the reviewer's text stays as a draft
+    expect(reopenChanged(next, null)).toEqual(next);
   });
 });

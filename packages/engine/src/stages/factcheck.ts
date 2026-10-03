@@ -1,9 +1,10 @@
 // factcheck[lang] (§6.3 step 6, App. D): llm.factCheck per chapter (receipt-cached) + deterministic rules a–h, resolutions
-// carried over by stable FC ids → script/<lang>/factcheck.json. The factcheck-ack gate is evaluated before final voice
-// takes, render and export (gates.ts), never here.
+// carried over by stable FC ids (re-opened when an item's verdict or risk changed) → script/<lang>/factcheck.json.
+// The factcheck-ack gate is evaluated before final voice takes, render and export (gates.ts), never here.
 import { FactCheck, P, docHash, hashJson, type FactSheet } from "@docmaker/core";
 import type { StageCtx, StageDef } from "../types";
 import { docs, effectivePublish, need } from "../docs";
+import { reopenChanged } from "../gates";
 import { X, needLang, stepCtx, writeDoc } from "./common";
 
 /** Quote ids whose YouTube passage matched ≥ 0.8 in the assets stage (§6.3 1b). */
@@ -60,7 +61,8 @@ export const factcheckStage: StageDef = {
       riskFlags: (await e.riskFlags()).filter((f) => f !== "none"), scriptHash: docHash(script), slicesHash: docHash(slices),
       personAcks: await e.personAcks(),
     });
-    await writeDoc(ctx, "factcheck", P.factcheck(lang), FactCheck, fc);
+    // resolutions carried over by stable id are re-opened when the item's verdict or risk changed (§5.4)
+    await writeDoc(ctx, "factcheck", P.factcheck(lang), FactCheck, { ...fc, items: reopenChanged(fc.items, previous) });
     return { artifacts: [P.factcheck(lang)] };
   },
 };

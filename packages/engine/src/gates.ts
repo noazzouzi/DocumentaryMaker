@@ -48,6 +48,45 @@ export function itemSatisfied(it: FactCheckItem): boolean {
 export const factcheckPlanHash = (items: readonly FactCheckItem[]): string =>
   hashJson(items.map((i) => ({ id: i.id, verdict: i.verdict, resolution: i.resolution, note: i.note })));
 
+/**
+ * A factcheck-ack approval records, next to the per-item notes, the verdict and risk each blocking item had when it was
+ * approved: itemNotes["sig:<FC id>"] = "<verdict>|<risk>". Ids are stable across re-runs (where, sentence, kind, origin),
+ * so an approval covers an item only for the verdict and risk the reviewer saw.
+ */
+export const ACK_SIG_PREFIX = "sig:";
+export const ackSignature = (it: Pick<FactCheckItem, "verdict" | "risk">): string => `${it.verdict}|${it.risk}`;
+
+/** FC id → signatures under which factcheck-ack approvals of `lang` covered it (an empty set: approved, signature unknown). */
+export function ackCoverage(doc: ApprovalsDoc, lang: Lang): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const a of doc.approvals) {
+    if (a.gate !== "factcheck-ack" || (a.lang !== lang && a.lang !== null)) continue;
+    for (const id of a.items) {
+      const set = out.get(id) ?? new Set<string>();
+      const sig = a.itemNotes[ACK_SIG_PREFIX + id];
+      if (sig) set.add(sig);
+      out.set(id, set);
+    }
+  }
+  return out;
+}
+
+/** Resolved blocking items whose verdict or risk changed since an approval covered them (they need a new review). */
+export function changedSinceAck(gating: readonly FactCheckItem[], coverage: ReadonlyMap<string, ReadonlySet<string>>): FactCheckItem[] {
+  return gating.filter((i) => i.resolution !== "rewritten" && i.resolution !== "open" && coverage.has(i.id) && !coverage.get(i.id)!.has(ackSignature(i)));
+}
+
+/** Carried-over resolutions of items whose verdict or risk changed are re-opened: the reviewer saw another finding. */
+export function reopenChanged(items: readonly FactCheckItem[], previous: FactCheck | null): FactCheckItem[] {
+  if (!previous) return [...items];
+  const prev = new Map(previous.items.map((x) => [x.id, x]));
+  return items.map((it) => {
+    const p = prev.get(it.id);
+    if (!p || it.resolution === "open" || (p.verdict === it.verdict && p.risk === it.risk)) return it;
+    return { ...it, resolution: "open" as const };
+  });
+}
+
 export interface FactcheckGateState {
   missing: boolean; stale: boolean; staleReasons: string[]; gating: FactCheckItem[]; open: FactCheckItem[]; planHash: string; factCheck: FactCheck | null;
 }
@@ -75,17 +114,26 @@ export async function factcheckGate(store: ProjectStore, project: Project, lang:
   }
   if (st.gating.length === 0) return null;
   const approvals = await docs.approvals(store);
+  let pending: FactCheckItem[] = st.open;
   if (st.open.length === 0) {
     if (hasApproval(approvals, "factcheck-ack", lang, st.planHash)) return null;
-    // every acknowledged/dismissed blocking item was approved through engine.approve (notes validated there); resolutions
-    // carry over by stable id when the fact-check re-runs, so an item that disappeared does not void the others
-    const approved = new Set(approvals.approvals.filter((a) => a.gate === "factcheck-ack" && (a.lang === lang || a.lang === null)).flatMap((a) => a.items));
-    if (st.gating.every((i) => i.resolution === "rewritten" || approved.has(i.id))) return null;
+    // per-item coverage: resolutions carry over by stable id when the fact-check re-runs (an item that disappeared does
+    // not void the others), but only for the verdict and risk each item had when it was approved
+    const coverage = ackCoverage(approvals, lang);
+    const changed = changedSinceAck(st.gating, coverage);
+    if (changed.length) {
+      return {
+        gate: "factcheck-ack", reason: "stale", planHash: st.planHash,
+        summary: `${lang}: the verdict or risk of ${changed.map((i) => `${i.id} (now ${i.verdict}, ${i.risk})`).join(", ")} changed since it was acknowledged — review and acknowledge again`,
+      };
+    }
+    pending = st.gating.filter((i) => i.resolution !== "rewritten" && !coverage.has(i.id));
+    if (pending.length === 0) return null;
   }
   const fixes = st.open.filter(fixOnly).length;
   return {
     gate: "factcheck-ack", reason: "unmet", planHash: st.planHash,
-    summary: `${lang}: ${st.open.length || st.gating.length} fact-check item(s) need acknowledgement${fixes ? ` (${fixes} can only be fixed)` : ""}: ${(st.open.length ? st.open : st.gating).map((i) => i.id).join(", ")}`,
+    summary: `${lang}: ${pending.length} fact-check item(s) need acknowledgement${fixes ? ` (${fixes} can only be fixed)` : ""}: ${pending.map((i) => i.id).join(", ")}`,
   };
 }
 
@@ -248,11 +296,14 @@ export async function prepareApproval(
       if (fixes.length) {
         throw new DocmakerError("VALIDATION", `${fixes.map((i) => `${i.id} (${i.verdict})`).join(", ")} can only be fixed (rewrite the text, then re-run the fact-check)`, { details: fixes.map((i) => i.id) });
       }
-      // notes: ≥ 10 chars; explicitly per-item notes may not be identical across items (a shared --note is the explicit form)
+      // notes: ≥ 10 chars; per-item notes may not be identical across items unless they are the approval's explicitly
+      // shared note (`note`: the CLI --note, the web "same note for all" confirmation)
       const explicit = Object.entries(a.itemNotes).filter(([id]) => items.has(id));
+      const sharedKey = a.note.trim().toLowerCase();
       const seen = new Map<string, string>();
       for (const [id, n] of explicit) {
         const key = n.trim().toLowerCase();
+        if (sharedKey && key === sharedKey) continue;
         if (seen.has(key)) throw new DocmakerError("VALIDATION", `identical notes on ${seen.get(key)} and ${id}: write a specific note per item (or use one shared note explicitly)`);
         seen.set(key, id);
       }
@@ -266,6 +317,7 @@ export async function prepareApproval(
       });
       const fc = FactCheck.parse({ ...st.factCheck, items: updated });
       const gating = gatingItems(fc, (await docs.suggestion(store))?.riskFlags ?? []);
+      for (const it of gating) if (it.resolution !== "rewritten") notes[ACK_SIG_PREFIX + it.id] = ackSignature(it);
       return {
         approval: base(factcheckPlanHash(gating), gating.map((i) => i.id), notes, "factcheck", lang),
         projectPatch: null, outline: null, factCheck: fc,

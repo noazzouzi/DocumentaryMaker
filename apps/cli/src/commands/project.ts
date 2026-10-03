@@ -1,14 +1,14 @@
-// Project commands (§15.1): new, style, outline, script, beats, factcheck, approve, persons, assets, voice, layout,
+// Project commands (§15.1): new, research, style, outline, script, beats, factcheck, approve, persons, assets, voice, layout,
 // direct, mix, preview, render, export, qa. `--yes` / `--max-cost` never satisfy editorial gates; factcheck `--ack all`
 // is interactive only (non-interactive use requires --ack-file with a note per item).
 import { copyFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Command } from "commander";
 import {
-  FactCheck, GateId, LicenseCode, Outline, P, StyleSuggestion, docHash, type FactCheckItem, type JobOptions, type JobRequest, type Lang, type Project,
-  type StageId, type UploadDeclaration,
+  ApprovalsDoc, FactCheck, GateId, LicenseCode, Outline, P, StyleSuggestion, docHash, type FactCheckItem, type JobOptions, type JobRequest, type Lang,
+  type Project, type StageId, type UploadDeclaration,
 } from "@docmaker/core";
-import { gatingItems, fixOnly } from "@docmaker/engine";
+import { NOTE_MIN, ackCoverage, changedSinceAck, gatingItems, fixOnly } from "@docmaker/engine";
 import { UsageError, splitList, type CliContext } from "../context";
 import { EXIT, runJob } from "../jobrun";
 import { parseChapters, parseLangs, parsePreset, parseStage } from "./core";
@@ -61,9 +61,9 @@ export function parseRange(v: string | undefined): [number, number] | null {
   return [Number(m[1]), Number(m[2])];
 }
 
-function printItems(ctx: CliContext, items: readonly FactCheckItem[], gating: Set<string>) {
+function printItems(ctx: CliContext, items: readonly FactCheckItem[], gating: Set<string>, review: ReadonlySet<string> = new Set()) {
   for (const it of items) {
-    const tag = gating.has(it.id) ? (it.resolution === "open" ? "BLOCKING" : it.resolution.toUpperCase()) : it.resolution;
+    const tag = review.has(it.id) ? "REVIEW: verdict/risk changed since acknowledged" : gating.has(it.id) ? (it.resolution === "open" ? "BLOCKING" : it.resolution.toUpperCase()) : it.resolution;
     ctx.io.out(`${it.id}  ${it.risk.padEnd(6)} ${it.verdict.padEnd(26)} ${it.where.padEnd(10)} [${tag}]${fixOnly(it) ? " (fix only)" : ""}\n    ${it.sentence}\n    ${it.problem}${it.suggestedRewrite ? `\n    suggestion: ${it.suggestedRewrite}` : ""}${it.note ? `\n    note: ${it.note}` : ""}\n`);
   }
 }
@@ -168,6 +168,48 @@ export function registerProject(program: Command, ctx: CliContext): void {
       } else if (o.confirm) {
         await engine.approve(slug, "style-confirm", { stage: "outline", lang: null, planHash: "", by: "cli", note: "confirmed", items: [], itemNotes: {} });
         ctx.io.out(`style ${(await engine.getProject(slug)).styleId} confirmed\n`);
+      }
+    });
+
+  // ------------------------------------------------------------------ research
+  program
+    .command("research <slug>")
+    .description("research stage (cost gate: --yes / --max-cost); saved turns of an interrupted run of the same request are reused")
+    .option("--resume", "continue the interrupted research from its saved turns (never starts a new paid research)")
+    .action(async (slug: string, o: Opts) => {
+      const g = ctx.globals();
+      if (o.resume && g.newRequest) throw new UsageError("--resume and --new-request are exclusive");
+      const engine = await ctx.engine();
+      const info = await engine.researchResume(slug);
+      const json = g.json === true;
+      if (o.resume) {
+        if (!info.saved) {
+          ctx.io.err(`nothing to resume: ${slug} has no saved research turns\n  run: docmaker research ${slug}\n`);
+          return void (process.exitCode = EXIT.error);
+        }
+        if (!info.matches) {
+          ctx.io.err(`nothing to resume: the ${info.saved} saved research turn(s) belong to an earlier request (the idea, languages, length, as-of date or provider changed)\n  start a new research: docmaker research ${slug}\n`);
+          return void (process.exitCode = EXIT.error);
+        }
+      }
+      if (!json && info.saved && info.matches && !g.newRequest) {
+        ctx.io.out(info.complete
+          ? `the saved research (${info.saved} turn(s)) is complete: it is reused, no new research call (--new-request starts over)\n`
+          : `continuing the interrupted research from ${info.saved} saved turn(s) (--new-request starts over)\n`);
+      } else if (!json && info.saved && !o.resume) {
+        ctx.io.out(`${info.saved} saved research turn(s) ${g.newRequest ? "will be discarded (--new-request)" : "belong to an earlier request and will be discarded"}\n`);
+      }
+      // a new request is an explicit ask for a new paid research: run the stage even when it is up to date
+      const req = stageJob(ctx, slug, "research", {});
+      const code = await runJob(ctx, g.newRequest ? { ...req, force: true } : req);
+      process.exitCode = code;
+      if (code !== EXIT.ok || json) return;
+      const { ResearchDossier, FactSheet } = await import("@docmaker/core");
+      const d = await engine.readDoc(slug, P.dossier, ResearchDossier).then((x) => x.value).catch(() => null);
+      const f = await engine.readDoc(slug, P.factsheet, FactSheet).then((x) => x.value).catch(() => null);
+      if (d && f) {
+        ctx.io.out(`research: ${f.sources.length} source(s), ${f.claims.length} claim(s), ${f.people.length} person(s), ${f.quotes.length} quote(s); ${d.searchesUsed} search(es), ${d.fetchesUsed} fetch(es), ${d.turns} turn(s)\n`);
+        ctx.io.out(`dossier: ${path.join(engine.config.projectsDir, slug, P.dossierMd)}\nnext: docmaker outline ${slug}\n`);
       }
     });
 
@@ -279,8 +321,11 @@ export function registerProject(program: Command, ctx: CliContext): void {
         fc = await engine.readDoc(slug, P.factcheck(lang), FactCheck);
       }
       const sugg = await engine.readDoc(slug, P.styleSuggestion, StyleSuggestion).then((d) => d.value.riskFlags).catch(() => []);
-      const gating = gatingItems(fc.value, sugg);
+      const approvals = await engine.readDoc(slug, P.approvals, ApprovalsDoc).then((d) => d.value).catch((): ApprovalsDoc => ({ schemaVersion: 1, approvals: [] }));
+      let gating = gatingItems(fc.value, sugg);
       const gatingIds = new Set(gating.map((i) => i.id));
+      // acknowledged/dismissed items whose verdict or risk changed since their approval: they need a new review
+      const reviewIds = () => new Set(changedSinceAck(gating, ackCoverage(approvals, lang)).map((i) => i.id));
       if (o.dismiss) {
         const ids = new Set(splitList(str(o.dismiss)));
         const note = (str(o.note) ?? "").trim();
@@ -288,33 +333,63 @@ export function registerProject(program: Command, ctx: CliContext): void {
         const next = { ...fc.value, items: fc.value.items.map((i) => (ids.has(i.id) ? { ...i, resolution: "dismissed" as const, note } : i)) };
         await engine.writeDoc(slug, P.factcheck(lang), FactCheck, next, fc.etag);
         fc = await engine.readDoc(slug, P.factcheck(lang), FactCheck);
+        gating = gatingItems(fc.value, sugg);
         ctx.io.out(`dismissed ${[...ids].join(", ")}\n`);
       }
+      const review = reviewIds();
       if (!ack && !ackFile) {
-        printItems(ctx, fc.value.items, gatingIds);
+        printItems(ctx, fc.value.items, gatingIds, review);
         const open = gating.filter((i) => i.resolution === "open");
         ctx.io.out(open.length ? `\n${open.length} blocking item(s) open\n` : "\nno blocking item open\n");
+        if (review.size) ctx.io.out(`${review.size} acknowledged item(s) changed since their approval and need a new review: ${[...review].join(", ")}\n`);
+        if (o.dismiss && !open.length) ctx.io.out(`record the acknowledgement: docmaker factcheck ${slug} --lang ${lang} --ack-file <json>   (or --ack <ids> on a terminal)\n`);
         return;
       }
-      let itemNotes: Record<string, string> = {};
+      // itemNotes holds only notes written for this approval (per item); a shared --note travels as `note`, so the engine
+      // can tell an explicitly shared note from accidentally identical per-item notes
+      const shared = (str(o.note) ?? "").trim();
+      const itemNotes: Record<string, string> = {};
+      const acked = new Set<string>();
       if (ackFile) {
-        const raw = JSON.parse(await readFile(ackFile, "utf8")) as unknown;
+        let raw: unknown;
+        try {
+          raw = JSON.parse(await readFile(ackFile, "utf8"));
+        } catch (err) {
+          throw new UsageError(`--ack-file: ${err instanceof Error ? err.message : String(err)}`);
+        }
         if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new UsageError("--ack-file must hold a JSON object {\"FC-…\": \"note\"}");
-        itemNotes = Object.fromEntries(Object.entries(raw as Record<string, unknown>).map(([k, v]) => [k, String(v)]));
+        for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+          acked.add(k);
+          const note = String(v ?? "").trim();
+          if (note) itemNotes[k] = note;
+        }
       } else {
-        const wanted = ack === "all" ? gating.filter((i) => i.resolution === "open") : fc.value.items.filter((i) => splitList(ack).includes(i.id));
-        const shared = (str(o.note) ?? "").trim();
+        const wanted = ack === "all" ? gating.filter((i) => i.resolution === "open" || review.has(i.id)) : fc.value.items.filter((i) => splitList(ack).includes(i.id));
+        const unknown = ack === "all" ? [] : splitList(ack).filter((id) => !fc!.value.items.some((i) => i.id === id));
+        if (unknown.length) throw new UsageError(`unknown fact-check item(s): ${unknown.join(", ")}`);
         for (const it of wanted) {
-          printItems(ctx, [it], gatingIds);
+          printItems(ctx, [it], gatingIds, review);
           if (!(await confirmYes(ctx, `acknowledge ${it.id}?`))) continue;
-          const note = shared || (await ctx.io.ask("note (≥ 10 characters): ")).trim();
-          itemNotes[it.id] = note;
+          acked.add(it.id);
+          if (shared) {
+            itemNotes[it.id] = shared;
+            continue;
+          }
+          const keep = it.note.trim().length >= NOTE_MIN;
+          const answer = (await ctx.io.ask(keep ? "note (Enter keeps the current note): " : `note (≥ ${NOTE_MIN} characters): `)).trim();
+          if (answer || !keep) itemNotes[it.id] = answer;
         }
       }
-      // items already acknowledged/dismissed keep their notes; the approval covers every blocking item
-      for (const it of gating) if (!itemNotes[it.id] && it.resolution !== "open" && it.resolution !== "rewritten") itemNotes[it.id] = it.note;
-      const items = Object.keys(itemNotes);
-      await engine.approve(slug, "factcheck-ack", { stage: "factcheck", lang, planHash: "", by: "cli", note: str(o.note) ?? "", items, itemNotes });
+      // blocking items acknowledged or dismissed earlier keep their recorded notes (no copy into itemNotes) and are covered
+      // by this approval, except those whose verdict or risk changed since: they must be reviewed explicitly
+      const unreviewed = [...review].filter((id) => !acked.has(id));
+      if (unreviewed.length) {
+        ctx.io.err(`${unreviewed.join(", ")}: the verdict or risk changed since the acknowledgement; review ${unreviewed.length > 1 ? "them" : "it"} explicitly (--ack <ids> on a terminal, or list ${unreviewed.length > 1 ? "them" : "it"} in --ack-file)\n`);
+        return void (process.exitCode = EXIT.error);
+      }
+      for (const it of gating) if (it.resolution !== "open" && it.resolution !== "rewritten") acked.add(it.id);
+      const items = [...acked].sort();
+      await engine.approve(slug, "factcheck-ack", { stage: "factcheck", lang, planHash: "", by: "cli", note: shared, items, itemNotes });
       ctx.io.out(`acknowledged ${items.length} item(s) for ${lang}\n`);
     });
 
@@ -360,7 +435,7 @@ export function registerProject(program: Command, ctx: CliContext): void {
         ctx.io.out(`acknowledged ${o.ack}\n`);
         return;
       }
-      const { FactSheet, ApprovalsDoc } = await import("@docmaker/core");
+      const { FactSheet } = await import("@docmaker/core");
       const fs = (await engine.readDoc(slug, P.factsheet, FactSheet)).value;
       const acks = new Set((await engine.readDoc(slug, P.approvals, ApprovalsDoc).then((d) => d.value.approvals).catch(() => [])).filter((a) => a.gate === "person-ack").flatMap((a) => a.items));
       for (const p of fs.people) {

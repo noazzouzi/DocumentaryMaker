@@ -146,6 +146,51 @@ describe("--yes and --max-cost", () => {
   });
 });
 
+describe("research", () => {
+  const withInfo = (info: { saved: number; matches: boolean; complete: boolean }) => ({
+    async researchResume() {
+      return info;
+    },
+    async readDoc() {
+      throw new Error("missing");
+    },
+  }) as unknown as Partial<EngineExt>;
+
+  it("runs the research stage behind the cost gate (--yes approves it)", async () => {
+    const m = mockEngine([{ status: "waiting-approval", events: [estimate(3.2), need("cost")] }, { status: "succeeded", events: [] }], withInfo({ saved: 0, matches: false, complete: false }));
+    expect(await runCli(argv("research", "p", "--yes"), { io: memIo(), factory: m.factory })).toBe(0);
+    expect(m.submitted[0]).toEqual({ slug: "p", kind: "stage", stage: "research", from: null, to: null, langs: [], force: false, preset: null, options: {} });
+    expect(m.approvals).toEqual([{ slug: "p", gate: "cost", a: expect.objectContaining({ by: "flag" }) }]);
+    const capped = mockEngine([{ status: "waiting-approval", events: [estimate(3.2), need("cost")] }], withInfo({ saved: 0, matches: false, complete: false }));
+    expect(await runCli(argv("research", "p", "--max-cost", "2"), { io: memIo(), factory: capped.factory })).toBe(3);
+    expect(capped.approvals).toEqual([]);
+  });
+
+  it("--resume continues saved turns of the same request, and never starts a new research", async () => {
+    const m = mockEngine([{ status: "succeeded", events: [] }], withInfo({ saved: 4, matches: true, complete: false }));
+    const io = memIo();
+    expect(await runCli(argv("research", "p", "--resume"), { io, factory: m.factory })).toBe(0);
+    expect(io.stdout).toMatch(/continuing the interrupted research from 4 saved turn\(s\)/);
+    expect(m.submitted[0]).toMatchObject({ kind: "stage", stage: "research", force: false, options: {} });
+    for (const info of [{ saved: 0, matches: false, complete: false }, { saved: 3, matches: false, complete: false }]) {
+      const none = mockEngine([{ status: "succeeded", events: [] }], withInfo(info));
+      const eio = memIo();
+      expect(await runCli(argv("research", "p", "--resume"), { io: eio, factory: none.factory })).toBe(1);
+      expect(eio.stderr).toMatch(/nothing to resume/);
+      expect(none.submitted).toEqual([]);
+    }
+    expect(await runCli(argv("research", "p", "--resume", "--new-request"), { io: memIo(), factory: m.factory })).toBe(2);
+  });
+
+  it("--new-request starts over (forced, receipts bypassed) and says the saved turns are discarded", async () => {
+    const m = mockEngine([{ status: "succeeded", events: [] }], withInfo({ saved: 2, matches: true, complete: true }));
+    const io = memIo();
+    expect(await runCli(argv("research", "p", "--new-request"), { io, factory: m.factory })).toBe(0);
+    expect(io.stdout).toMatch(/2 saved research turn\(s\) will be discarded \(--new-request\)/);
+    expect(m.submitted[0]).toMatchObject({ kind: "stage", stage: "research", force: true, options: { newRequest: true } });
+  });
+});
+
 describe("factcheck acknowledgements", () => {
   const fc: FactCheck = {
     schemaVersion: 1, lang: "en", scriptHash: "a".repeat(64), slicesHash: "b".repeat(64), publishHash: "c".repeat(64), needsMoreResearch: [], titleThumbnailIssues: [], createdAt: NOW,
@@ -193,6 +238,84 @@ describe("factcheck acknowledgements", () => {
     expect(await runCli(argv("factcheck", "p", "--ack", "all"), { io, factory: m.factory })).toBe(0);
     expect(m.approvals[0]!.a.items).toEqual(["FC-00000001"]);
   });
+});
+
+describe("factcheck on a real engine (gate-test)", () => {
+  // the gate-test fixture through the factcheck stage, with its fix-only quote fixed: ackable blocking items remain
+  async function setup(root: string) {
+    const { createEngineImpl } = await import("@docmaker/engine");
+    const { loadRuntime } = await import("@docmaker/core/node");
+    const core = await import("@docmaker/core");
+    const fakes = await import("../../../packages/engine/test/fakes/index");
+    const repo = path.resolve(__dirname, "..", "..", "..");
+    const env = { ...process.env, DOCMAKER_HOME: path.join(root, "home"), DOCMAKER_PROJECTS: path.join(root, "projects"), DOCMAKER_OFFLINE: "1", DOCMAKER_REPO_ROOT: repo, DOCMAKER_LOG_LEVEL: "error" };
+    const factory: EngineFactory = async ({ env: e, logger }) => createEngineImpl({ cwd: repo, env: e, logger, deps: fakes.skeletonDeps(), renderClient: new fakes.FakeRenderClient(loadRuntime({ cwd: repo, env: e }).config) });
+    const e = await factory({ env, cwd: repo, logger: silent });
+    try {
+      const fx = (await e.rt.fixture("gate-test"))!;
+      const slug = (await e.createProject({ idea: fx.idea, slug: "fc", languages: ["en"], primaryLang: fx.primaryLang, targetMinutes: fx.targetMinutes, styleId: fx.styleId, llm: "fixture", fixtureId: fx.id, seed: fx.seed })).slug;
+      const req = (from: JobRequest["from"]): JobRequest => ({ slug, kind: "pipeline", stage: null, from, to: "factcheck", langs: [], force: false, options: {}, preset: null });
+      const first = await e.waitForJob((await e.submit(req("research"))).jobId);
+      expect(first.status).toBe("waiting-approval");
+      const o = await e.readDoc(slug, core.P.outline, core.Outline);
+      await e.writeDoc(slug, core.P.outline, core.Outline, { ...o.value, thesisConfirmed: true }, o.etag);
+      await e.approve(slug, "outline-approval", { stage: "outline", lang: null, planHash: core.docHash((await e.readDoc(slug, core.P.outline, core.Outline)).value), by: "cli", note: "", items: [], itemNotes: {} });
+      expect((await e.waitForJob((await e.resume(first.id)).jobId)).status).toBe("succeeded");
+      // fix-only quote items: put the verbatim quote in the script, re-run, mark what the LLM still flags as rewritten
+      const facts = (await e.readDoc(slug, core.P.factsheet, core.FactSheet)).value;
+      const sc = await e.readDoc(slug, core.P.script("en"), core.Script);
+      const next = structuredClone(sc.value);
+      for (const ch of next.chapters) for (const sg of ch.segments) if (sg.quoteId) sg.displayText = facts.quotes.find((q) => q.id === sg.quoteId)!.verbatim;
+      await e.writeDoc(slug, core.P.script("en"), core.Script, next, sc.etag);
+      expect((await e.waitForJob((await e.submit(req("beatslice"))).jobId)).status).toBe("succeeded");
+      const fc = await e.readDoc(slug, core.P.factcheck("en"), core.FactCheck);
+      const { fixOnly, gatingItems } = await import("@docmaker/engine");
+      await e.writeDoc(slug, core.P.factcheck("en"), core.FactCheck, { ...fc.value, items: fc.value.items.map((i) => (fixOnly(i) && i.resolution === "open" ? { ...i, resolution: "rewritten" as const } : i)) }, fc.etag);
+      const after = (await e.readDoc(slug, core.P.factcheck("en"), core.FactCheck)).value;
+      const ackable = gatingItems(after, (await e.readDoc(slug, core.P.styleSuggestion, core.StyleSuggestion)).value.riskFlags).filter((i) => i.resolution === "open").map((i) => i.id);
+      return { slug, env, factory, repo, ackable, approvals: async () => (await e.readDoc(slug, core.P.approvals, core.ApprovalsDoc)).value.approvals };
+    } finally {
+      await e.close();
+    }
+  }
+  const silent = { debug() {}, info() {}, warn() {}, error() {}, child() { return silent; } } as unknown as Parameters<EngineFactory>[0]["logger"];
+
+  it("a shared --note acknowledges several items; items dismissed earlier with one note keep it", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "docmaker-cli-fc-"));
+    try {
+      const s = await setup(root);
+      expect(s.ackable.length).toBeGreaterThanOrEqual(3);
+      const [d1, d2, ...rest] = s.ackable as [string, string, ...string[]];
+      const run = (io: ReturnType<typeof memIo>, ...a: string[]) => runCli(argv(...a), { io, factory: s.factory, baseEnv: s.env, cwd: s.repo });
+      // two items dismissed with one (shared) note
+      const dio = memIo(false);
+      expect(await run(dio, "factcheck", s.slug, "--dismiss", `${d1},${d2}`, "--note", "Background only, never asserted.")).toBe(0);
+      expect(dio.stdout).toMatch(/record the acknowledgement|blocking item\(s\) open/);
+      // the rest acknowledged on a terminal with one shared --note
+      const io = memIo(true);
+      io.answers.push(...rest.map(() => "y"));
+      const shared = "Reviewed with counsel: wording kept.";
+      expect(await run(io, "factcheck", s.slug, "--ack", "all", "--note", shared)).toBe(0);
+      expect(io.stderr).toBe("");
+      expect(io.stdout).toContain(`acknowledged ${s.ackable.length} item(s) for en`);
+      const last = (await s.approvals()).at(-1)!;
+      expect(last).toMatchObject({ gate: "factcheck-ack", by: "cli", note: shared });
+      expect(last.items).toEqual(expect.arrayContaining(s.ackable)); // (+ rewritten items: the approval lists every blocking id)
+      expect(last.itemNotes[d1]).toBe("Background only, never asserted.");
+      for (const id of rest) expect(last.itemNotes[id]).toBe(shared);
+      // the gate is satisfied: status shows no factcheck-ack block on render
+      const st = memIo();
+      expect(await run(st, "status", s.slug)).toBe(0);
+      expect(st.stdout).not.toMatch(/render\.en\S*\s+\S+\s+.*blocked: factcheck-ack/);
+      // identical per-item notes typed separately are still refused (no shared --note)
+      const dup = memIo(true);
+      dup.answers.push(...s.ackable.flatMap(() => ["y", "the same note everywhere"]));
+      expect(await run(dup, "factcheck", s.slug, "--ack", s.ackable.join(","))).toBe(1);
+      expect(dup.stderr).toMatch(/identical notes/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 300_000);
 });
 
 describe("demo on the walking-skeleton fakes", () => {

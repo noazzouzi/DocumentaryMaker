@@ -43,7 +43,9 @@ export { WorkerHost, workerEnv, workerForkOptions } from "./worker";
 export { runDoctor, parseFfmpegList, parseFfmpegVersion, nodeVersionCheck, REQUIRED_FILTERS, hyperframesResidue } from "./doctor";
 export { parseBlackdetect, parseFreezedetect, blackViolations, sheetFrames } from "./stages/qa";
 export { demoSlug, demoVoice } from "./demo";
-export { gatingItems, fixOnly, factcheckPlanHash, NOTE_MIN, RECHECK_MAX_AGE_DAYS } from "./gates";
+export {
+  gatingItems, fixOnly, factcheckPlanHash, NOTE_MIN, RECHECK_MAX_AGE_DAYS, ACK_SIG_PREFIX, ackSignature, ackCoverage, changedSinceAck, reopenChanged,
+} from "./gates";
 export { ProjectCosts, readReceipts } from "./costs";
 export { stageDef, STAGE_ORDER } from "./stages";
 export { exportReadmeRel, upToDateRender } from "./stages/export";
