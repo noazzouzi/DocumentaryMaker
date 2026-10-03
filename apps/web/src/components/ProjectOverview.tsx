@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { StageId, type JobRecord, type Lang, type Project } from "@docmaker/core";
 import type { StageStatus } from "@docmaker/engine";
-import { fmtDate, fmtUsd, type MessageKey } from "@/i18n";
+import { fmtDate, fmtSeconds, fmtUsd, type MessageKey } from "@/i18n";
 import { api, errorText, submitJob } from "@/lib/api";
 import { useI18n } from "./I18nProvider";
 import { useJobStream, type GateRequest } from "./useJobStream";
@@ -302,7 +302,7 @@ export function ProjectOverview({ project, initialStatus, initialJobs }: { proje
               <div key={s.key} className="text-xs">
                 <div className="flex justify-between text-neutral-400">
                   <span>{s.key}</span>
-                  <span>{s.waitingRenderSlot ? t("overview.waitingRender") : `${Math.round(s.pct * 100)}%`}</span>
+                  <span>{s.waitingRenderSlot ? t("overview.waitingRender") : `${Math.round(s.pct * 100)}%${s.etaSec !== null ? ` · ETA ${fmtSeconds(s.etaSec)}` : ""}`}</span>
                 </div>
                 <ProgressBar pct={s.pct} />
                 {s.message ? <p className="truncate text-neutral-500">{s.message}</p> : null}

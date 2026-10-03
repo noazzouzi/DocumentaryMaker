@@ -4,7 +4,7 @@
 import { useEffect, useReducer, useRef } from "react";
 import type { JobEvent, JobStatus } from "@docmaker/core";
 
-export interface StageProgress { key: string; stage: string; lang: string | null; pct: number; message: string; state: "running" | "done" | "skipped" | "failed"; waitingRenderSlot: boolean }
+export interface StageProgress { key: string; stage: string; lang: string | null; pct: number; message: string; state: "running" | "done" | "skipped" | "failed"; waitingRenderSlot: boolean; etaSec: number | null }
 export interface GateRequest { gate: string; stage: string; lang: string | null; planHash: string; reason: "unmet" | "stale"; summary: string; seq: number }
 export interface JobStreamState {
   jobId: string | null;
@@ -26,7 +26,7 @@ const keyOf = (stage: string, lang: string | null) => (lang ? `${stage}.${lang}`
 
 function upsertStage(s: StageProgress[], key: string, patch: Partial<StageProgress> & Pick<StageProgress, "stage" | "lang">): StageProgress[] {
   const i = s.findIndex((x) => x.key === key);
-  if (i < 0) return [...s, { key, pct: 0, message: "", state: "running", waitingRenderSlot: false, ...patch }];
+  if (i < 0) return [...s, { key, pct: 0, message: "", state: "running", waitingRenderSlot: false, etaSec: null, ...patch }];
   const next = s.slice();
   next[i] = { ...next[i]!, ...patch };
   return next;
@@ -52,6 +52,7 @@ export function jobReducer(st: JobStreamState, a: Action): JobStreamState {
         ...base,
         stages: upsertStage(base.stages, keyOf(ev.stage, ev.lang), {
           stage: ev.stage, lang: ev.lang, pct: ev.pct, message: ev.message, state: "running", waitingRenderSlot: ev.detail?.waiting === "render-slot",
+          etaSec: typeof ev.detail?.etaSec === "number" && Number.isFinite(ev.detail.etaSec) ? ev.detail.etaSec : null,
         }),
       };
     case "stage-done": {

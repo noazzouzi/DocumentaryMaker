@@ -1,6 +1,7 @@
 "use client";
 // Compact live view of one job (progress bars per stage, last log lines, end status) for sub-pages.
 import type { JobStatus } from "@docmaker/core";
+import { fmtSeconds } from "@/i18n";
 import { useT } from "./I18nProvider";
 import { useJobStream } from "./useJobStream";
 import { Badge, ProgressBar } from "./ui";
@@ -22,7 +23,7 @@ export function JobProgress({ jobId, onEnd }: { jobId: string | null; onEnd?: (s
           <div key={x.key}>
             <div className="flex justify-between text-neutral-400">
               <span>{x.key}</span>
-              <span>{x.waitingRenderSlot ? t("overview.waitingRender") : `${Math.round(x.pct * 100)}% ${x.message}`}</span>
+              <span>{x.waitingRenderSlot ? t("overview.waitingRender") : `${Math.round(x.pct * 100)}% ${x.message}${x.etaSec !== null ? ` · ETA ${fmtSeconds(x.etaSec)}` : ""}`}</span>
             </div>
             <ProgressBar pct={x.pct} />
           </div>
