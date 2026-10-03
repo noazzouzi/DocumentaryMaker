@@ -5,7 +5,7 @@ import {
 } from "@docmaker/core";
 import { ACCUSATORY, ATTRIBUTION, ATTRIBUTION_REQUIRED_STATUSES, DENIAL, splitSentences } from "../lexicon";
 import { mentionsPerson, motionStrings, normWs, sharedNameTokens } from "../text";
-import { extractNumbers, matchesAny, numbersIn } from "./numbers";
+import { extractNumbers, matchesAny, numbersIn, ratioSupported } from "./numbers";
 
 /** FC-<sha8(where|normWord(sentence)|claimKind|origin)> — stable across re-runs. */
 export function factCheckId(where: string, sentence: string, claimKind: string, origin: "llm" | "deterministic"): string {
@@ -98,8 +98,10 @@ export function deterministicFactChecks(i: DeterministicInput): FactCheckItem[] 
     const found = extractNumbers(text);
     if (found.length === 0) return;
     const allowed = allowedNumbers(fs, factIds);
+    const cited = new Set(factIds);
+    const figureValues = fs.figures.filter((f) => cited.has(f.id)).map((f) => f.value);
     for (const n of found) {
-      if (matchesAny(n, allowed)) continue;
+      if (matchesAny(n, allowed) || ratioSupported(n, figureValues)) continue;
       add(item("b", where, surface, text, "number", "unsupported", "medium", [...factIds],
         `"${n.raw.trim()}" matches no figure or date among the cited facts (${factIds.join(", ") || "none"})`, "", n.raw.trim()));
     }

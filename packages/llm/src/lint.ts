@@ -6,6 +6,7 @@ import {
 import {
   ACCUSATORY, AND_THEN, ATTRIBUTION, ATTRIBUTION_REQUIRED_STATUSES, BANNED_OPENERS, countWords, splitSentences,
 } from "./lexicon";
+import { extractWordNumbers } from "./factcheck/numbers";
 import { mentionsPerson, normWs, sharedNameTokens } from "./text";
 
 const issue = (level: LintIssue["level"], rule: string, where: string, msg: string): LintIssue => ({ level, rule, where, msg });
@@ -69,7 +70,9 @@ export function lintScript(i: LintScriptInput): LintIssue[] {
         if (t < 60 && BANNED_OPENERS[lang].test(text)) out.push(issue("error", "banned-opener", s.id, "generic intro / CTA inside the first 60 s"));
         const low = normPhrase(text);
         for (const b of banned) if (b && low.includes(b)) out.push(issue("warn", "banned-phrase", s.id, `banned phrase "${b}"`));
-        if (/\d/.test(text) && s.factIds.length === 0) out.push(issue("error", "number-without-fact", s.id, "a number in narration without fact ids"));
+        if ((/\d/.test(text) || extractWordNumbers(text).length > 0) && s.factIds.length === 0) {
+          out.push(issue("error", "number-without-fact", s.id, "a number in narration without fact ids"));
+        }
         for (const f of s.factIds) {
           const c = claims.get(f);
           if (c && (ATTRIBUTION_REQUIRED_STATUSES as readonly string[]).includes(c.status) && !ATTRIBUTION[lang].test(text)) {

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { z } from "zod";
 import { type BeatLang, type BeatPlan, type FactSheet, type Script, type ScriptSegment } from "@docmaker/core";
 import { TEST_NOW, makeBeats, makeFactSheet, makeScript } from "@docmaker/core/testing";
-import { ACCUSATORY, ATTRIBUTION, deterministicFactChecks, factSheetToWire, lintScript, recheck, type LlmClient, type ResearchResult, type StructuredRequest } from "../src/index";
+import { ACCUSATORY, ATTRIBUTION, deterministicFactChecks, extractNumbers, factSheetToWire, lintScript, recheck, type LlmClient, type ResearchResult, type StructuredRequest } from "../src/index";
 import { makeCtx } from "./helpers";
 import { maskPersons, mentionsPerson } from "../src/text";
 
@@ -152,5 +152,36 @@ describe("recheck: a status change needs a supporting source", () => {
     expect(c4.status).toBe("criminal_conviction");
     expect([out.changed, out.checked]).toEqual([["C4"], ["C4"]]);
     expect(out.upgrades).toEqual([{ id: "C4", from: "charged_pending", to: "criminal_conviction", sourceIds: [c4.sourceIds[c4.sourceIds.length - 1]] }]);
+  });
+});
+
+describe("spelled-out figures (rule b, lint number-without-fact)", () => {
+  it("extracts scaled and multiple figures, not small counts", () => {
+    const v = (t: string) => extractNumbers(t).map((n) => [n.raw, n.value]);
+    expect(v("he stole two hundred million dollars")).toEqual([["two hundred million", 2e8]]);
+    expect(v("deux millions d'euros, quatre-vingt-dix fois")).toEqual([["deux millions", 2e6], ["quatre-vingt-dix", 90]]);
+    expect(v("ten times more")).toEqual([["ten", 10]]);
+    expect(v("the two brothers met un homme; thousands of people")).toEqual([]);
+  });
+  it("an unsupported spelled figure is flagged; a ratio claim is checked against the cited figures", () => {
+    const f = facts();
+    f.figures[0] = { ...f.figures[0]!, id: "N1", value: 20e6, label: "Amount taken" };
+    const b = (text: string, factIds: string[]) => det([seg("CH1-S01", text, { factIds })], f).filter((x) => x.rule === "b").map((x) => x.problem);
+    expect(b("He took two hundred million dollars.", ["N1"])).toHaveLength(1);
+    expect(b("He took twenty million dollars.", ["N1"])).toEqual([]);
+    const g = facts();
+    g.figures = [{ ...g.figures[0]!, id: "N1", value: 10000 }, { ...g.figures[0]!, id: "N2", value: 300 }];
+    const r = (text: string) => det([seg("CH1-S01", text, { factIds: ["N1", "N2"] })], g).filter((x) => x.rule === "b");
+    expect(r("A bulb cost more than ten times a yearly wage.")).toEqual([]); // 10000 / 300 ≈ 33 ≥ 10
+    expect(r("A bulb cost thirty-three times a yearly wage.")).toEqual([]);
+    expect(r("A bulb cost a hundred times a yearly wage.")).toHaveLength(1);
+  });
+  it("lint: a spelled-out figure without fact ids is an error", () => {
+    const issues = lintScript({
+      lang: "en", profile: { charsPerSec: { en: 16.5, fr: 16 }, bannedPhrases: { en: [], fr: [] }, sentenceWords: [0, 100], maxGapNoDeviceSec: 1e9, hookMaxSec: 1e9, maxClipShare: { warn: 1, error: 1 } } as never,
+      outline: { chapters: [], loops: [], hookTeasers: [], budget: { runtimeSec: 0 }, budgets: {} } as never,
+      chapters: scriptOf([seg("CH1-S01", "He walked away with two hundred million."), seg("CH1-S02", "The two brothers left.")]).chapters, facts: facts(),
+    });
+    expect(issues.filter((x) => x.rule === "number-without-fact").map((x) => x.where)).toEqual(["CH1-S01"]);
   });
 });

@@ -57,7 +57,8 @@ Voice: spoken, punchy, varied rhythm - mostly 8-18-word sentences with regular 2
 the narrator reacts after clips with a short opinionated line. Something must shift at least every 60-90 seconds of narration
 (new fact, reversal, question, clip, reveal). End on the planned exit hook.
 Use "clip" segments for quotes in the plan (text = the verbatim quote, quote_id set) and set them up in the preceding narration.
-Tag segments with the device they perform and the fact ids they rely on. Write numbers as a narrator would say them.`;
+Tag segments with the device they perform and the fact ids they rely on. Write every figure (amount, count, date, multiple)
+in digits - "5,500 guilders", "1637", "10 times" - never spelled out: the voice step speaks them, and digits are checked against the fact sheet.`;
 
 // ---------------------------------------------------------------- step 5: beat director
 export const BEATS_USER = (p: { chapterScriptJson: string; visualGrammar: string; isHook: boolean }): string => `
