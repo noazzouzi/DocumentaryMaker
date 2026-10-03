@@ -173,8 +173,9 @@ export const CONTACT_UA_HOSTS: readonly string[] = ["commons.wikimedia.org", "up
 2. `videoVerifiedQuotes(picks)` lists quote ids whose YouTube passage matched ≥ 0.8 (the factcheck stage upgrades them to `verbatim`/`video`).
 3. Clip passages are snapped to shot boundaries within ±0.5 s (`python/docmaker_sidecar/cmd_cuts.py` when the venv exists, else ffmpeg `scdet`), never cutting into the matched words; `ClipResolution.youtube.startMs/endMs` hold the final window.
 4. `findPassage` also returns `matchStartMs`/`matchEndMs` (additive); `ytDownload` accepts an optional `o.durationSec` (whole-video download when ≤ 15 min).
-5. Extra exports: `activeProviders`, `QuotaBuckets`, `parse*` provider parsers, `licenseInfo`, `parseCcLicense`, `declarationLicense`, `requireDeclaration`, `ledgerEntryFor`, `buildLedger`, `resolveClips`, `loadClip`, `falAllowedForBeat`, `falPrompt`, `FAL_PROMPT_SUFFIX`, `FAL_NEGATIVE_PROMPT`.
-6. Live provider tests (`DOCMAKER_LIVE_TESTS=1`; run with `NODE_USE_ENV_PROXY=1` behind a proxy) passed on 2026-10-03 against Wikidata, Commons, Openverse, LOC, NASA and the Internet Archive.
+5. `AssetsStageInput.passagePicker?` (optional): bind `llm.pickPassage` to break clip-passage ties (two best scores within 0.05); without it the first match ≥ 0.6 wins. Videos without subtitles are transcribed locally (`bestaudio` → sidecar `asr`, `transcriptKind: "local-asr"`) when the Python venv exists and the video is ≤ 30 min.
+6. Extra exports: `activeProviders`, `QuotaBuckets`, `parse*` provider parsers, `licenseInfo`, `parseCcLicense`, `declarationLicense`, `requireDeclaration`, `ledgerEntryFor`, `buildLedger`, `resolveClips`, `loadClip`, `falAllowedForBeat`, `falPrompt`, `FAL_PROMPT_SUFFIX`, `FAL_NEGATIVE_PROMPT`.
+7. Live provider tests (`DOCMAKER_LIVE_TESTS=1`; run with `NODE_USE_ENV_PROXY=1` behind a proxy) passed on 2026-10-03 against Wikidata, Commons, Openverse, LOC, NASA and the Internet Archive.
 
 ## 2026-10-03 render (W8) → engine (W10), core `RenderRequest` (I), styles (W1) — notes; no blocking contract change
 
