@@ -149,9 +149,15 @@ export function formatIssues(issues: readonly LintIssue[]): string {
 }
 
 /** Reads style.json (StyleData), STYLE.md, GUIDE.md, prompts.json (StylePrompts), optional fonts/font.json; validates. */
+/**
+ * Prompt-pack completeness rules that block built-in styles but not user styles: a user style written before core added
+ * a motion template must keep loading (the beat planner then falls back for that template; fact refs are still checked).
+ */
+const USER_LENIENT_RULES: ReadonlySet<string> = new Set(["STYLE_GRAMMAR_TEMPLATE", "STYLE_GRAMMAR_FACT_REF"]);
+
 export async function loadStyleDir(dir: string, source: "builtin" | "user"): Promise<StylePlugin> {
   const rep = await inspectStyleDir(dir);
-  const errors = rep.issues.filter((i) => i.level === "error");
+  const errors = rep.issues.filter((i) => i.level === "error" && !(source === "user" && USER_LENIENT_RULES.has(i.rule)));
   if (errors.length > 0 || !rep.data || !rep.promptPack) {
     throw new DocmakerError("VALIDATION", `invalid style directory ${rep.dir} (${errors.length} error(s))\n${formatIssues(errors)}`, {
       hint: "run `docmaker style validate <dir>` for the full report",

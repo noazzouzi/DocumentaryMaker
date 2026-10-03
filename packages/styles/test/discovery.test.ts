@@ -84,6 +84,18 @@ describe("loadStyleDir", () => {
     await expect(loadStyleDir(renamed, "user")).resolves.toBeTruthy();
   });
 
+  it("a user style whose visualGrammar misses a motion template still loads (blocking only for built-ins)", async () => {
+    const root = await tempDir();
+    const dir = await userStyle(root, "old-grammar");
+    const prompts = JSON.parse(await readFile(join(dir, "prompts.json"), "utf8")) as { visualGrammar: string };
+    prompts.visualGrammar = prompts.visualGrammar.replace(/\bmap_route\b/g, "route");
+    await writeFile(join(dir, "prompts.json"), JSON.stringify(prompts));
+    const rep = await inspectStyleDir(dir);
+    expect(rep.issues.some((i) => i.level === "error" && i.rule === "STYLE_GRAMMAR_TEMPLATE")).toBe(true);
+    await expect(loadStyleDir(dir, "user")).resolves.toBeTruthy();
+    await expectValidation(loadStyleDir(dir, "builtin"), /STYLE_GRAMMAR_TEMPLATE/);
+  });
+
   it("style fonts (M2): declared OFL fonts extend the allowed families and map to asset-server paths", async () => {
     const root = await tempDir();
     const dir = await userStyle(root, "noir", (d) => { d.tokens.fonts.headline = "Bebas Neue"; });
