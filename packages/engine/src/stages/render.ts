@@ -12,6 +12,17 @@ import { factcheckGate, personGate, recheckGate } from "../gates";
 import { remotionCodeHash } from "../codehash";
 import { nowIso } from "../util";
 import { needLang, onlyChaptersOf, writeDoc } from "./common";
+import { mixSourceHash } from "./mix";
+
+/**
+ * Whether audio/<lang>/mix.wav was mixed from this timeline's audio (loudness.json records the mix source). null: no mix.
+ * A mix of another timeline (direct re-ran after the mix: new take, scene-board edit, chapter selection) is not current.
+ */
+export async function mixMatches(ctx: Pick<StageCtx, "store" | "project">, lang: Lang, t: import("@docmaker/core").Timeline): Promise<boolean | null> {
+  if (!(await ctx.store.exists(P.mix(lang)))) return null;
+  const ld = await docs.loudness(ctx.store, lang).catch(() => null);
+  return !!ld?.sourceHash && ld.sourceHash === mixSourceHash(t, ctx.project);
+}
 
 export function presetOf(ctx: Pick<StageCtx, "variant" | "project">): Preset {
   const v = ctx.variant ?? ctx.project.render.defaultPreset;
@@ -63,7 +74,11 @@ export const renderStage: StageDef = {
     await copyFile(ctx.store.abs(P.timeline(lang)), ctx.store.abs(tRel));
     let mixRel: string | null = null;
     let mixHash: string | null = null;
-    if (await ctx.store.exists(P.mix(lang))) {
+    const current = await mixMatches(ctx, lang, timeline);
+    if (current === false) {
+      throw new DocmakerError("UPSTREAM_MISSING", `${lang}: the mix was not built from the current timeline (direct ran after the last mix)`, { hint: `re-run the mix first (docmaker run <slug> --from mix --to render)` });
+    }
+    if (current) {
       mixRel = snapshotMixRel(lang, preset);
       await ctx.store.linkOrCopy(ctx.store.abs(P.mix(lang)), mixRel);
       mixHash = await ctx.store.etag(mixRel);

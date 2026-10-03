@@ -12,13 +12,15 @@ import { writeTextIfChanged } from "../util";
 import { X, emitLog, exportCtx, needLang } from "./common";
 import { sfxEntriesOrNull } from "./direct";
 import { STEMS } from "./mix";
-import { publishGates } from "./render";
+import { mixMatches, publishGates } from "./render";
 
 export const exportReadmeRel = (lang: Lang) => `${P.exportDir(lang)}README.md`;
 
 /** The newest up-to-date render of the current timeline + mix (master preferred), or null. */
-export async function upToDateRender(ctx: Pick<StageCtx, "store">, lang: Lang, t: Timeline | null): Promise<{ preset: RenderPresetId; rel: string } | null> {
+export async function upToDateRender(ctx: Pick<StageCtx, "store" | "project">, lang: Lang, t: Timeline | null): Promise<{ preset: RenderPresetId; rel: string } | null> {
   if (!t) return null;
+  // a render muxed with a mix of another timeline is never "up to date", whatever its hashes say
+  if ((await mixMatches(ctx, lang, t)) === false) return null;
   const th = docHash(t);
   const mixHash = await ctx.store.etag(P.mix(lang));
   for (const preset of ["master", "draft"] as const) {

@@ -3,8 +3,10 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { P, Script, StyleSuggestion, type GeneratedStillsRequest, type RenderClient, type RenderRequest, type RenderResult } from "@docmaker/core";
-import { loadRuntime, sha256File } from "@docmaker/core/node";
+import { P, Script, StyleSuggestion, Timeline, type GeneratedStillsRequest, type RenderClient, type RenderRequest, type RenderResult } from "@docmaker/core";
+import { ProjectStore, loadRuntime, sha256File } from "@docmaker/core/node";
+import { mixMatches } from "../src/stages/render";
+import { upToDateRender } from "../src/stages/export";
 import { FakeRenderClient } from "./fakes";
 import { REPO_ROOT, collect, deferred, fixtureProject, pipelineReq, runToEnd, stageReq, testEngine, testEnv, type TestEnv } from "./helpers";
 import type { EngineExt } from "../src/engine";
@@ -106,6 +108,23 @@ describe("pipeline on a fixture project", () => {
     await expect(store.writeJson(P.styleSuggestion, StyleSuggestion, sug, { writer: "stage", stage: "outline" })).rejects.toMatchObject({ code: "VALIDATION" });
     await expect(e.writeDoc(slug, P.styleSuggestion, StyleSuggestion, sug, null)).rejects.toMatchObject({ code: "VALIDATION" });
   });
+
+  it("render refuses a mix that was not built from the current timeline (direct re-ran after the mix)", async () => {
+    const store = await ProjectStore.open(t.env.DOCMAKER_PROJECTS!, slug);
+    const project = await e.getProject(slug);
+    const timeline = async () => store.readJson(P.timeline("en"), Timeline);
+    expect(await mixMatches({ store, project }, "en", await timeline())).toBe(true);
+    // `docmaker layout` + `docmaker direct` on one chapter, no mix: the mix still holds the whole programme
+    for (const stage of ["layout", "direct"] as const) expect((await runToEnd(e, stageReq(slug, stage, { options: { onlyChapters: ["CH1"] } }))).status).toBe("succeeded");
+    expect(await mixMatches({ store, project }, "en", await timeline())).toBe(false);
+    const r = await runToEnd(e, stageReq(slug, "render", { preset: "draft" }));
+    expect(r.status).toBe("failed");
+    expect(r.events.find((x) => x.type === "error")).toMatchObject({ code: "UPSTREAM_MISSING", message: expect.stringMatching(/mix was not built from the current timeline/) });
+    expect(await upToDateRender({ store, project }, "en", await timeline())).toBeNull();
+    // layout → mix (the whole programme) makes the pair consistent again
+    expect((await runToEnd(e, pipelineReq(slug, "layout", "mix"))).status).toBe("succeeded");
+    expect(await mixMatches({ store, project }, "en", await timeline())).toBe(true);
+  }, 240_000);
 
   it("the new-take cascade: a new active take stales layout, and layout → mix brings everything up to date", async () => {
     const notRender = (xs: string[]) => xs.filter((x) => !x.startsWith("render"));

@@ -254,6 +254,8 @@ export const LoudnessDoc = z.object({
   integratedLufs: z.number(), truePeakDbtp: z.number(), lra: z.number(),
   gainDb: z.number(), limiterMaxGrDb: z.number(), // stems sum to the master except for limiter gain reduction
   stems: z.array(z.enum(["vo", "music", "sfx", "clip"])),
+  /** hashJson of the timeline audio inputs the mix was built from (engine mixSourceHash); absent on older mixes. */
+  sourceHash: Sha256.optional(),
 });
 export type LoudnessDoc = z.infer<typeof LoudnessDoc>;
 /** fixtures/<id>/fixture.json */
