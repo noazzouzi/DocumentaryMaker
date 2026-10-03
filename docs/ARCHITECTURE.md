@@ -5765,6 +5765,8 @@ groupCaptions(words, g, fps):   // words of ONE segment, in order (ms + frames)
          (1-word groups only if the word ends with ! or ?)
   timing: inMs = first.startMs − g.leadMs (80); outMs = min(nextIn − g.gapMs (50), last.endMs + g.tailMs (600))
   frames via msToFrame; word frames from the layout words
+  floor: end ≥ last.from + min(last.dur, F30(6)) (contiguous TTS timings put nextIn − gapMs inside the last word),
+         end ≤ next.first.from; the next group then starts at min(next.first.from, max(its inMs frame, end + gap))
 ```
 Geometry (drama pop): 22 chars of 78 px Archivo Black caps ≈ 22 × 0.72 em × 78 px ≈ 1240 px — one line inside the 1500 × 140 px caption band; `fitText` shrinks within 70–90 px.
 

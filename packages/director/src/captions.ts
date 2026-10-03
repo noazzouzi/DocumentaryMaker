@@ -61,15 +61,24 @@ export function groupCaptions(words: readonly LayoutWord[], g: CaptionDNA["group
     if (parts.length > 1) for (const p of parts) if (short(p)) stuck.add(p);
     groups = useL ? [...groups.slice(0, k - 1), ...parts, ...groups.slice(k + 1)] : [...groups.slice(0, k), ...parts, ...groups.slice(k + 2)];
   }
+  // §9.4 timing. On contiguous TTS alignments `nextIn − gapMs` falls inside the last word, so the last word would
+  // flash for a frame or two: it keeps ≥ min(its duration, 6 f @30) on screen, and the lead-in/gap is taken from the
+  // next group instead (which still appears no later than its first word's onset).
   const out: { words: LayoutWord[]; from: number; dur: number }[] = [];
+  const minVis = Math.max(1, Math.round((6 * fps) / 30));
+  const gapF = msToFrame(g.gapMs, fps);
+  let prevEnd = -Infinity;
   groups.forEach((grp, k) => {
     const first = grp[0]!, last = grp[grp.length - 1]!;
-    const nextIn = groups[k + 1] ? groups[k + 1]![0]!.startMs - g.leadMs : Infinity;
+    const next = groups[k + 1]?.[0];
+    const nextIn = next ? next.startMs - g.leadMs : Infinity;
     const inMs = Math.max(0, first.startMs - g.leadMs);
     const outMs = Math.min(nextIn - g.gapMs, last.endMs + g.tailMs);
-    const from = Math.min(msToFrame(inMs, fps), first.from);
-    const end = Math.max(from + 1, msToFrame(outMs, fps));
+    const from = Math.min(first.from, Math.max(msToFrame(inMs, fps), prevEnd + gapF));
+    let end = Math.max(from + 1, msToFrame(outMs, fps), last.from + Math.min(Math.max(1, last.dur), minVis));
+    if (next) end = Math.max(from + 1, Math.min(end, next.from));
     out.push({ words: grp, from, dur: end - from });
+    prevEnd = end;
   });
   for (let k = 0; k + 1 < out.length; k++) out[k]!.dur = Math.max(1, Math.min(out[k]!.dur, out[k + 1]!.from - out[k]!.from));
   return out;
@@ -220,6 +229,11 @@ export function buildCaptions(ctx: Ctx, st: OvState): CaptionResult {
     }
     for (let k = 0; k + 1 < pop.length; k++) {
       const g = pop[k]!, n = pop[k + 1]!;
+      if (g.from + g.dur <= n.from) continue;
+      // take the overlap from the next group's lead-in first (its first word still appears at its onset), then shorten
+      const nFirst = n.words[0]!.from;
+      const moveTo = Math.min(nFirst, g.from + g.dur, n.from + n.dur - 1);
+      if (moveTo > n.from) { n.dur -= moveTo - n.from; n.from = moveTo; n.start = anchorAt(ctx, n.from, { word: n.words[0]!.wordId }); }
       if (g.from + g.dur > n.from) { g.dur = Math.max(1, n.from - g.from); g.end = anchorAt(ctx, g.from + g.dur, { word: g.words[g.words.length - 1]!.wordId }); }
     }
     out.push(...pop);

@@ -5,6 +5,7 @@ import { direct, groupCaptions } from "../src/index";
 import { readText } from "../src/overlays/hold";
 import { runs } from "./helpers";
 import { policyScenario } from "./scenario";
+import { tulipInputs } from "./tulip";
 
 const G = TEST_STYLE.captionDNA.grouping;
 let n = 0;
@@ -95,6 +96,36 @@ describe("captions in the timeline", () => {
     const ids = new Set(out2.timeline.captions.map((c) => c.id));
     expect(ids.size).toBe(out2.timeline.captions.length);
     for (let i = 1; i < pop.length; i++) if (pop[i]!.segmentId === pop[i - 1]!.segmentId) expect(pop[i - 1]!.from + pop[i - 1]!.dur).toBeLessThanOrEqual(pop[i]!.from);
+  });
+
+  it("pop/karaoke/rail: every group keeps its last word on screen ≥ min(word duration, 6 f), groups never overlap", () => {
+    for (const make of [() => policyScenario().input, () => tulipInputs().input]) {
+      const input = make();
+      for (const variant of ["pop", "karaoke", "rail"] as const) {
+        const o = direct({ ...input, project: { ...input.project, captions: "burn" }, renderTokens: { ...input.renderTokens, captionDNA: { ...input.renderTokens.captionDNA, variant } } });
+        const gs = o.timeline.captions.filter((c) => c.variant === variant);
+        expect(gs.length).toBeGreaterThan(10);
+        for (const g of gs) {
+          const lw = g.words[g.words.length - 1]!;
+          expect(g.from + g.dur - lw.from, `${variant} ${g.id} "${lw.text}"`).toBeGreaterThanOrEqual(Math.min(lw.dur, 6));
+          expect(g.from, g.id).toBeLessThanOrEqual(g.words[0]!.from); // the first word is on screen at its onset
+        }
+        for (let i = 1; i < gs.length; i++) expect(gs[i - 1]!.from + gs[i - 1]!.dur).toBeLessThanOrEqual(gs[i]!.from);
+        expect(o.lint.filter((l) => l.level === "error")).toEqual([]);
+      }
+    }
+  });
+
+  it("groupCaptions on contiguous TTS timings keeps short last words visible (lead-in taken from the next group)", () => {
+    const words = seq(["The", "price", "went", "up.", "Then", "it", "fell", "in", "a", "day."], 0, 180, 0);
+    const g = groupCaptions(words, G, 30);
+    expect(g.length).toBeGreaterThan(1);
+    for (let k = 0; k < g.length; k++) {
+      const lw = g[k]!.words[g[k]!.words.length - 1]!;
+      expect(g[k]!.from + g[k]!.dur - lw.from).toBeGreaterThanOrEqual(Math.min(lw.dur, 6));
+      expect(g[k]!.from).toBeLessThanOrEqual(g[k]!.words[0]!.from);
+      if (k + 1 < g.length) expect(g[k]!.from + g[k]!.dur).toBeLessThanOrEqual(g[k + 1]!.from);
+    }
   });
 
   it("captionsMode srt-only burns nothing", () => {
