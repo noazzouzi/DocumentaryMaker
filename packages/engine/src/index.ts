@@ -49,3 +49,4 @@ export { stageDef, STAGE_ORDER } from "./stages";
 export { exportReadmeRel, upToDateRender } from "./stages/export";
 export { snapshotTimelineRel, snapshotMixRel } from "./stages/render";
 export { remotionCodeHash } from "./codehash";
+export { researchRequestKey, researchResumeInfo, RESEARCH_META, type ResearchResumeInfo } from "./stages/research";

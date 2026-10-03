@@ -1,24 +1,61 @@
 // research (§5.1, App. D): runResearch (resumable) → buildFactSheet → entities → verifyQuotes → dossier/registry/factsheet.
-import { readdir, readFile } from "node:fs/promises";
+// Saved research turns (research/raw/turn-<n>.json) are scoped to one research request by research/raw/meta.json: they are
+// resumed only for the same request (topic, languages, minutes, asOf, provider, stage version) and discarded when the
+// request changed or `newRequest` asks for a new paid call. A forced re-run of the same request replays them (§5.3:
+// paid calls are reused; a forced no-op re-run changes nothing).
+import { readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import {
-  EntitiesDoc, FactSheet, P, RegistryDoc, ResearchDossier, Verification, type EntitiesDoc as EntitiesDocT, type VerificationItem,
+  EntitiesDoc, FactSheet, P, RegistryDoc, ResearchDossier, Verification, hashJson, type EntitiesDoc as EntitiesDocT, type Project,
+  type VerificationItem,
 } from "@docmaker/core";
+import type { ProjectStore } from "@docmaker/core/node";
 import type { StageDef } from "../types";
 import { docs } from "../docs";
 import { nowIso, writeTextIfChanged } from "../util";
 import { X, assetsCtx, emitLog, stepCtx, writeDoc } from "./common";
 
-async function savedTurns(dirAbs: string): Promise<unknown[]> {
-  let files: string[] = [];
+const RESEARCH_VERSION = 1;
+export const RESEARCH_RAW_DIR = "research/raw";
+export const RESEARCH_META = "research/raw/meta.json";
+const TURN_RE = /^turn-(\d+)\.json$/;
+
+/** What identifies one research request: saved turns are resumable only for the same key. */
+export function researchRequestKey(p: Pick<Project, "idea" | "languages" | "targetMinutes" | "editorial" | "llm">): string {
+  return hashJson({
+    stageVersion: RESEARCH_VERSION, topic: p.idea, langs: [...p.languages].sort(), minutes: p.targetMinutes, asOf: p.editorial.asOf,
+    provider: p.llm.provider, fixtureId: p.llm.provider === "fixture" ? p.llm.fixtureId : null,
+  });
+}
+
+interface RawMeta { schemaVersion: 1; requestKey: string; turns: number; complete: boolean; updatedAt: string }
+
+async function readMeta(store: ProjectStore): Promise<RawMeta | null> {
   try {
-    files = (await readdir(dirAbs)).filter((f) => /^turn-\d+\.json$/.test(f));
+    const m = JSON.parse(await readFile(store.abs(RESEARCH_META), "utf8")) as Partial<RawMeta>;
+    return typeof m.requestKey === "string" ? { schemaVersion: 1, requestKey: m.requestKey, turns: Number(m.turns) || 0, complete: m.complete === true, updatedAt: String(m.updatedAt ?? "") } : null;
+  } catch {
+    return null;
+  }
+}
+async function writeMeta(store: ProjectStore, m: Omit<RawMeta, "schemaVersion" | "updatedAt">): Promise<void> {
+  await writeTextIfChanged(store.abs(RESEARCH_META), JSON.stringify({ schemaVersion: 1, ...m, updatedAt: nowIso() }, null, 2) + "\n");
+}
+
+async function turnFiles(dirAbs: string): Promise<string[]> {
+  try {
+    return (await readdir(dirAbs)).filter((f) => TURN_RE.test(f)).sort((a, b) => Number(TURN_RE.exec(a)![1]) - Number(TURN_RE.exec(b)![1]));
   } catch {
     return [];
   }
-  files.sort((a, b) => Number(a.slice(5, -5)) - Number(b.slice(5, -5)));
+}
+
+/** The contiguous prefix turn-1 … turn-n of readable saved turns. */
+async function savedTurns(dirAbs: string): Promise<unknown[]> {
+  const files = await turnFiles(dirAbs);
   const out: unknown[] = [];
-  for (const f of files) {
+  for (const [i, f] of files.entries()) {
+    if (f !== `turn-${i + 1}.json`) break; // a gap ends the resumable prefix
     try {
       out.push(JSON.parse(await readFile(path.join(dirAbs, f), "utf8")));
     } catch {
@@ -28,10 +65,37 @@ async function savedTurns(dirAbs: string): Promise<unknown[]> {
   return out;
 }
 
+const stopReason = (t: unknown): string | null =>
+  t && typeof t === "object" && typeof (t as { stop_reason?: unknown }).stop_reason === "string" ? (t as { stop_reason: string }).stop_reason : null;
+
+/** Deletes every saved turn; returns how many there were. */
+async function clearTurns(dirAbs: string): Promise<number> {
+  const files = await turnFiles(dirAbs);
+  for (const f of files) await rm(path.join(dirAbs, f), { force: true });
+  return files.length;
+}
+
+export interface ResearchResumeInfo {
+  /** Readable saved turns (contiguous prefix). */
+  saved: number;
+  /** The saved turns belong to the project's current research request. */
+  matches: boolean;
+  /** The last saved turn ended the research (no pause_turn): a resume only rebuilds the fact sheet. */
+  complete: boolean;
+}
+
+/** Saved research turns of a project and whether a research run would resume from them. */
+export async function researchResumeInfo(store: ProjectStore, project: Project): Promise<ResearchResumeInfo> {
+  const turns = await savedTurns(store.abs(RESEARCH_RAW_DIR));
+  const meta = await readMeta(store);
+  const last = turns.length ? stopReason(turns[turns.length - 1]) : null;
+  return { saved: turns.length, matches: turns.length > 0 && meta?.requestKey === researchRequestKey(project), complete: turns.length > 0 && last !== null && last !== "pause_turn" };
+}
+
 export const researchStage: StageDef = {
   id: "research",
   perLang: false,
-  version: 1,
+  version: RESEARCH_VERSION,
   optionKeys: [],
   async inputs(ctx) {
     const p = ctx.project;
@@ -55,18 +119,40 @@ export const researchStage: StageDef = {
     const e = X(ctx);
     const p = ctx.project;
     const fixture = ctx.llm.kind === "fixture";
-    const rawDir = ctx.store.abs("research/raw");
-    const resumeTurns = await savedTurns(rawDir);
-    if (resumeTurns.length) emitLog(ctx, "research", "info", `resuming research from ${resumeTurns.length} saved turn(s)`);
+    const rawDir = ctx.store.abs(RESEARCH_RAW_DIR);
+    const requestKey = researchRequestKey(p);
+    const meta = await readMeta(ctx.store);
+    let resumeTurns: unknown[] = [];
+    if (meta?.requestKey === requestKey && ctx.options.newRequest !== true) {
+      resumeTurns = await savedTurns(rawDir);
+      // turns past a gap or a torn file can never be resumed: drop them so a new turn n never sits next to an old n+1
+      const files = await turnFiles(rawDir);
+      for (const f of files.slice(resumeTurns.length)) await rm(path.join(rawDir, f), { force: true });
+    } else {
+      const dropped = await clearTurns(rawDir);
+      if (dropped) {
+        const why = ctx.options.newRequest === true ? "a new request was asked for" : meta ? "the research request changed (idea, languages, length, as-of date or provider)" : "they are not tied to a known request";
+        emitLog(ctx, "research", "info", `discarded ${dropped} saved research turn(s): ${why}`);
+      }
+    }
+    if (resumeTurns.length) {
+      const done = stopReason(resumeTurns[resumeTurns.length - 1]) !== "pause_turn";
+      emitLog(ctx, "research", "info", done ? `reusing the completed research (${resumeTurns.length} saved turn(s))` : `resuming research from ${resumeTurns.length} saved turn(s)`);
+    }
+    await writeMeta(ctx.store, { requestKey, turns: resumeTurns.length, complete: false });
     const rawFiles: string[] = resumeTurns.map((_, i) => P.researchTurn(i + 1));
+    let turnCount = resumeTurns.length;
     const r = await e.rt.deps.llm.runResearch(stepCtx(ctx), {
       topic: p.idea, langs: p.languages, minutes: p.targetMinutes, asOf: p.editorial.asOf, resumeTurns,
       onTurn: async (n, message) => {
         const rel = P.researchTurn(n);
         await writeTextIfChanged(ctx.store.abs(rel), JSON.stringify(message));
         if (!rawFiles.includes(rel)) rawFiles.push(rel);
+        turnCount = Math.max(turnCount, n);
+        await writeMeta(ctx.store, { requestKey, turns: turnCount, complete: false });
       },
     });
+    await writeMeta(ctx.store, { requestKey, turns: turnCount, complete: true });
     const registry: RegistryDoc = { schemaVersion: 1, entries: r.registry };
     const dossier: ResearchDossier = {
       schemaVersion: 1, topic: p.idea, asOf: p.editorial.asOf, searchLanguages: p.languages, markdown: r.dossierMarkdown,

@@ -25,6 +25,7 @@ import { createProjectIn, listProjectsIn, updateProjectIn } from "./project";
 import { writeUserDoc } from "./editing";
 import { runDoctor } from "./doctor";
 import { createDemoProject, demoOutputs } from "./demo";
+import { researchResumeInfo, type ResearchResumeInfo } from "./stages/research";
 import { WorkerHost } from "./worker";
 import { orderLangs, pickOptions } from "./util";
 
@@ -537,6 +538,12 @@ class EngineImpl implements Engine {
     return { displayText: r.displayText, issues: w.issues };
   }
 
+  /** Saved research turns of a project and whether the next research run resumes from them (CLI `research --resume`). */
+  async researchResume(slug: string): Promise<ResearchResumeInfo> {
+    const store = await this.open(slug);
+    return researchResumeInfo(store, await readProject(store));
+  }
+
   /** Voices of a TTS provider (static lists for kokoro/piper/synthetic; ElevenLabs needs its key and the network). */
   async listVoices(provider: VoiceProviderId, lang: Lang | null): Promise<VoiceInfo[]> {
     this.rt.refresh();
@@ -751,6 +758,7 @@ class EngineImpl implements Engine {
 export type SetupComponent = "sfx" | "tts" | "python" | "yt-dlp" | "whisper" | "clip";
 
 export type EngineExt = Engine & {
+  researchResume(slug: string): Promise<ResearchResumeInfo>;
   transcreate(slug: string, lang: Lang, segmentId: string): Promise<{ displayText: string; issues: LintIssue[] }>;
   listVoices(provider: VoiceProviderId, lang: Lang | null): Promise<VoiceInfo[]>;
   listTakes(slug: string, lang: Lang): Promise<VoiceTrack[]>;
