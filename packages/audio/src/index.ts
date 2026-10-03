@@ -6,6 +6,7 @@ import type { SfxRecipe as Recipe } from "./sfx/recipes";
 import { ensureSfxPackImpl, loadSfxEntriesImpl } from "./sfx/packs";
 import type { AudioCtx as Ctx } from "./util";
 import { assembleVoProgramImpl } from "./vo/assemble";
+import { generateMusicImpl } from "./music/generate";
 
 export type AudioCtx = Ctx;
 export type SfxRecipe = Recipe;
@@ -22,7 +23,7 @@ export function loadSfxEntries(packs: readonly string[], ctx: AudioCtx): Promise
 export interface MusicGenOptions { mood: MusicMood; bpm: number; bars: number; seed: number; key: "A minor" | "D minor" | "E minor" | "C major"; energy: "low" | "mid" | "high" }
 /** Deterministic Node synth → <home>/music/procedural/<hash>.wav at -18 LUFS with an exact beat grid. */
 export function generateMusic(o: MusicGenOptions, ctx: AudioCtx): Promise<{ wavPath: string; beatsMs: number[]; downbeatsMs: number[]; durationMs: number; bpm: number }> {
-  throw notImplemented("audio.generateMusic");
+  return generateMusicImpl(o, ctx);
 }
 export function scanMusicLibrary(dir: string, ctx: AudioCtx): Promise<{ file: string; title: string; moods: MusicMood[]; license: LicenseInfo; bpm: number | null; beatsMs: number[]; downbeatsMs: number[]; durationMs: number }[]> {
   throw notImplemented("audio.scanMusicLibrary");
@@ -48,3 +49,7 @@ export type { SfxPackId } from "./sfx/packs";
 export { syncPointMs } from "./sfx/analyze";
 export { VO_PEAK_GUARD_DBFS, VO_TARGET_LUFS, planVoParts } from "./vo/assemble";
 export type { VoPart } from "./vo/assemble";
+export { MUSIC_TARGET_LUFS, beatGrid, musicHash } from "./music/generate";
+export { SYNTH_VERSION, renderScore } from "./music/instruments";
+export { CHORD_LOOPS, MOOD_BPM, instrumentsFor, loopForMood, tonicMidi } from "./music/moods";
+export type { Instrument } from "./music/moods";
