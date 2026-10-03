@@ -9,7 +9,7 @@ import { familyStack, useEnv } from "../data/env";
 import { clamp01 } from "../lib/easing";
 import { zoneRect } from "../lib/geometry";
 import { fontWeightFor } from "../fonts/registry";
-import { captionText, popScale, relWords, toneColor } from "./common";
+import { captionText, heroMargin, popScale, relWords, toneColor, wordGap } from "./common";
 
 export const KeywordCaptions: React.FC<{ group: CaptionGroup }> = ({ group }) => {
   const env = useEnv();
@@ -23,21 +23,23 @@ export const KeywordCaptions: React.FC<{ group: CaptionGroup }> = ({ group }) =>
   const fadeOut = 1 - clamp01((f - (group.dur - 3)) / 3);
   return (
     <AbsoluteFill style={{ pointerEvents: "none" }}>
-      <div style={{ position: "absolute", left: band.left, top: band.top, width: band.width, height: band.height, display: "flex", alignItems: "center", justifyContent: "center", gap: `0 ${(size * 0.25).toFixed(1)}px`, opacity: fadeOut }}>
+      <div style={{ position: "absolute", left: band.left, top: band.top, width: band.width, height: band.height, display: "flex", alignItems: "center", justifyContent: "center", gap: `0 ${wordGap(size, dna.strokePx).toFixed(1)}px`, opacity: fadeOut }}>
         {words.map((w, i) => {
           const t = f - w.at;
           const visible = t >= 0;
           const scale = popScale(dna, t) * (w.hero ? dna.heroScale : 1);
+          const text = captionText(w.text, dna, env.locale);
+          const margin = w.hero ? heroMargin(text, { family: dna.font, weight, size, scale: dna.heroScale }) : 0;
           return (
             <span
               key={i}
               style={{
                 display: "inline-block", fontFamily: familyStack(dna.font), fontWeight: weight, fontSize: size, lineHeight: 1.05, letterSpacing: `${dna.letterSpacingEm}em`,
                 color: toneColor(dna, w.tone, w.hero), WebkitTextStroke: `${dna.strokePx}px ${dna.strokeColor}`, paintOrder: "stroke fill",
-                transform: `scale(${scale.toFixed(5)})`, opacity: visible ? 1 : 0, whiteSpace: "nowrap",
+                transform: `scale(${scale.toFixed(5)})`, opacity: visible ? 1 : 0, whiteSpace: "nowrap", margin: margin ? `0 ${margin.toFixed(1)}px` : undefined,
               }}
             >
-              {captionText(w.text, dna, env.locale)}
+              {text}
             </span>
           );
         })}
