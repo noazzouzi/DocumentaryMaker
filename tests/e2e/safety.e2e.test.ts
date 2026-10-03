@@ -188,7 +188,7 @@ describe("safety suite (gate-test)", () => {
     expect(t2.video.some((c) => c.source.kind === "image" && c.source.assetId === up.asset!.id)).toBe(false);
   }, 300_000);
 
-  it("an accusatory title cannot be marked \"rewritten\" while it still reads the same; the render stays blocked", async () => {
+  it("an accusatory title cannot be marked \"rewritten\" while it still reads the same; the export stays blocked", async () => {
     const p = await engine.readDoc(SLUG, P.project, Project);
     await engine.writeDoc(SLUG, P.project, Project, { ...p.value, publish: { ...p.value.publish, en: { title: "The banker who defrauded his clients", thumbnailText: "FRAUDSTER", description: "" } } }, p.etag);
     { const rr = await cli("factcheck", SLUG); expect(rr.code, rr.err + rr.out.slice(-600)).toBe(0); }
@@ -197,10 +197,11 @@ describe("safety suite (gate-test)", () => {
     expect(surfaces.map((i) => i.where).sort()).toEqual(["thumbnail", "title"]);
     await expect(engine.writeDoc(SLUG, P.factcheck("en"), FactCheck, { ...fc.value, items: fc.value.items.map((i) => (surfaces.some((x) => x.id === i.id) ? { ...i, resolution: "rewritten" as const } : i)) }, fc.etag))
       .rejects.toMatchObject({ code: "VALIDATION", message: expect.stringMatching(/rewrite it first/) });
-    const blocked = await cli("render", SLUG);
-    expect(blocked.code).toBe(3);
+    // the title reaches the publish kit through export (the rendered picture does not carry it: render stays up to date)
+    const blocked = await cli("export", SLUG);
+    expect(blocked.code, blocked.err + blocked.out.slice(-600)).toBe(3);
     expect(blocked.err).toMatch(/factcheck-ack/);
-    for (const i of surfaces) expect(blocked.err).toContain(i.id);
+    for (const i of surfaces) expect(blocked.out + blocked.err).toContain(i.id);
   }, 600_000);
 
   it("fal prompts naming a person (surname or alias) are refused", () => {
