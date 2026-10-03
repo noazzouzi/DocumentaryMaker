@@ -5558,6 +5558,9 @@ direct(I):
   sources = the beat's picks (4 slots) then picks of neighbouring beats of the chapter (as reframes); transitions T.montage.primary (pushCut) with
   flash T.montage.flashPeak on downbeat cuts; beat punch fx {zoom hit, amt P.montage.beatPunch.amt, dur F30(P.montage.beatPunch.frames),
   curve P.montage.beatPunch.curve} on every snapped cut. No VO plays, so the ducking release lifts the music (no extra gain automation).
+  Media cursor: a video source plays on from where its previous shot (montage or beat) stopped — never back to its head; an exhausted source
+  yields to the next source with media left (a beat borrows a still/video of the nearest picked beat of the chapter), and only then re-enters
+  as late as its media allows (head replay is the last resort).
 
   ── 3. STILL LAYOUT, TREATMENT, UPSCALE GUARD
   for each image shot (asset a, w×h): aspect = w/h; coverFactor = max(1920/w, 1080/h)
@@ -5708,6 +5711,8 @@ direct(I):
   clean stretch: every Bu.cleanStretch.everySec window contains ≥ Bu.cleanStretch.minSec with no accent (Ken Burns + captions only); if not, take the
       lowest-accent window (prefer energy ≤ 2 narration, never across a structural accent) and remove its non-structural accents
   stats.salienceDrops, stats.cleanStretches
+  programme end: fx {dark span, amt 1, from N−1, dur 1, pre = clamp(N−1 − last word end, S(0.5), S(1.5))} — a fade to black after the last
+      word, target "all" ("picture" when a safe-messaging end card must stay readable)
 
   ── 10. CAPTIONS
   SRT groups (always): per vo / clip-narrated segment, group with captionDNA.srtGrouping (≤ 42 chars × 2 lines, 1–6 s) → variant "srt", burn false
@@ -5806,7 +5811,7 @@ Geometry (drama pop): 22 chars of 78 px Archivo Black caps ≈ 22 × 0.72 em × 
 1. Sort by `(−priority, rank, frame, id)`; `rank` orders priority-5 items bleep > reveal impact > SHOCK plate > other (chapter boundary, slam boom).
 2. Drop a candidate whose **audible span** `[from, from + dur)` intersects a SilenceMark affecting `sfx`, except `combo:"reveal"` items and a candidate starting exactly at the silence end with priority ≥ `firstAfterSilenceMinPriority` (4).
 3. Transition-type candidates may cover at most `(1 − silentCutShare)` of shot boundaries; excess dropped lowest priority first (ties `R("sfxdrop:"+id)`).
-4. Greedy accept when: trailing-60 s SFX < `perMin[1]·intensity` and impacts (impact, boom.*, thud) < `impactsPerMin[1]·intensity` — for every priority, priority 5 included (only a bleep is exempt; a reveal riser is dropped when its reveal impact was not accepted); no accepted SFX within `minGapFrames` (6) unless a designed combo (riser→impact, click+whoosh, reveal); heavy whooshes need camera or element travel ≥ `heavyWhooshMinMovePx`.
+4. Greedy accept when: trailing-60 s SFX < `perMin[1]·intensity` and impacts (impact, boom.*, thud) < `impactsPerMin[1]·intensity` — for every priority, priority 5 included (only a bleep is exempt; a reveal riser is dropped when its reveal impact was not accepted); no riser / swell.reverse (other than a reveal combo) with its event in the last 2 s of the programme; no transition SFX at a seam hidden by an opaque full-frame card; no accepted SFX within `minGapFrames` (6) unless a designed combo (riser→impact, click+whoosh, reveal); heavy whooshes need camera or element travel ≥ `heavyWhooshMinMovePx`.
 5. Variant: entries of the category sorted by id; `idx = (useCount[category] + ⌊R("sfxv:"+id)·len⌋) % len`; the same file (by `assetId`) never twice in a row (take `idx+1`).
 6. Placement: `from = event − round(peakOffsetMs·fps/1000)` (below 0 → shift the event later or drop); `dur = ceil(durationMs·fps/1000)` clamped to the program end, or the loop length for `loop` items (loopable entries only) with their fades; `gainDb = mid(peakDb[category]) − entry.peakDbfs + (R()·3 − 1.5)`; `pan = clamp((screenX − 960)/1400, −0.7, 0.7)` (overlay zone centre, else 960); `panSweep` for whooshes from the whip direction (the mixer mirrors channels for RL on an LR file).
 7. **Fill** (`fillToMin`): per 60 s window (acts ≥ 90 s) below `perMin[0]·intensity`, add texture candidates in this order — whoosh.light on energy ≥ 3 cuts, pops on overlay entries that have none, ticks under counters — still within `silentCutShare`, `minGapFrames` and the caps.

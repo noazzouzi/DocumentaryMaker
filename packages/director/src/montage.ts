@@ -55,10 +55,23 @@ export function montageShots(ctx: Ctx, b: BeatCtx, bs: number, be: number, music
   const srcs = montageSources(ctx, b);
   const bounds = [{ f: bs, snap: "none" as Shot["snap"] }, ...cuts, { f: be, snap: "none" as Shot["snap"] }];
   const out: Shot[] = [];
+  // a video source plays on from where its previous montage shot stopped (one cursor per source) instead of replaying
+  // its head; an exhausted source yields to the next one with media left, else re-enters as late as its media allows
+  const cursor = new Map<string, number>();
+  const tailPad = ctx.F30(8); // room for a montage overlap's tail handle
+  const room = (x: Src, len: number) => x.kind !== "video" || x.mediaFrames === null || (cursor.get(x.key) ?? x.sourceIn) + len + tailPad <= x.mediaFrames;
   for (let k = 0; k + 1 < bounds.length; k++) {
-    const pick = srcs[k % srcs.length]!;
+    const len = bounds[k + 1]!.f - bounds[k]!.f;
+    let j = k % srcs.length;
+    for (let d = 0; d < srcs.length && !room(srcs[(k + d) % srcs.length]!.src, len); d++) j = (k + d + 1) % srcs.length;
+    if (!room(srcs[j]!.src, len)) j = k % srcs.length;
+    const pick = srcs[j]!;
     const src: Src = { ...pick.src };
-    if (src.kind === "video" && src.mediaFrames !== null && src.sourceIn + (bounds[k + 1]!.f - bounds[k]!.f) > src.mediaFrames) src.sourceIn = src.headHandle;
+    if (src.kind === "video") {
+      src.sourceIn = cursor.get(src.key) ?? src.sourceIn;
+      if (src.mediaFrames !== null && src.sourceIn + len + tailPad > src.mediaFrames) src.sourceIn = Math.max(src.headHandle, src.mediaFrames - len - tailPad);
+      cursor.set(src.key, src.sourceIn + len);
+    }
     out.push(blankShot({
       chapterId: b.ch.id, beatId: b.id, from: bounds[k]!.f, end: bounds[k + 1]!.f, src, role: "montage",
       change: pick.borrowed || k >= srcs.length, snap: k === 0 ? "none" : bounds[k]!.snap,

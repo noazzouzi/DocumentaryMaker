@@ -6,7 +6,7 @@ import type { OvState } from "./overlays";
 import type { RevealInfo } from "./reveal";
 import { CLS } from "./overlays/state";
 
-export type FxRole = "punch" | "fillPunch" | "plate" | "plateShake" | "impactShake" | "revealFlash" | "beatPunch" | "cardPunch";
+export type FxRole = "punch" | "fillPunch" | "plate" | "plateShake" | "impactShake" | "revealFlash" | "beatPunch" | "cardPunch" | "fadeOut";
 export interface Fx extends Omit<FxCue, "start" | "end"> {
   role: FxRole; anchorWord: string | null; cls: number; dropped: boolean; sourceOv: string | null; beatId: string | null;
 }
@@ -91,4 +91,18 @@ export function montagePunches(ctx: Ctx, book: FxBook, shots: readonly Shot[]): 
       x: s.src.focal.x, y: s.src.focal.y, target: "picture+followers", role: "beatPunch", anchorWord: null, cls: CLS.structural, beatId: s.beatId,
     });
   }
+}
+
+/**
+ * Programme end: the picture (and the graphics, unless a safe-messaging card must stay readable) fades to black over the
+ * last 0.5–1.5 s — after the last narrated word when there is room — so the film never ends on a hard cut.
+ */
+export function outroFade(ctx: Ctx, book: FxBook, keepGraphics: boolean): Fx | null {
+  const last = ctx.words[ctx.words.length - 1];
+  const tail = last ? ctx.N - 1 - (last.from + last.dur) : ctx.S(1.5);
+  const pre = Math.max(ctx.S(0.5), Math.min(ctx.S(1.5), tail));
+  return book.add(ctx, "program:end", {
+    fx: "dark", shape: "span", amt: 1, pre, fade: 1, from: ctx.N - 1, dur: 1, target: keepGraphics ? "picture" : "all",
+    role: "fadeOut", anchorWord: null, cls: CLS.structural, beatId: null,
+  });
 }

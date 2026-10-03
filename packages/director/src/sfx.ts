@@ -278,6 +278,8 @@ export function selectSfx(ctx: Ctx, env: SfxEnv, cands: SfxCand[]): SfxResult {
     const cat = resolveCat(c.category);
     if (!cat || acceptedKeys.has(c.key)) return false;
     if (c.transition && hiddenSeam(c.event)) return false;
+    // a build (riser, reverse swell) needs a payoff: none in the last 2 s of the programme, the audio would end mid-build
+    if ((cat === "riser" || cat === "swell.reverse") && c.combo !== "reveal" && c.event > ctx.N - ctx.S(2)) return false;
     if ((c.impactLike || texture) && c.priority < 5 && inClean(c.event)) return false;
     const entries = byCat.get(cat)!;
     const idx0 = ((useCount.get(cat) ?? 0) + Math.floor(ctx.R(`sfxv:${c.key}`)() * entries.length)) % entries.length;

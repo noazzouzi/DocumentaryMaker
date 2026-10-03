@@ -9,7 +9,7 @@ import { assignCameras, camMax } from "./camera";
 import { buildCaptions } from "./captions";
 import { anchorAt, buildCtx, isAiAsset, round3, type Ctx, type Shot } from "./ctx";
 import { reconcileAiLabels } from "./disclosure";
-import { FxBook, climaxFx, impactShakes, montagePunches, type Fx } from "./fx";
+import { FxBook, climaxFx, impactShakes, montagePunches, outroFade, type Fx } from "./fx";
 import { lintTimeline } from "./lint";
 import { buildAssets, buildMarkers, buildUsage } from "./markers";
 import { planMusic } from "./music";
@@ -188,6 +188,7 @@ export function direct(I: DirectorInput): DirectorOutput {
   }
   // 9. arbitration
   const arb = arbitrate(ctx, shots, st, book, impacts);
+  outroFade(ctx, book, I.riskFlags.includes("suicide_self_harm"));
   const droppedOv = new Set(st.items.filter((o) => o.dropped).map((o) => o.id));
   // 10. captions
   const caps = buildCaptions(ctx, st);

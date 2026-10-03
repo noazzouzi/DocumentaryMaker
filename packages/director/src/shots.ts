@@ -118,20 +118,41 @@ function normalShots(ctx: Ctx, b: BeatCtx, bs: number, be: number): Shot[] {
     if (s.end - s.from <= avail) continue;
     let cut = s.from + Math.max(0, avail);
     if (cut - s.from < minShot) cut = s.from; // nothing usable: replace the whole shot
-    const other = srcs.find((x) => x.key !== s.src.key);
-    const restart: Src = other ? { ...other } : { ...s.src, sourceIn: s.src.headHandle };
+    // the remainder takes another source of the beat, else a cutaway borrowed from a neighbouring beat of the chapter;
+    // replaying the video from its head (a visible loop) is the last resort
+    const need = s.end - s.from - Math.max(0, avail);
+    const at = (x: Src): Src => ({ ...x, sourceIn: x.kind === "video" ? cursor.get(x.key) ?? x.sourceIn : x.sourceIn });
+    const other = srcs.map(at).find((x) => x.key !== s.src.key && (x.kind !== "video" || videoAvail(x, x.sourceIn) >= need))
+      ?? srcs.find((x) => x.key !== s.src.key)
+      ?? borrowedSource(ctx, b, s.src.key, need, cursor);
+    const restart: Src = other ? at(other) : { ...s.src, sourceIn: s.src.headHandle };
     if (cut === s.from) {
       s.src = restart;
+      if (restart.kind === "video") cursor.set(restart.key, restart.sourceIn + (s.end - s.from));
       s.change = s.change || !other;
       continue;
     }
     if (s.end - cut < minShot) cut = s.end - minShot;
-    if (cut - s.from < minShot) { s.src = restart; continue; }
+    if (cut - s.from < minShot) { s.src = restart; if (restart.kind === "video") cursor.set(restart.key, restart.sourceIn + (s.end - s.from)); continue; }
     const rest = blankShot({ chapterId: s.chapterId, beatId: s.beatId, from: cut, end: s.end, src: restart, role: "normal", change: !other });
+    if (restart.kind === "video") cursor.set(restart.key, restart.sourceIn + (s.end - cut));
     s.end = cut;
     shots.splice(i + 1, 0, rest);
   }
   return shots;
+}
+
+/** A cutaway for a beat whose only video runs out: the nearest other beat of the chapter with a still (or a video with
+ *  `need` frames of media), its first such pick. */
+function borrowedSource(ctx: Ctx, b: BeatCtx, exceptKey: string, need: number, cursor: ReadonlyMap<string, number>): Src | undefined {
+  const others = b.ch.beats
+    .filter((x) => x.id !== b.id && (ctx.picksByBeat.get(x.id) ?? []).length > 0)
+    .sort((x, y) => Math.abs(x.idx - b.idx) - Math.abs(y.idx - b.idx) || x.idx - y.idx);
+  for (const o of others) {
+    const src = sourcesFor(ctx, o).find((x) => x.key !== exceptKey && x.assetId !== null && (x.kind === "image" || videoAvail(x, cursor.get(x.key) ?? x.sourceIn) >= need));
+    if (src) return src;
+  }
+  return undefined;
 }
 
 /** Clip beat in mode "clip": the passage (with head/tail handles), pip → cover switch, hold shot when media runs out. */
