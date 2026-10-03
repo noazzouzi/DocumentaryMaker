@@ -1,22 +1,24 @@
 // createEngine (§4.19, §5.5): the Engine implementation (in-process runner; "worker" runner forwards jobs to a forked
 // job worker, see worker.ts). Reads/writes/approvals/estimates/styles/assets run in the calling process.
 import { existsSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
-  DocmakerError, ENV_KEYS, P, UserPicksDoc, VARIANT_STAGES, canonicalJson, docEntryFor, hashJson, type Approval, type CostEstimate, type CostTracker, type GateId,
+  CostEstimate as CostEstimateSchema, DocmakerError, ENV_KEYS, FactSheet as FactSheetSchema, LocalIndexDoc, P, UserPicksDoc, VARIANT_STAGES, canonicalJson, docEntryFor, hashJson, type Approval, type CostEstimate, type CostTracker, type GateId,
   type HomeConfig, type JobEvent, type JobRecord, type JobRequest, type Lang, type NewProjectInput, type PipelineEstimate, type Project,
-  type RenderPresetId, type StageId, type StyleSuggestion,
+  type RenderPresetId, type StageId, type StyleSuggestion, type UploadDeclaration,
 } from "@docmaker/core";
-import { ProjectStore, ensureHome, readHomeConfig, run, writeHomeConfig, writeSecret } from "@docmaker/core/node";
+import { ProjectStore, cacheCapBytes, ensureHome, readHomeConfig, run, writeHomeConfig, writeSecret } from "@docmaker/core/node";
 import type { z } from "zod";
 import type { DemoOptions, Engine, EngineOptions, ImpactReport, StageStatus } from "./types";
 import { REAL_DEPS } from "./deps";
 import { createRuntime, type Runtime } from "./runtime";
 import { JobManager, isTerminal } from "./jobs";
-import { ProjectCosts } from "./costs";
+import { ProjectCosts, readReceipts } from "./costs";
 import { docs } from "./docs";
 import { STAGE_LIST, stageDef } from "./stages";
-import { buildCtx, fixtureAutoApproves, fixtureOf, inputsHashOf, persistApproval, readProject, type StageInvocation } from "./runner";
+import { buildCtx, fixtureAutoApproves, fixtureOf, inputsHashOf, persistApproval, readProject, updateProjectDoc, type StageInvocation } from "./runner";
+import { pendingClaims } from "./gates";
 import { pipelineEstimate, planInvocations, stageRange } from "./pipeline";
 import { emptyStageState, findStage, readState } from "./state";
 import { createProjectIn, listProjectsIn, updateProjectIn } from "./project";
@@ -494,6 +496,125 @@ class EngineImpl implements Engine {
     return { slug: d.slug, jobId: d.jobId, mp4: d.mp4, exportDir: d.exportDir };
   }
 
+  // ---------------------------------------------------------------- additive helpers (CLI / web)
+  async importLocalDir(slug: string, i: { dir: string; declaration: UploadDeclaration | null; tags: string[] }): Promise<LocalIndexDoc> {
+    const store = await this.open(slug);
+    const project = await readProject(store);
+    const declaration = this.rt.deps.assets.requireDeclaration(i.declaration);
+    const previous = await store.readJsonOrNull(P.localIndex, LocalIndexDoc);
+    const doc = await this.rt.deps.assets.importLocalDir({ dir: i.dir, declaration, tags: i.tags, projectDir: store.dir, previous }, await this.assetsCtx(store, project));
+    await store.writeJson(P.localIndex, LocalIndexDoc, doc, { writer: "user" });
+    return doc;
+  }
+
+  async calibrate(slug: string, lang: Lang): Promise<{ charsPerSec: number }> {
+    const store = await this.open(slug);
+    const project = await readProject(store);
+    const voice = project.voice[lang];
+    if (!voice) throw new DocmakerError("VALIDATION", `${lang} is not a project language`);
+    const r = await this.rt.deps.voice.calibrateVoice({ lang, voice, projectDir: store.dir }, {
+      config: this.rt.config, secrets: this.rt.secrets, logger: this.rt.logger, signal: new AbortController().signal, progress: () => {}, costs: await ProjectCosts.open(store, project, null, () => {}),
+    });
+    await updateProjectDoc(store, { voice: { ...project.voice, [lang]: { ...voice, charsPerSec: r.charsPerSec } } }, "user");
+    return r;
+  }
+
+  async teleprompter(slug: string, lang: Lang, o: { mirror: boolean }): Promise<string> {
+    const store = await this.open(slug);
+    const project = await readProject(store);
+    const script = await docs.script(store, lang);
+    if (!script) throw new DocmakerError("UPSTREAM_MISSING", `no ${lang} script yet`, { hint: "run the script stage first" });
+    const style = await this.getStyle(project.styleId ?? "drama-commentary").catch(() => null);
+    const cps = project.voice[lang]?.charsPerSec ?? style?.data.scriptProfile.charsPerSec[lang] ?? 15;
+    const take = await docs.activeTake(store, lang).then((a) => (a ? docs.take(store, lang, a.takeId) : null));
+    const html = this.rt.deps.voice.teleprompterHtml(script, { cps, mirror: o.mirror, lang, outdated: take ? this.rt.deps.voice.editedAfterTake(script, take) : [] });
+    const rel = P.teleprompter(lang);
+    await mkdir(path.dirname(store.abs(rel)), { recursive: true });
+    await writeFile(store.abs(rel), html);
+    return store.abs(rel);
+  }
+
+  async costReport(slug: string): Promise<{ receipts: { stage: StageId; lang: Lang | null; usd: number; calls: number }[]; totalUsd: number; maxUsdTotal: number; maxUsdPerStage: number; estimates: CostEstimate[] }> {
+    const store = await this.open(slug);
+    const project = await readProject(store);
+    const receipts = await readReceipts(store);
+    const by = new Map<string, { stage: StageId; lang: Lang | null; usd: number; calls: number }>();
+    for (const r of receipts) {
+      const k = `${r.stage}|${r.lang ?? ""}`;
+      const cur = by.get(k) ?? { stage: r.stage, lang: r.lang, usd: 0, calls: 0 };
+      cur.usd += r.costUsd;
+      cur.calls += 1;
+      by.set(k, cur);
+    }
+    const estimates: CostEstimate[] = [];
+    for (const def of STAGE_LIST) {
+      for (const lang of def.perLang ? project.languages : [null]) {
+        const e = await store.readJsonOrNull(P.estimate(def.id, lang), CostEstimateSchema).catch(() => null);
+        if (e) estimates.push(e);
+      }
+    }
+    return { receipts: [...by.values()], totalUsd: receipts.reduce((a, r) => a + r.costUsd, 0), maxUsdTotal: project.budget.maxUsdTotal, maxUsdPerStage: project.budget.maxUsdPerStage, estimates };
+  }
+
+  async credits(slug: string, lang: Lang): Promise<string> {
+    const store = await this.open(slug);
+    const ledger = (await docs.ledger(store)) ?? { schemaVersion: 1 as const, entries: [] };
+    const usage = (await docs.usage(store, lang)) ?? { schemaVersion: 1 as const, lang, usage: [] };
+    const music = (await docs.music(store)) ?? { schemaVersion: 1 as const, tracks: [] };
+    const voice = await docs.activeTake(store, lang).then((a) => (a ? docs.take(store, lang, a.takeId) : null));
+    const project = await readProject(store);
+    let sfx: import("@docmaker/core").SfxEntry[] = [];
+    try {
+      sfx = await this.rt.deps.audio.loadSfxEntries(project.audio.sfxPacks, { config: this.rt.config, logger: this.rt.logger, signal: new AbortController().signal, progress: () => {} });
+    } catch { /* packs not generated */ }
+    const used = new Set(usage.usage.map((u) => u.assetId));
+    return this.rt.deps.assets.buildCredits({ ledger, usage, lang, voice, music, sfx: sfx.filter((x) => used.has(x.assetId)) });
+  }
+
+  /** `factcheck --recheck`: re-research pending claims (LLM, receipts recorded) and refresh their status/asOf in the fact sheet. */
+  async recheckClaims(slug: string): Promise<{ changed: string[]; checked: string[] }> {
+    const store = await this.open(slug);
+    const project = await readProject(store);
+    const facts = await docs.factsheet(store);
+    if (!facts) throw new DocmakerError("UPSTREAM_MISSING", "no fact sheet yet", { hint: "run the research stage first" });
+    const pending = await pendingClaims(store, project, new Date(8.64e15));
+    const ids = pending.map((c) => c.id);
+    if (ids.length === 0) return { changed: [], checked: [] };
+    this.rt.refresh();
+    const costs = await ProjectCosts.open(store, project, null, () => {});
+    const llm = this.rt.llmFor(project);
+    const r = await this.rt.deps.llm.recheck({ llm, signal: new AbortController().signal, costs, logger: this.rt.logger, progress: () => {}, newRequest: false }, { factSheet: facts, claimIds: ids, asOf: new Date().toISOString().slice(0, 10) });
+    // the re-check itself refreshes asOf of every checked claim (status changed or confirmed unchanged)
+    const today = new Date().toISOString().slice(0, 10);
+    const next = { ...r.factSheet, claims: r.factSheet.claims.map((c) => (ids.includes(c.id) ? { ...c, asOf: today } : c)) };
+    await store.writeJson(P.factsheet, FactSheetSchema, next, { writer: "user" });
+    return { changed: r.changed, checked: ids };
+  }
+
+  async cacheGc(o: { dryRun: boolean }): Promise<{ removed: number; freedBytes: number; totalBytes: number; capBytes: number }> {
+    const config = this.rt.config;
+    const referenced = await this.rt.deps.assets.collectReferencedBlobs(config.projectsDir);
+    const capBytes = await cacheCapBytes(config);
+    const cache = this.rt.deps.assets.createFrozenCache({ config, logger: this.rt.logger });
+    const ix = await cache.readIndex();
+    const totalBytes = ix.blobs.reduce((a, b) => a + b.bytes, 0);
+    if (o.dryRun) {
+      let over = totalBytes - capBytes;
+      let removed = 0;
+      let freedBytes = 0;
+      for (const b of [...ix.blobs].sort((x, y) => (x.lastUsed < y.lastUsed ? -1 : 1))) {
+        if (referenced.has(b.sha256)) continue;
+        removed++;
+        freedBytes += b.bytes;
+        over -= b.bytes;
+        if (over <= 0) break;
+      }
+      return totalBytes > capBytes ? { removed, freedBytes, totalBytes, capBytes } : { removed: 0, freedBytes: 0, totalBytes, capBytes };
+    }
+    const r = await cache.gc({ referenced, capBytes });
+    return { ...r, totalBytes, capBytes };
+  }
+
   /** Additive (CLI `setup`): installs one optional component; returns a short description of what is in place. */
   async setupComponent(what: SetupComponent, arg: string | null, o: { signal: AbortSignal; progress: (pct: number, msg: string) => void }): Promise<string> {
     const config = this.rt.config;
@@ -547,6 +668,13 @@ class EngineImpl implements Engine {
 export type SetupComponent = "sfx" | "tts" | "python" | "yt-dlp" | "whisper" | "clip";
 
 export type EngineExt = Engine & {
+  importLocalDir(slug: string, i: { dir: string; declaration: UploadDeclaration | null; tags: string[] }): Promise<LocalIndexDoc>;
+  calibrate(slug: string, lang: Lang): Promise<{ charsPerSec: number }>;
+  teleprompter(slug: string, lang: Lang, o: { mirror: boolean }): Promise<string>;
+  costReport(slug: string): Promise<{ receipts: { stage: StageId; lang: Lang | null; usd: number; calls: number }[]; totalUsd: number; maxUsdTotal: number; maxUsdPerStage: number; estimates: CostEstimate[] }>;
+  credits(slug: string, lang: Lang): Promise<string>;
+  recheckClaims(slug: string): Promise<{ changed: string[]; checked: string[] }>;
+  cacheGc(o: { dryRun: boolean }): Promise<{ removed: number; freedBytes: number; totalBytes: number; capBytes: number }>;
   setupComponent(what: SetupComponent, arg: string | null, o: { signal: AbortSignal; progress: (pct: number, msg: string) => void }): Promise<string>;
   readonly rt: Runtime; readonly jobs: JobManager;
   waitForJob(jobId: string): Promise<JobRecord>;
