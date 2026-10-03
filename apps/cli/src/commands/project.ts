@@ -206,7 +206,19 @@ export function registerProject(program: Command, ctx: CliContext): void {
     .description("write or rewrite chapters (user-edited chapters need --force-overwrite-edits)")
     .option("--lang <langs>")
     .option("--chapter <ids>")
+    .option("--transcreate <segmentIds>", "secondary language: re-transcreate out-of-sync segments from the primary")
     .action(async (slug: string, o: Opts) => {
+      if (o.transcreate) {
+        const lang = parseLangs(str(o.lang), false)[0];
+        if (!lang) throw new UsageError("--transcreate needs --lang <secondary language>");
+        const engine = await ctx.engine();
+        for (const id of splitList(str(o.transcreate)).map((x) => x.toUpperCase())) {
+          const r = await engine.transcreate(slug, lang, id);
+          ctx.io.out(`${id}: ${r.displayText}\n`);
+          for (const i of r.issues.filter((x) => x.where.startsWith(id))) ctx.io.out(`  ${i.level} ${i.rule}: ${i.msg}\n`);
+        }
+        return;
+      }
       const chapters = parseChapters(str(o.chapter));
       process.exitCode = await runJob(ctx, stageJob(ctx, slug, "script", { langs: parseLangs(str(o.lang)), options: chapters ? { chapters } : {} }));
     });

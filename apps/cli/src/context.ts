@@ -101,7 +101,11 @@ export function makeContext(o: { io: Io; globals: () => GlobalOpts; factory: Eng
       if (!engine) {
         const e = env();
         const level = (e.DOCMAKER_LOG_LEVEL as "debug" | "info" | "warn" | "error" | undefined) ?? "warn";
-        const logger = createLogger({ level, sink: (line) => o.io.err(line.endsWith("\n") ? line : line + "\n") });
+        let secrets: Parameters<typeof createLogger>[0]["secrets"];
+        try {
+          secrets = loadRuntime({ cwd: e.DOCMAKER_REPO_ROOT ?? o.cwd ?? process.cwd(), env: e }).secrets; // log lines redact every key value
+        } catch { /* no repo root: the engine reports it */ }
+        const logger = createLogger({ level, secrets, sink: (line) => o.io.err(line.endsWith("\n") ? line : line + "\n") });
         engine = o.factory({ env: e, cwd: o.cwd ?? process.cwd(), logger });
       }
       return engine;

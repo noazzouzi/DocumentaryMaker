@@ -46,4 +46,10 @@ describe("bilingual project", () => {
     expect(tl.takeId).toBe(active.takeId);
     expect(tl.chapters.map((c) => c.id)).toEqual(["CH1"]);
   });
+
+  it("transcreate validates its target and needs the LLM (no recorded fixture → FIXTURE_MISSING)", async () => {
+    await expect(e.transcreate(slug, "en", "CH1-S01")).rejects.toMatchObject({ code: "VALIDATION" });
+    await expect(e.transcreate(slug, "fr", "CH9-S01")).rejects.toMatchObject({ code: "VALIDATION" });
+    await expect(e.transcreate(slug, "fr", "CH1-S01")).rejects.toMatchObject({ code: "FIXTURE_MISSING" });
+  });
 });

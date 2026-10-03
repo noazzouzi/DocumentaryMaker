@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
-  CostEstimate as CostEstimateSchema, DocmakerError, ENV_KEYS, FactSheet as FactSheetSchema, LocalIndexDoc, P, UserPicksDoc, VARIANT_STAGES, canonicalJson, docEntryFor, hashJson, type Approval, type CostEstimate, type CostTracker, type GateId,
+  CostEstimate as CostEstimateSchema, DocmakerError, Script as ScriptSchema, type LintIssue, ENV_KEYS, FactSheet as FactSheetSchema, LocalIndexDoc, P, UserPicksDoc, VARIANT_STAGES, canonicalJson, docEntryFor, hashJson, type Approval, type CostEstimate, type CostTracker, type GateId,
   type HomeConfig, type JobEvent, type JobRecord, type JobRequest, type Lang, type NewProjectInput, type PipelineEstimate, type Project,
   type RenderPresetId, type StageId, type StyleSuggestion, type UploadDeclaration, type VoiceInfo, type VoiceProviderId, type VoiceTrack,
 } from "@docmaker/core";
@@ -505,6 +505,38 @@ class EngineImpl implements Engine {
   }
 
   // ---------------------------------------------------------------- additive helpers (CLI / web)
+  /**
+   * "Out of sync" secondary segment (§5.3): re-transcreate it from the current primary segment (cheap LLM call, receipt
+   * recorded), set primaryHash, rebuild ttsText, save as a user edit. Returns the new text and the lint/fact-check issues.
+   */
+  async transcreate(slug: string, lang: Lang, segmentId: string): Promise<{ displayText: string; issues: LintIssue[] }> {
+    const store = await this.open(slug);
+    const project = await readProject(store);
+    if (lang === project.primaryLang) throw new DocmakerError("VALIDATION", `${lang} is the primary language`);
+    const primary = await docs.script(store, project.primaryLang);
+    const cur = await this.readDoc(slug, P.script(lang), ScriptSchema).catch(() => null);
+    const facts = await docs.factsheet(store);
+    if (!primary || !cur || !facts) throw new DocmakerError("UPSTREAM_MISSING", "both scripts and the fact sheet are needed", { hint: "run the script stage for both languages" });
+    const pSeg = primary.chapters.flatMap((c) => c.segments).find((s) => s.id === segmentId);
+    const cSeg = cur.value.chapters.flatMap((c) => c.segments).find((s) => s.id === segmentId);
+    if (!pSeg || !cSeg) throw new DocmakerError("VALIDATION", `segment ${segmentId} is not in both scripts`);
+    this.rt.refresh();
+    const style = await this.getStyle(project.styleId ?? "drama-commentary");
+    const costs = await ProjectCosts.open(store, project, null, () => {});
+    const r = await this.rt.deps.llm.transcreateSegment(
+      { llm: this.rt.llmFor(project), signal: new AbortController().signal, costs, logger: this.rt.logger, progress: () => {}, newRequest: false },
+      { primary: pSeg, current: cSeg, lang, style, factSheet: facts },
+    );
+    const next = structuredClone(cur.value);
+    for (const ch of next.chapters) {
+      ch.segments = ch.segments.map((s) => (s.id === segmentId
+        ? { ...s, displayText: r.displayText, subtitleTranslation: r.subtitleTranslation, primaryHash: hashJson(pSeg.displayText), ttsTextEdited: false, ttsText: "" }
+        : s));
+    }
+    const w = await writeUserDoc(this.rt, store, P.script(lang), ScriptSchema, next, cur.etag);
+    return { displayText: r.displayText, issues: w.issues };
+  }
+
   /** Voices of a TTS provider (static lists for kokoro/piper/synthetic; ElevenLabs needs its key and the network). */
   async listVoices(provider: VoiceProviderId, lang: Lang | null): Promise<VoiceInfo[]> {
     this.rt.refresh();
@@ -719,6 +751,7 @@ class EngineImpl implements Engine {
 export type SetupComponent = "sfx" | "tts" | "python" | "yt-dlp" | "whisper" | "clip";
 
 export type EngineExt = Engine & {
+  transcreate(slug: string, lang: Lang, segmentId: string): Promise<{ displayText: string; issues: LintIssue[] }>;
   listVoices(provider: VoiceProviderId, lang: Lang | null): Promise<VoiceInfo[]>;
   listTakes(slug: string, lang: Lang): Promise<VoiceTrack[]>;
   secretStatus(): Promise<{ name: keyof typeof ENV_KEYS; env: string; set: boolean; masked: string }[]>;
