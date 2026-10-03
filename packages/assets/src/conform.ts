@@ -159,7 +159,11 @@ export async function conformClip(src: string, outDir: string, o: { fps: number;
   if (!probe.streams.some((s) => s.codecType === "video")) throw new DocmakerError("VALIDATION", `${path.basename(src)} has no video stream`);
   const hasAudioIn = probe.streams.some((s) => s.codecType === "audio");
   const w = trimWindow(probe.durationSec * 1000, o.passageInMs, o.passageOutMs, o.handleMs);
-  if (w.endMs - w.startMs < 100) throw new DocmakerError("VALIDATION", `${path.basename(src)}: passage outside the media`);
+  // The clamped passage itself (not the window with its handles) must be non-trivial: a passage beyond the end is refused.
+  const passageMs = (w.endMs - w.tailMs) - (w.startMs + w.headMs);
+  if (passageMs < 100 || w.endMs - w.startMs < 100) {
+    throw new DocmakerError("VALIDATION", `${path.basename(src)}: passage ${o.passageInMs}–${o.passageOutMs} ms lies outside the media (${Math.round(probe.durationSec * 1000)} ms)`);
+  }
   const out = await outName(src, "clip-v1", { fps: o.fps, ...w }, "mp4", outDir);
   const stage1 = `${out}.stage1.mp4`;
   const normWav = `${out}.norm.wav`;
@@ -182,7 +186,7 @@ export async function conformClip(src: string, outDir: string, o: { fps: number;
   }
   const { v, a, durationMs } = await probeOut(out, ctx.config, ctx.signal);
   const passageInMs = w.headMs;
-  const passageOutMs = Math.min(durationMs, w.headMs + (Math.min(o.passageOutMs, w.endMs) - Math.max(o.passageInMs, 0)));
+  const passageOutMs = Math.min(durationMs, w.headMs + passageMs);
   return {
     file: out, ext: "mp4", width: v?.width ?? null, height: v?.height ?? null, durationMs, fps: o.fps, hasAudio: a !== undefined, lufs,
     recipe: "clip-v1", sourceInMs: w.startMs, sourceOutMs: w.endMs, handleHeadMs: w.headMs, handleTailMs: w.tailMs,

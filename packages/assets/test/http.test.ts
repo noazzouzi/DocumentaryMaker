@@ -38,6 +38,9 @@ describe("SSRF guard", () => {
     for (const ip of ["127.0.0.1", "10.1.2.3", "172.16.0.9", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "224.0.0.1", "255.255.255.255", "::1", "::", "fe80::1", "fc00::1", "fd12:3456::1", "ff02::1", "::ffff:127.0.0.1", "::ffff:7f00:1", "64:ff9b::a00:1", "::ffff:192.168.0.1"]) {
       expect(isBlockedAddress(ip), ip).toBe(true);
     }
+    // 6to4 and Teredo embed a v4 address: the embedded address decides.
+    for (const ip of ["2002:7f00:1::1", "2002:c0a8:101::", "2002:a9fe:a9fe::1", "2001:0:4136:e378:8000:63bf:80ff:fffe"]) expect(isBlockedAddress(ip), ip).toBe(true);
+    for (const ip of ["2002:808:808::1", "2001:0:4136:e378:8000:63bf:f7f7:f7f7"]) expect(isBlockedAddress(ip), ip).toBe(false);
     for (const ip of ["93.184.216.34", "8.8.8.8", "2606:4700:4700::1111", "::ffff:8.8.8.8", "172.32.0.1", "100.128.0.1"]) {
       expect(isBlockedAddress(ip), ip).toBe(false);
     }
@@ -50,6 +53,11 @@ describe("SSRF guard", () => {
     await expect(guardUrl("http://example.com/x", { lookup: publicLookup, env })).rejects.toMatchObject({ code: "POLICY_DENIED" });
     await expect(guardUrl("file:///etc/passwd", { lookup: publicLookup, env })).rejects.toMatchObject({ code: "POLICY_DENIED" });
     await expect(guardUrl("https://localhost/x", { lookup: publicLookup, env })).rejects.toMatchObject({ code: "POLICY_DENIED" });
+    // Trailing-dot forms are the same names; a failing resolver behind a proxy must not let them through.
+    const nx = async () => { throw Object.assign(new Error("nx"), { code: "ENOTFOUND" }); };
+    for (const u of ["https://localhost./x", "https://foo.localhost./x", "https://printer.local./", "https://db.internal../"]) {
+      await expect(guardUrl(u, { lookup: nx, env: { HTTPS_PROXY: "http://proxy:3128" } }), u).rejects.toMatchObject({ code: "POLICY_DENIED" });
+    }
     await expect(guardUrl("https://[::1]/x", { lookup: publicLookup, env })).rejects.toMatchObject({ code: "POLICY_DENIED" });
     await expect(guardUrl("https://169.254.169.254/latest", { lookup: publicLookup, env })).rejects.toMatchObject({ code: "POLICY_DENIED" });
     await expect(guardUrl("https://user:pw@example.com/", { lookup: publicLookup, env })).rejects.toMatchObject({ code: "POLICY_DENIED" });
@@ -74,6 +82,22 @@ describe("SSRF guard", () => {
     await expect(http.getJson("https://a.example.com/r0", { signal: new AbortController().signal })).rejects.toMatchObject({ code: "PROVIDER_ERROR" });
     n = 2;
     await expect(http.getJson("https://a.example.com/r0", { signal: new AbortController().signal })).resolves.toEqual({ ok: true });
+  });
+});
+
+describe("credentials on redirects", () => {
+  it("drops caller headers once a redirect leaves the first origin", async () => {
+    const config = makeConfig({ offline: false });
+    const f = fakeFetch((url) => {
+      if (url.endsWith("/start")) return new Response(null, { status: 302, headers: { location: "/same" } });
+      if (url.endsWith("/same")) return new Response(null, { status: 302, headers: { location: "https://cdn.other.example.net/file" } });
+      if (url.endsWith("/file")) return new Response(null, { status: 302, headers: { location: "https://api.example.com/back" } });
+      return new Response("{}");
+    });
+    const http = createHttpClient({ config, logger: quietLogger(), fetchImpl: f.impl, lookup: publicLookup, retries: 0 });
+    await http.getJson("https://api.example.com/start", { signal: new AbortController().signal, headers: { authorization: "Key SECRET", "x-subscription-token": "TOK" } });
+    const auth = f.calls.map((c) => [new URL(c.url).pathname, c.headers.authorization ?? null, c.headers["x-subscription-token"] ?? null]);
+    expect(auth).toEqual([["/start", "Key SECRET", "TOK"], ["/same", "Key SECRET", "TOK"], ["/file", null, null], ["/back", null, null]]);
   });
 });
 
@@ -110,6 +134,41 @@ describe("retries, caps, cache, timeouts", () => {
     const http2 = createHttpClient({ config, logger: quietLogger(), fetchImpl: g.impl, lookup: publicLookup, retryBaseMs: 1 });
     await expect(http2.getJson("https://x.example.com/b", { signal: new AbortController().signal })).rejects.toMatchObject({ code: "PROVIDER_ERROR", details: { status: 404 } });
     expect(m).toBe(1);
+  });
+
+  it("never re-sends a POST the server may have processed (5xx, header timeout); retries refused connections and 429", async () => {
+    const config = makeConfig({ offline: false });
+    const signal = new AbortController().signal;
+    let n = 0;
+    const f5 = fakeFetch(() => { n++; return new Response("boom", { status: 502 }); });
+    const h5 = createHttpClient({ config, logger: quietLogger(), fetchImpl: f5.impl, lookup: publicLookup, retryBaseMs: 1 });
+    await expect(h5.postJson("https://queue.example.com/submit", { a: 1 }, { signal })).rejects.toMatchObject({ details: { status: 502 } });
+    expect(n).toBe(1);
+    let t = 0;
+    const slow = ((_u: string, init: RequestInit) => { t++; return new Promise<Response>((_r, rej) => init.signal!.addEventListener("abort", () => rej(new Error("aborted")))); }) as unknown as typeof fetch;
+    const ht = createHttpClient({ config, logger: quietLogger(), fetchImpl: slow, lookup: publicLookup, retryBaseMs: 1 });
+    await expect(ht.postJson("https://queue.example.com/submit", { a: 1 }, { signal, timeoutMs: 20 })).rejects.toThrow(/no response headers/);
+    expect(t).toBe(1);
+    let c = 0;
+    const refused = (async () => {
+      if (++c < 3) throw Object.assign(new TypeError("fetch failed"), { cause: { code: c === 1 ? "ECONNREFUSED" : "ENOTFOUND" } });
+      return new Response('{"ok":1}');
+    }) as unknown as typeof fetch;
+    const hc = createHttpClient({ config, logger: quietLogger(), fetchImpl: refused, lookup: publicLookup, retryBaseMs: 1 });
+    await expect(hc.postJson("https://queue.example.com/submit", { a: 1 }, { signal })).resolves.toEqual({ ok: 1 });
+    expect(c).toBe(3);
+    let r = 0;
+    const f429 = fakeFetch(() => (++r < 2 ? new Response("slow down", { status: 429, headers: { "retry-after": "0" } }) : new Response('{"ok":2}')));
+    const h429 = createHttpClient({ config, logger: quietLogger(), fetchImpl: f429.impl, lookup: publicLookup, retryBaseMs: 1 });
+    await expect(h429.postJson("https://queue.example.com/submit", { a: 1 }, { signal })).resolves.toEqual({ ok: 2 });
+    // GETs keep retrying a reset connection.
+    let g = 0;
+    const reset = (async () => {
+      if (++g < 2) throw Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNRESET" } });
+      return new Response('{"ok":3}');
+    }) as unknown as typeof fetch;
+    const hg = createHttpClient({ config, logger: quietLogger(), fetchImpl: reset, lookup: publicLookup, retryBaseMs: 1 });
+    await expect(hg.getJson("https://x.example.com/g", { signal })).resolves.toEqual({ ok: 3 });
   });
 
   it("gives up when Retry-After exceeds the cap", async () => {

@@ -130,6 +130,9 @@ describe("conform recipes", () => {
     const a = p.streams.find((s) => s.codecType === "audio")!;
     expect([a.codecName, a.sampleRate, a.channels]).toEqual(["aac", 48000, 2]);
     expect(p.streams.find((s) => s.codecType === "video")!.fps).toBe(30);
+    // A passage entirely beyond the end of the media is refused (not a 1 s clip of handle with an empty passage).
+    await expect(conformClip(src, work, { fps: 30, passageInMs: 9000, passageOutMs: 10_000, handleMs: 1000 }, ctx)).rejects.toMatchObject({ code: "VALIDATION" });
+    await expect(conformClip(src, work, { fps: 30, passageInMs: 7980, passageOutMs: 9000, handleMs: 1000 }, ctx)).rejects.toMatchObject({ code: "VALIDATION" });
   }, 90_000);
 
   it("audio-norm-v1: 48 kHz stereo s16 WAV at the target", async () => {

@@ -10,6 +10,7 @@ import {
   QuotaBuckets, resolveEntity,
 } from "../src/index";
 import { iaSearchUrl } from "../src/providers/archives";
+import { falGenerate } from "../src/providers/paid";
 import { commonsDownloadUrl } from "../src/providers/wikimedia";
 import { openverseUrl } from "../src/providers/openverse";
 import { pexelsUrl, pickPexelsFile, pixabayUrl } from "../src/providers/stock";
@@ -226,6 +227,14 @@ describe("Brave (paid, M3)", () => {
     expect(person[0]!.candidate.license.code).toBe("UNKNOWN");
     expect(person[0]!.candidate.license.restrictions).toEqual(["editorial-only", "may-be-manipulated", "unknown-rights"]);
     expect(parseBraveImages(j("brave-images.json"), { personBeat: false })[0]!.candidate.license.restrictions).not.toContain("may-be-manipulated");
+  });
+});
+
+describe("fal key scope", () => {
+  it("never sends the key to a status/response URL outside queue.fal.run", async () => {
+    const http = stubHttp([[/queue\.fal\.run\/fal-ai\/flux\/schnell/, { request_id: "r", status_url: "https://evil.example.com/status", response_url: "https://queue.fal.run/fal-ai/flux/requests/r" }]]);
+    await expect(falGenerate("a tulip field, watercolour", 1, pctx(http, { fal: "K" }))).rejects.toThrow(/outside queue\.fal\.run/);
+    expect(http.urls).toEqual(["https://queue.fal.run/fal-ai/flux/schnell"]);
   });
 });
 

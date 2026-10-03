@@ -79,6 +79,13 @@ export function isBlockedAddress(ip: string): boolean {
   const compat = h.slice(0, 6).every((x) => x === 0) && !(h[6] === 0 && h[7]! <= 1);
   const nat64 = h[0] === 0x64 && h[1] === 0xff9b && h.slice(2, 6).every((x) => x === 0);
   if (mapped || compat || nat64) return blockList.check(v4, "ipv4");
+  // 6to4 (2002::/16) carries a v4 address in hextets 1–2; Teredo (2001:0::/32) carries the client's v4 bit-inverted in 6–7.
+  if (h[0] === 0x2002) return blockList.check(`${h[1]! >> 8}.${h[1]! & 255}.${h[2]! >> 8}.${h[2]! & 255}`, "ipv4");
+  if (h[0] === 0x2001 && h[1] === 0) {
+    const a = h[6]! ^ 0xffff;
+    const b = h[7]! ^ 0xffff;
+    return blockList.check(`${a >> 8}.${a & 255}.${b >> 8}.${b & 255}`, "ipv4");
+  }
   const norm = h.map((x) => x.toString(16)).join(":");
   return blockList.check(norm, "ipv6");
 }
@@ -109,7 +116,8 @@ export async function guardUrl(url: string, o: { lookup: LookupFn; env: NodeJS.P
   } catch {
     throw new DocmakerError("VALIDATION", "invalid URL");
   }
-  const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  // "localhost." and "foo.localhost." are the same names as without the root dot.
+  const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.+$/, "");
   if (u.username || u.password) throw ssrfError("credentials in URL", url);
   if (u.protocol === "http:") {
     if (!HTTP_ALLOWED_HOSTS.includes(host)) throw ssrfError("plain http is not allowed", url);
@@ -154,6 +162,13 @@ export function parseRetryAfter(v: string | null, now = Date.now()): number | nu
 // ------------------------------------------------------------------------------------------------ client
 interface Req { method: "GET" | "POST"; url: string; body: string | null; contentType: string | null; accept: string }
 
+/** Failures that happen before the request can reach the server (safe to retry even for a non-idempotent POST). */
+const CONNECT_ERRORS = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "EHOSTUNREACH", "ENETUNREACH", "UND_ERR_CONNECT_TIMEOUT"]);
+const errCode = (e: unknown): string => {
+  const x = e as { code?: unknown; cause?: { code?: unknown } } | null;
+  return String(x?.code ?? x?.cause?.code ?? "");
+};
+
 export function createHttpClient(o: { config: RuntimeConfig; logger: Logger } & HttpClientInternals): HttpClient {
   const { config, logger } = o;
   const fetchImpl = o.fetchImpl ?? ((...a: Parameters<typeof fetch>) => globalThis.fetch(...a));
@@ -162,6 +177,8 @@ export function createHttpClient(o: { config: RuntimeConfig; logger: Logger } & 
   const retries = o.retries ?? 3;
   const retryBaseMs = o.retryBaseMs ?? 1000;
   const maxRetryAfterMs = o.maxRetryAfterMs ?? 60_000;
+  /** Errors raised before the request left the machine (DNS, SSRF guard, connection refused). */
+  const notSent = new WeakSet<Error>();
 
   const assertOnline = () => {
     if (config.offline) throw new DocmakerError("OFFLINE", "offline mode: network access is disabled", { hint: "unset DOCMAKER_OFFLINE / project.assets.offline to use online providers" });
@@ -172,10 +189,18 @@ export function createHttpClient(o: { config: RuntimeConfig; logger: Logger } & 
     let url = req.url;
     let method = req.method;
     let body = req.body;
+    const origin0 = new URL(req.url).origin;
+    let crossed = false; // once a redirect leaves the first origin, caller headers (API keys, tokens) are never sent again
     for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
       if (opts.signal.aborted) throw new DocmakerError("CANCELED", "request canceled");
-      await guardUrl(url, { lookup, env, logger });
-      const headers: Record<string, string> = { accept: req.accept, ...(opts.headers ?? {}) };
+      try {
+        await guardUrl(url, { lookup, env, logger });
+      } catch (e) {
+        if (e instanceof Error) notSent.add(e);
+        throw e;
+      }
+      if (new URL(url).origin !== origin0) crossed = true;
+      const headers: Record<string, string> = { accept: req.accept, ...(crossed ? {} : opts.headers ?? {}) };
       // The User-Agent is ours, per host (contact only for CONTACT_UA_HOSTS); callers cannot override it.
       for (const k of Object.keys(headers)) if (k.toLowerCase() === "user-agent") delete headers[k];
       headers["user-agent"] = userAgentFor(url, config);
@@ -193,7 +218,9 @@ export function createHttpClient(o: { config: RuntimeConfig; logger: Logger } & 
       } catch (e) {
         if (opts.signal.aborted) throw new DocmakerError("CANCELED", "request canceled", { cause: e });
         if (headerCtl.signal.aborted) throw new DocmakerError("PROVIDER_ERROR", `no response headers within ${timeoutMs} ms from ${redactUrl(url)}`, { retryable: true });
-        throw new DocmakerError("PROVIDER_ERROR", `network error for ${redactUrl(url)}: ${(e as Error).message}`, { retryable: true, cause: e });
+        const err = new DocmakerError("PROVIDER_ERROR", `network error for ${redactUrl(url)}: ${(e as Error).message}`, { retryable: true, cause: e });
+        if (CONNECT_ERRORS.has(errCode(e))) notSent.add(err);
+        throw err;
       } finally {
         clearTimeout(timer);
       }
@@ -266,15 +293,21 @@ export function createHttpClient(o: { config: RuntimeConfig; logger: Logger } & 
     return out;
   }
 
-  function withRetry<T>(label: string, opts: HttpGetOptions, fn: () => Promise<T>): Promise<T> {
+  /** POSTs are not idempotent (a fal submission is billed): they are retried only when the server never saw the request
+   *  (connection-level failures) or explicitly refused it (429). A header timeout or a 5xx may already have been processed. */
+  const mayRetry = (error: Error, idempotent: boolean) => {
+    if (!isDocmakerError(error) || !error.retryable) return false;
+    return idempotent || notSent.has(error) || error.code === "PROVIDER_RATE_LIMIT";
+  };
+  function withRetry<T>(label: string, opts: HttpGetOptions, fn: () => Promise<T>, idempotent = true): Promise<T> {
     return pRetry(fn, {
       retries,
       minTimeout: retryBaseMs,
       factor: 2,
       signal: opts.signal,
-      shouldRetry: ({ error }) => (isDocmakerError(error) ? error.retryable : !opts.signal.aborted),
+      shouldRetry: ({ error }) => (isDocmakerError(error) ? mayRetry(error, idempotent) : !opts.signal.aborted && idempotent),
       onFailedAttempt: async ({ error, retriesLeft }) => {
-        if (retriesLeft <= 0 || !isDocmakerError(error) || !error.retryable) return;
+        if (retriesLeft <= 0 || !isDocmakerError(error) || !mayRetry(error, idempotent)) return;
         logger.debug("http retry", { label, error: error.message, retriesLeft });
         const ra = (error.details as { retryAfterMs?: number | null } | undefined)?.retryAfterMs;
         if (typeof ra === "number" && ra > 0) {
@@ -322,7 +355,7 @@ export function createHttpClient(o: { config: RuntimeConfig; logger: Logger } & 
       logger.debug("http", { method: req.method, url: redactUrl(finalUrl), status: res.status });
       const bytes = await readCapped(res, opts.maxBytes ?? DEFAULT_MAX_BYTES, idle, finalUrl);
       return new TextDecoder("utf-8").decode(bytes);
-    });
+    }, req.method !== "POST");
     if (ttl > 0) await cachePut(key, body);
     return body;
   }

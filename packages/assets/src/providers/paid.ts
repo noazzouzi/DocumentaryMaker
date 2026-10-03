@@ -65,6 +65,15 @@ async function sleep(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
+const FAL_ORIGIN = new URL(FAL_ENDPOINT).origin;
+export function isFalQueueUrl(u: string): boolean {
+  try {
+    return new URL(u).origin === FAL_ORIGIN;
+  } catch {
+    return false;
+  }
+}
+
 export async function falGenerate(prompt: string, seed: number, ctx: ProviderContext): Promise<string> {
   const key = ctx.secrets.fal;
   if (!key) throw new DocmakerError("CONFIG_MISSING_KEY", "FAL_KEY is not set");
@@ -73,6 +82,8 @@ export async function falGenerate(prompt: string, seed: number, ctx: ProviderCon
   const headers = { authorization: `Key ${key}` };
   const job = await ctx.http.postJson<{ request_id?: string; status_url?: string; response_url?: string }>(FAL_ENDPOINT, falRequest(prompt, seed), { signal: ctx.signal, headers });
   if (!job.status_url || !job.response_url) throw new DocmakerError("PROVIDER_ERROR", "fal queue returned no status URL");
+  // The key only ever goes to the fal queue origin, never to a URL a response handed us elsewhere.
+  for (const u of [job.status_url, job.response_url]) if (!isFalQueueUrl(u)) throw new DocmakerError("PROVIDER_ERROR", "fal queue returned a URL outside queue.fal.run");
   const deadline = Date.now() + 180_000;
   for (;;) {
     const st = await ctx.http.getJson<{ status?: string }>(job.status_url, { signal: ctx.signal, headers });
