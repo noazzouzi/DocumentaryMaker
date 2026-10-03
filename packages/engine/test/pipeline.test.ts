@@ -109,6 +109,22 @@ describe("pipeline on a fixture project", () => {
     await expect(e.writeDoc(slug, P.styleSuggestion, StyleSuggestion, sug, null)).rejects.toMatchObject({ code: "VALIDATION" });
   });
 
+  it("the new-take cascade: a new active take stales layout, and layout → mix brings everything up to date", async () => {
+    const notRender = (xs: string[]) => xs.filter((x) => !x.startsWith("render"));
+    expect((await runToEnd(e, pipelineReq(slug, "beatslice", "mix"))).status).toBe("succeeded");
+    expect(notRender(await staleOf(e, slug))).toEqual([]);
+    const before = JSON.parse(readFileSync(path.join(dir, P.activeTake("en")), "utf8")) as { takeId: string };
+    const v = await runToEnd(e, stageReq(slug, "voice", { options: { takeKind: "scratch" } }));
+    expect(v.status).toBe("succeeded");
+    const after = JSON.parse(readFileSync(path.join(dir, P.activeTake("en")), "utf8")) as { takeId: string };
+    expect(after.takeId).not.toBe(before.takeId);
+    expect(after.takeId.startsWith("scratch-")).toBe(true);
+    expect(await staleOf(e, slug)).toContain("layout.en");
+    const r = await runToEnd(e, pipelineReq(slug, "layout", "mix"));
+    expect(r.events.filter((x) => x.type === "stage-done").map((x) => x.type === "stage-done" && x.stage)).toEqual(["layout", "direct", "mix"]);
+    expect(notRender(await staleOf(e, slug))).toEqual([]);
+  });
+
   it("render refuses a mix that was not built from the current timeline (direct re-ran after the mix)", async () => {
     const store = await ProjectStore.open(t.env.DOCMAKER_PROJECTS!, slug);
     const project = await e.getProject(slug);
@@ -126,22 +142,6 @@ describe("pipeline on a fixture project", () => {
     expect((await runToEnd(e, pipelineReq(slug, "layout", "mix"))).status).toBe("succeeded");
     expect(await mixMatches({ store, project }, "en", await timeline())).toBe(true);
   }, 240_000);
-
-  it("the new-take cascade: a new active take stales layout, and layout → mix brings everything up to date", async () => {
-    const notRender = (xs: string[]) => xs.filter((x) => !x.startsWith("render"));
-    expect((await runToEnd(e, pipelineReq(slug, "beatslice", "mix"))).status).toBe("succeeded");
-    expect(notRender(await staleOf(e, slug))).toEqual([]);
-    const before = JSON.parse(readFileSync(path.join(dir, P.activeTake("en")), "utf8")) as { takeId: string };
-    const v = await runToEnd(e, stageReq(slug, "voice", { options: { takeKind: "scratch" } }));
-    expect(v.status).toBe("succeeded");
-    const after = JSON.parse(readFileSync(path.join(dir, P.activeTake("en")), "utf8")) as { takeId: string };
-    expect(after.takeId).not.toBe(before.takeId);
-    expect(after.takeId.startsWith("scratch-")).toBe(true);
-    expect(await staleOf(e, slug)).toContain("layout.en");
-    const r = await runToEnd(e, pipelineReq(slug, "layout", "mix"));
-    expect(r.events.filter((x) => x.type === "stage-done").map((x) => x.type === "stage-done" && x.stage)).toEqual(["layout", "direct", "mix"]);
-    expect(notRender(await staleOf(e, slug))).toEqual([]);
-  });
 });
 
 /** A RenderClient whose render() blocks until released (snapshot / lock-release test). */
