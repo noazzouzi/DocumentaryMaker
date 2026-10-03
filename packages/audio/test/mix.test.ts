@@ -255,7 +255,15 @@ describe("mixTimeline", () => {
     const { rm } = await import("node:fs/promises");
     const sfxAsset = b.t.audio.sfx[0]!.assetId;
     await rm(path.join(b.projectDir, b.t.assets[sfxAsset]!.projectRel));
-    const out = await mix(b);
+    // the project copy is gone but the installed pack has the same content hash → still mixed
+    const fromPack = await mix(b);
+    expect(fromPack.sfx[0]!.some((v) => v !== 0)).toBe(true);
+    // an SFX known nowhere is skipped (warning), the mix still completes
+    const unknown = structuredClone(b.t);
+    const ghost = "d".repeat(64);
+    unknown.audio.sfx[0]!.assetId = ghost;
+    unknown.assets[ghost] = { ...unknown.assets[sfxAsset]!, id: ghost, projectRel: `media/${ghost}.wav` };
+    const out = await mix({ ...b, t: unknown });
     expect(out.sfx[0]!.every((v) => v === 0)).toBe(true);
     await rm(path.join(b.projectDir, "program/en/vo_program.wav"));
     await expect(mix(b)).rejects.toMatchObject({ code: "UPSTREAM_MISSING" });

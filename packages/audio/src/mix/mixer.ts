@@ -171,12 +171,17 @@ async function prepare(t: Timeline, i: MixInput, ctx: AudioCtx): Promise<{ vo: F
     const a = t.assets[assetId];
     return a ? path.resolve(i.projectDir, a.projectRel) : null;
   };
+  const entries = t.audio.sfx.length ? await installedEntriesById(ctx.config) : new Map<string, SfxEntry>();
+  // SFX not (yet) copied into the project are read from the installed pack when the content hash matches
+  const packFileByAsset = new Map<string, string>();
+  for (const e of entries.values()) packFileByAsset.set(e.assetId, e.file);
   const cache = new Map<string, Promise<Stereo | null>>();
   const load = (assetId: string, what: string): Promise<Stereo | null> => {
     let p = cache.get(assetId);
     if (!p) {
       p = (async () => {
-        const f = fileOf(assetId);
+        let f = fileOf(assetId);
+        if ((!f || !existsSync(f)) && packFileByAsset.has(assetId) && existsSync(packFileByAsset.get(assetId)!)) f = packFileByAsset.get(assetId)!;
         if (!f || !existsSync(f)) {
           ctx.logger.warn(`mix: ${what} audio missing; skipped`, { assetId, file: f });
           return null;
@@ -212,7 +217,6 @@ async function prepare(t: Timeline, i: MixInput, ctx: AudioCtx): Promise<{ vo: F
       declickIn: m.fadeInFrames === 0 && srcOffset > 0, declickOut: m.fadeOutFrames === 0, table: "music", maskOf: null,
     });
   }
-  const entries = t.audio.sfx.length ? await installedEntriesById(ctx.config) : new Map<string, SfxEntry>();
   for (const c of t.audio.sfx) {
     const src = await load(c.assetId, `SFX ${c.id}`);
     if (!src) continue;
