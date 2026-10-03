@@ -16,3 +16,7 @@ dist/
 .cache/
 coverage/
 apps/web/next-env.d.ts
+
+# Python bytecode (sidecar)
+__pycache__/
+*.pyc
