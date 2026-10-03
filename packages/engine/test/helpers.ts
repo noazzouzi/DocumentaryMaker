@@ -10,6 +10,7 @@ import { createEngineImpl, type EngineExt } from "../src/engine";
 import { REAL_DEPS, type EngineDeps } from "../src/deps";
 import { FakeRenderClient } from "./fakes";
 import { silentLogger } from "../src/util";
+import { shareTestCaches } from "./shared-home";
 
 export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
@@ -20,6 +21,8 @@ export function testEnv(tag: string): TestEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, DOCMAKER_HOME: path.join(root, "home"), DOCMAKER_PROJECTS: path.join(root, "projects"), DOCMAKER_OFFLINE: "1", DOCMAKER_REPO_ROOT: REPO_ROOT, DOCMAKER_LOG_LEVEL: "error" };
   for (const k of Object.values(ENV_KEYS)) delete env[k];
   delete env.DOCMAKER_AUTO_APPROVE_USD;
+  shareTestCaches(env.DOCMAKER_HOME!);
+  // rmSync removes the links, never the shared directories they point to
   return { root, env, cleanup: () => rmSync(root, { recursive: true, force: true }) };
 }
 

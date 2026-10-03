@@ -8,6 +8,7 @@ import type { Approval, FactCheck, GateId, JobEvent, JobRecord, JobRequest } fro
 import type { EngineExt } from "@docmaker/engine";
 import { runCli } from "../src/main";
 import type { EngineFactory, Io } from "../src/context";
+import { shareTestCaches } from "../../../packages/engine/test/shared-home";
 
 function memIo(tty = false): Io & { stdout: string; stderr: string; answers: string[] } {
   const io = {
@@ -307,7 +308,7 @@ describe("factcheck on a real engine (gate-test)", () => {
     const core = await import("@docmaker/core");
     const fakes = await import("../../../packages/engine/test/fakes/index");
     const repo = path.resolve(__dirname, "..", "..", "..");
-    const env = { ...process.env, DOCMAKER_HOME: path.join(root, "home"), DOCMAKER_PROJECTS: path.join(root, "projects"), DOCMAKER_OFFLINE: "1", DOCMAKER_REPO_ROOT: repo, DOCMAKER_LOG_LEVEL: "error" };
+    const env = { ...process.env, DOCMAKER_HOME: shareTestCaches(path.join(root, "home")), DOCMAKER_PROJECTS: path.join(root, "projects"), DOCMAKER_OFFLINE: "1", DOCMAKER_REPO_ROOT: repo, DOCMAKER_LOG_LEVEL: "error" };
     const factory: EngineFactory = async ({ env: e, logger }) => createEngineImpl({ cwd: repo, env: e, logger, deps: REAL_DEPS, renderClient: new fakes.FakeRenderClient(loadRuntime({ cwd: repo, env: e }).config) });
     const e = await factory({ env, cwd: repo, logger: silent });
     try {
@@ -434,7 +435,7 @@ describe("demo on the walking-skeleton fakes", () => {
       const { loadRuntime } = await import("@docmaker/core/node");
       const fakes = await import("../../../packages/engine/test/fakes/index");
       const repo = path.resolve(__dirname, "..", "..", "..");
-      const env = { ...process.env, DOCMAKER_HOME: path.join(root, "home"), DOCMAKER_PROJECTS: path.join(root, "projects"), DOCMAKER_OFFLINE: "1", DOCMAKER_REPO_ROOT: repo, DOCMAKER_LOG_LEVEL: "error" };
+      const env = { ...process.env, DOCMAKER_HOME: shareTestCaches(path.join(root, "home")), DOCMAKER_PROJECTS: path.join(root, "projects"), DOCMAKER_OFFLINE: "1", DOCMAKER_REPO_ROOT: repo, DOCMAKER_LOG_LEVEL: "error" };
       const factory: EngineFactory = async ({ env: e, logger }) => createEngineImpl({ cwd: repo, env: e, logger, deps: REAL_DEPS, renderClient: new fakes.FakeRenderClient(loadRuntime({ cwd: repo, env: e }).config) });
       const io = memIo(false);
       const code = await runCli(argv("demo", "--only-chapters", "CH1", "--slug", "cli-demo", "--tts", "synthetic"), { io, factory, baseEnv: env, cwd: repo });
