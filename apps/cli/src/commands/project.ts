@@ -9,7 +9,7 @@ import {
   type Project, type StageId, type UploadDeclaration,
 } from "@docmaker/core";
 import { NOTE_MIN, ackCoverage, changedSinceAck, gatingItems, fixOnly } from "@docmaker/engine";
-import { UsageError, splitList, type CliContext } from "../context";
+import { UsageError, parseMaxCost, splitList, type CliContext } from "../context";
 import { EXIT, runJob } from "../jobrun";
 import { parseChapters, parseLangs, parsePreset, parseStage } from "./core";
 
@@ -254,7 +254,19 @@ export function registerProject(program: Command, ctx: CliContext): void {
         const lang = parseLangs(str(o.lang), false)[0];
         if (!lang) throw new UsageError("--transcreate needs --lang <secondary language>");
         const engine = await ctx.engine();
+        const g = ctx.globals();
+        const maxCost = parseMaxCost(g.maxCost);
         for (const id of splitList(str(o.transcreate)).map((x) => x.toUpperCase())) {
+          // cost gate per segment (§6.2 6t): --yes / --max-cost approve it, like a job's cost gate
+          const est = await engine.estimateTranscreate(slug, lang, id);
+          if (est.totalUsd > 0) ctx.io.out(`[$$] transcreate ${id} (${lang}): $${est.totalUsd.toFixed(3)}\n`);
+          if (!est.approved) {
+            if (!(g.yes === true || (maxCost !== null && est.totalUsd <= maxCost + 1e-9))) {
+              ctx.io.err(`\nwaiting for approval (exit 3):\n  cost: docmaker approve ${slug} cost --stage script --lang ${lang} --plan ${est.planHash}\n  or re-run with --yes / --max-cost <usd>${maxCost !== null ? ` (the estimate is above --max-cost $${maxCost.toFixed(2)})` : ""}\n`);
+              return void (process.exitCode = EXIT.gate);
+            }
+            await engine.approve(slug, "cost", { stage: "script", lang, planHash: est.planHash, by: "flag", note: g.yes ? "--yes" : `--max-cost ${maxCost}`, items: [est.planHash], itemNotes: {} });
+          }
           const r = await engine.transcreate(slug, lang, id);
           ctx.io.out(`${id}: ${r.displayText}\n`);
           for (const i of r.issues.filter((x) => x.where.startsWith(id))) ctx.io.out(`  ${i.level} ${i.rule}: ${i.msg}\n`);

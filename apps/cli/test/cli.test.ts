@@ -191,6 +191,37 @@ describe("research", () => {
   });
 });
 
+describe("script --transcreate", () => {
+  const tcEngine = () => {
+    const calls: string[] = [];
+    const extra = {
+      async estimateTranscreate() {
+        return { planHash: "b".repeat(64), totalUsd: 0.02, lines: [], approved: false };
+      },
+      async transcreate(_slug: string, _lang: string, id: string) {
+        calls.push(id);
+        return { displayText: "Texte.", issues: [] };
+      },
+    } as unknown as Partial<EngineExt>;
+    return { m: mockEngine([{ status: "succeeded", events: [] }], extra), calls };
+  };
+
+  it("is cost-gated per segment: exit 3 without approval; --yes / a fitting --max-cost approve it", async () => {
+    const a = tcEngine();
+    const io = memIo();
+    expect(await runCli(argv("script", "p", "--lang", "fr", "--transcreate", "ch1-s02"), { io, factory: a.m.factory })).toBe(3);
+    expect(io.stderr).toContain(`docmaker approve p cost --stage script --lang fr --plan ${"b".repeat(64)}`);
+    expect(a.calls).toEqual([]);
+    const capped = tcEngine();
+    expect(await runCli(argv("script", "p", "--lang", "fr", "--transcreate", "CH1-S02", "--max-cost", "0.01"), { io: memIo(), factory: capped.m.factory })).toBe(3);
+    expect(capped.calls).toEqual([]);
+    const y = tcEngine();
+    expect(await runCli(argv("script", "p", "--lang", "fr", "--transcreate", "CH1-S02", "--yes"), { io: memIo(), factory: y.m.factory })).toBe(0);
+    expect(y.m.approvals).toEqual([{ slug: "p", gate: "cost", a: expect.objectContaining({ by: "flag", stage: "script", lang: "fr", planHash: "b".repeat(64) }) }]);
+    expect(y.calls).toEqual(["CH1-S02"]);
+  });
+});
+
 describe("factcheck acknowledgements", () => {
   const fc: FactCheck = {
     schemaVersion: 1, lang: "en", scriptHash: "a".repeat(64), slicesHash: "b".repeat(64), publishHash: "c".repeat(64), needsMoreResearch: [], titleThumbnailIssues: [], createdAt: NOW,

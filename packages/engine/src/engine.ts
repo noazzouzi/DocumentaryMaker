@@ -506,14 +506,11 @@ class EngineImpl implements Engine {
   }
 
   // ---------------------------------------------------------------- additive helpers (CLI / web)
-  /**
-   * "Out of sync" secondary segment (§5.3): re-transcreate it from the current primary segment (cheap LLM call, receipt
-   * recorded), set primaryHash, rebuild ttsText, save as a user edit. Returns the new text and the lint/fact-check issues.
-   */
-  async transcreate(slug: string, lang: Lang, segmentId: string): Promise<{ displayText: string; issues: LintIssue[] }> {
+  private async transcreateInputs(slug: string, lang: Lang, segmentId: string) {
     const store = await this.open(slug);
     const project = await readProject(store);
     if (lang === project.primaryLang) throw new DocmakerError("VALIDATION", `${lang} is the primary language`);
+    if (!project.languages.includes(lang)) throw new DocmakerError("VALIDATION", `${lang} is not a language of ${slug}`);
     const primary = await docs.script(store, project.primaryLang);
     const cur = await this.readDoc(slug, P.script(lang), ScriptSchema).catch(() => null);
     const facts = await docs.factsheet(store);
@@ -521,9 +518,52 @@ class EngineImpl implements Engine {
     const pSeg = primary.chapters.flatMap((c) => c.segments).find((s) => s.id === segmentId);
     const cSeg = cur.value.chapters.flatMap((c) => c.segments).find((s) => s.id === segmentId);
     if (!pSeg || !cSeg) throw new DocmakerError("VALIDATION", `segment ${segmentId} is not in both scripts`);
+    return { store, project, cur, facts, pSeg, cSeg };
+  }
+
+  /**
+   * Cost estimate of one segment transcreation (§6.2 6t: cost-gated per segment). The plan hash binds the approval to
+   * this segment's current primary and secondary texts.
+   */
+  async estimateTranscreate(slug: string, lang: Lang, segmentId: string): Promise<{ planHash: string; totalUsd: number; lines: CostEstimate["lines"]; approved: boolean }> {
+    const { store, project, facts, pSeg, cSeg } = await this.transcreateInputs(slug, lang, segmentId);
+    const lines = project.llm.provider === "fixture" ? [] : this.rt.deps.llm.estimateStepCost("transcreate", {
+      // the system prompt carries the style pack and the whole fact sheet; output: display text + subtitle translation
+      inputChars: 8_000 + canonicalJson(facts).length + 2 * (pSeg.displayText.length + cSeg.displayText.length + pSeg.subtitleTranslation.length),
+      outputChars: Math.max(600, 3 * (pSeg.displayText.length + pSeg.subtitleTranslation.length)), cachedChars: 0, lang,
+    });
+    const totalUsd = Math.round(lines.reduce((a, l) => a + l.totalUsd, 0) * 1e6) / 1e6;
+    const planHash = hashJson({ op: "transcreate", lang, segmentId, primary: pSeg.displayText, current: cSeg.displayText, lines, totalUsd });
+    const approvals = (await docs.approvals(store)).approvals;
+    const approved = totalUsd === 0 || totalUsd <= project.budget.autoApproveUnderUsd || approvals.some((a) => a.gate === "cost" && (a.planHash === planHash || a.items.includes(planHash)));
+    return { planHash, totalUsd, lines, approved };
+  }
+
+  /**
+   * "Out of sync" secondary segment (§5.3): re-transcreate it from the current primary segment (cheap LLM call behind the
+   * cost gate, receipt recorded), set primaryHash, rebuild ttsText, save as a user edit. Returns the new text and the
+   * lint/fact-check issues. Throws GATE_REQUIRED (details {gate:"cost", planHash, totalUsd}) until the estimate is
+   * approved (`approve cost --plan <planHash>`) unless it is under the project's auto-approve threshold.
+   */
+  async transcreate(slug: string, lang: Lang, segmentId: string): Promise<{ displayText: string; issues: LintIssue[] }> {
+    const est = await this.estimateTranscreate(slug, lang, segmentId);
+    const { store, project, cur, facts, pSeg, cSeg } = await this.transcreateInputs(slug, lang, segmentId);
+    if (!est.approved) {
+      throw new DocmakerError("GATE_REQUIRED", `transcreating ${segmentId} (${lang}) is estimated at $${est.totalUsd.toFixed(3)}: it needs a cost approval`, {
+        hint: `docmaker approve ${slug} cost --stage script --lang ${lang} --plan ${est.planHash}   (or --yes / --max-cost)`,
+        details: { gate: "cost", stage: "script", lang, planHash: est.planHash, totalUsd: est.totalUsd },
+      });
+    }
+    if (est.totalUsd > 0 && !(await docs.approvals(store)).approvals.some((a) => a.gate === "cost" && a.planHash === est.planHash)) {
+      await persistApproval(this.rt, store, "cost", {
+        stage: "script", lang, planHash: est.planHash, by: "auto-threshold", items: [est.planHash], itemNotes: {},
+        note: `transcreate ${segmentId}: estimate $${est.totalUsd.toFixed(3)} ≤ auto-approve threshold $${project.budget.autoApproveUnderUsd.toFixed(2)}`,
+      }, { fixtureAllowed: false, stage: "script" });
+    }
     this.rt.refresh();
     const style = await this.getStyle(project.styleId ?? "drama-commentary");
     const costs = await ProjectCosts.open(store, project, null, () => {});
+    costs.setApproved("script", lang, est.totalUsd); // overrun rule (§5.4) against this estimate
     const r = await this.rt.deps.llm.transcreateSegment(
       { llm: this.rt.llmFor(project), signal: new AbortController().signal, costs, logger: this.rt.logger, progress: () => {}, newRequest: false },
       { primary: pSeg, current: cSeg, lang, style, factSheet: facts },
@@ -760,6 +800,7 @@ export type SetupComponent = "sfx" | "tts" | "python" | "yt-dlp" | "whisper" | "
 export type EngineExt = Engine & {
   researchResume(slug: string): Promise<ResearchResumeInfo>;
   transcreate(slug: string, lang: Lang, segmentId: string): Promise<{ displayText: string; issues: LintIssue[] }>;
+  estimateTranscreate(slug: string, lang: Lang, segmentId: string): Promise<{ planHash: string; totalUsd: number; lines: CostEstimate["lines"]; approved: boolean }>;
   listVoices(provider: VoiceProviderId, lang: Lang | null): Promise<VoiceInfo[]>;
   listTakes(slug: string, lang: Lang): Promise<VoiceTrack[]>;
   secretStatus(): Promise<{ name: keyof typeof ENV_KEYS; env: string; set: boolean; masked: string }[]>;

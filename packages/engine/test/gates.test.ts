@@ -111,7 +111,7 @@ describe("editorial gates on gate-test", () => {
     expect((await renderGate()).blockedBy).not.toBe("factcheck-ack");
     // (users cannot edit verdicts; a fact-check re-run whose carry-over kept the acknowledgement is simulated here)
     const fcDoc2 = await e.readDoc(slug, P.factcheck("en"), FactCheck);
-    const otherVerdict = target.verdict === "contradicted" ? "unsupported" : "contradicted";
+    const otherVerdict: typeof target.verdict = target.verdict === "contradicted" ? "unsupported" : "contradicted";
     await store.writeJson(P.factcheck("en"), FactCheck, { ...fcDoc2.value, items: fcDoc2.value.items.map((i) => (i.id === target.id ? { ...i, verdict: otherVerdict } : i)) }, { writer: "stage", stage: "factcheck" });
     expect(await renderGate()).toMatchObject({ blockedBy: "factcheck-ack", blockedReason: "stale" });
     // a new review (existing notes kept) clears it
