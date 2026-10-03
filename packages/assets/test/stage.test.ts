@@ -4,8 +4,8 @@ import { writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CandidatesDoc, FrozenDoc, Ledger, P, PicksDoc } from "@docmaker/core";
-import type { AssetPick, Project, UserPicksDoc } from "@docmaker/core";
-import { makeBeats, makeFactSheet, makeProject, makeScript, TEST_STYLE } from "@docmaker/core/testing";
+import type { AssetPick, FrozenAsset, Project, UserPicksDoc } from "@docmaker/core";
+import { makeBeats, makeFactSheet, makeFrozen, makeProject, makeScript, TEST_STYLE } from "@docmaker/core/testing";
 import { buildCredits, resolveAssets, type AssetsStageInput, type AssetsStageOutput } from "../src/index";
 import { cleanup, makeCtx, tmpDir } from "./helpers";
 
@@ -116,6 +116,17 @@ describe("resolveAssets (offline)", () => {
     expect(slot0.assetId).toBe(otherAsset);
     expect(out.picks.orphans).toEqual([stale, unknownAsset]);
     expect(existsSync(path.join(projectDir, P.userPicks))).toBe(false);
+  }, 120_000);
+
+  it("user portraits go through validatePick as identity slots: an AI image never becomes a real person's portrait", async () => {
+    const [aiBase, okBase] = Object.values(makeFrozen({ images: 2, videos: 0 }));
+    const ai: FrozenAsset = { ...aiBase!, role: "user", declaration: { kind: "ai-generated", license: null, author: "me", url: "", note: "" } };
+    const own: FrozenAsset = { ...okBase!, role: "user", declaration: { kind: "own-work", license: null, author: "me", url: "", note: "" } };
+    const prevFrozen = { ...first.frozen, assets: { ...first.frozen.assets, [ai.id]: ai, [own.id]: own } };
+    const userPicks: UserPicksDoc = { schemaVersion: 1, picks: [], portraits: [{ personId: "P1", assetId: ai.id }, { personId: "P2", assetId: own.id }], clips: [] };
+    const out = await resolveAssets(input({ userPicks, previous: { picks: first.picks, frozen: prevFrozen, ledger: first.ledger } }), ctx);
+    expect(out.picks.portraits.find((p) => p.personId === "P1")?.assetId).not.toBe(ai.id);
+    expect(out.picks.portraits).toContainEqual({ personId: "P2", assetId: own.id });
   }, 120_000);
 
   it("builds credits joined with usage", () => {

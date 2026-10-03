@@ -51,6 +51,8 @@ const script = makeScript({ chapters: 1, segmentsPerChapter: 2 });
 const base = makeBeats(script).plans;
 const facts: FactSheet = makeFactSheet();
 facts.people[1] = { ...facts.people[1]!, isMinorOrPrivateVictim: true, publicFigure: false }; // P2 "Adriaen Pauw"
+// The recorded provider responses show Johnny Depp: an alias lets the portrait rule find an image that names P1.
+facts.people[0] = { ...facts.people[0]!, aliases: [...facts.people[0]!.aliases, "Johnny Depp"] };
 const edit = (id: string, o: Partial<BeatPlan>) => {
   const p = base.plans.find((x) => x.id === id)!;
   Object.assign(p, o);
@@ -99,6 +101,14 @@ describe("resolveAssets (online, fake network)", () => {
     const leaked = net.calls.filter((c) => /adriaen|pauw/i.test(decodeURIComponent(c.url.replace(/\+/g, " "))));
     expect(leaked).toEqual([]);
     expect(out.picks.portraits.map((p) => p.personId)).toEqual(["P1"]);
+  });
+
+  it("a portrait is only taken from a pick whose metadata names the person (never the first image of the beat)", () => {
+    const b1 = out.picks.picks.filter((p) => p.beatId === "CH1-B001");
+    const first = out.frozen.assets[b1[0]!.assetId]!.candidate!;
+    expect(first.title).not.toMatch(/johnny depp/i); // slot 0 does not show the person …
+    const portrait = out.frozen.assets[out.picks.portraits[0]!.assetId]!.candidate!;
+    expect(portrait.title).toMatch(/johnny depp/i); // … so the portrait is the first pick that names them
   });
 
   it("vision rerank gets ≤ 8 JPEG thumbnails and its scores decide the pick", () => {

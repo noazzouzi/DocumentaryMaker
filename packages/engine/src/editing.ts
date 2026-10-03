@@ -206,6 +206,25 @@ export async function writeUserDoc<S extends z.ZodType>(
         issues.push(...r.filter((x) => x.level !== "error"));
         denied.push(...r.filter((x) => x.level === "error"));
       }
+      // Portraits are identity slots (quote/social cards show them next to the person's name): AI imagery, minors and
+      // non-public persons are refused whatever beat the card sits on (§7.4).
+      const prevPortraits = new Set((prev?.portraits ?? []).map((p) => JSON.stringify(p)));
+      for (const pt of next.portraits) {
+        if (prevPortraits.has(JSON.stringify(pt))) continue;
+        const asset = frozen[pt.assetId];
+        if (!asset) {
+          denied.push({ level: "error", rule: "REF_PICK", where: `portrait:${pt.personId}`, msg: `asset ${pt.assetId.slice(0, 12)} is not frozen in this project` });
+          continue;
+        }
+        if (!facts) continue;
+        const pick = {
+          beatId: `portrait:${pt.personId}`, slot: 0, assetId: pt.assetId, role: "primary" as const, focal: { x: 0.5, y: 0.45 }, crop: null, sourceInMs: null, sourceOutMs: null,
+          score: { metadata: 0, clip: null, vision: null, technical: null, watermark: null, nsfw: null, total: 0, focal: null, safeCrop: null, notes: "" }, pickedBy: "user" as const, planKey: "0000000000000000",
+        };
+        const r = rt.deps.assets.validatePick({ pick, plan: null, asset, policy: project.assets.licensePolicy, editorial: project.editorial, facts, personAcks: acks, portraitOf: pt.personId });
+        issues.push(...r.filter((x) => x.level !== "error"));
+        denied.push(...r.filter((x) => x.level === "error"));
+      }
       if (denied.length) throw new DocmakerError("POLICY_DENIED", `${denied.length} pick(s) refused: ${denied.map((d) => `${d.where} ${d.msg}`).join("; ")}`, { details: denied });
       break;
     }

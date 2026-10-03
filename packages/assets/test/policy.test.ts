@@ -3,7 +3,7 @@ import { LicensePolicy } from "@docmaker/core";
 import type { AssetPick, BeatPlan, FrozenAsset, LicenseCode, Project } from "@docmaker/core";
 import { makeBeats, makeFactSheet, makeFrozen, makeScript } from "@docmaker/core/testing";
 import {
-  buildAiDenylist, checkFalPrompt, declarationLicense, falAllowedForBeat, falPrompt, licenseInfo, LicensePolicyEngine, parseCcLicense, validatePick,
+  buildAiDenylist, candidateNamesPerson, checkFalPrompt, declarationLicense, falAllowedForBeat, falPrompt, licenseInfo, LicensePolicyEngine, parseCcLicense, validatePick,
 } from "../src/index";
 
 const POLICY = LicensePolicy.parse({});
@@ -190,6 +190,44 @@ describe("validatePick", () => {
     const { facts, base, asset } = fixture();
     const a = withCandidate(asset, "CC-BY-NC");
     expect(errors(validatePick({ pick: pickOf(base, a), plan: null, asset: a, policy: POLICY, editorial: EDITORIAL, facts, personAcks: [] })).length).toBe(1);
+  });
+});
+
+describe("validatePick: portraits are identity slots (§7.4)", () => {
+  it("an AI image used as a person's portrait is refused even on a beat without personIds (quote/tweet cards)", () => {
+    const { facts, base, asset } = fixture();
+    const quoteBeat = { ...base, personIds: [], motionTemplate: "quote_card" as const };
+    const ai: FrozenAsset = { ...asset, role: "user", declaration: { kind: "ai-generated", license: null, author: "me", url: "", note: "" } };
+    const policy = { ...POLICY, allowAiGenerated: true };
+    // The reported gap: no error without the portrait context …
+    expect(errors(validatePick({ pick: pickOf(quoteBeat, ai), plan: quoteBeat, asset: ai, policy, editorial: EDITORIAL, facts, personAcks: [] }))).toEqual([]);
+    // … and an error once the asset is known to be P1's portrait, with or without a beat.
+    const onBeat = errors(validatePick({ pick: pickOf(quoteBeat, ai), plan: quoteBeat, asset: ai, policy, editorial: EDITORIAL, facts, personAcks: [], portraitOf: "P1" }));
+    expect(onBeat.some((x) => /portrait of P1/.test(x.msg))).toBe(true);
+    const noBeat = errors(validatePick({ pick: pickOf(base, ai), plan: null, asset: ai, policy, editorial: EDITORIAL, facts, personAcks: [], portraitOf: "P1" }));
+    expect(noBeat.some((x) => /portrait of P1/.test(x.msg))).toBe(true);
+  });
+  it("portraits of minors / non-public persons are refused; a licensed photo of a public figure passes", () => {
+    const { facts, base, asset } = fixture();
+    const a = withCandidate(asset, "CC-BY", { title: "photo" });
+    const run = (pid: string, acks: string[] = []) => errors(validatePick({ pick: pickOf(base, a), plan: null, asset: a, policy: POLICY, editorial: EDITORIAL, facts, personAcks: acks, portraitOf: pid }));
+    expect(run("P1")).toEqual([]);
+    expect(run("P2", ["P2"])[0]!.msg).toMatch(/minor or private/);
+    expect(run("P3")[0]!.msg).toMatch(/person-ack/);
+    expect(run("P3", ["P3"])).toEqual([]);
+  });
+});
+
+describe("identity evidence for portraits", () => {
+  const mackay = { name: "Charles Mackay", aliases: ["Mackay"] };
+  it("needs the full name (or a multi-word alias), never a lone surname token", () => {
+    expect(candidateNamesPerson({ title: "Charles Mackay (8738982379)", tags: [], description: "" }, mackay)).toBe(true);
+    expect(candidateNamesPerson({ title: "Portrait", tags: [], description: "Engraving of Mackay, Charles, Scottish poet" }, mackay)).toBe(true);
+    expect(candidateNamesPerson({ title: "Mackay Island Wildlife Refuge 11 LR", tags: ["mackay"], description: "" }, mackay)).toBe(false);
+    expect(candidateNamesPerson({ title: "Contract for Chinese indentured labour circa 1903", tags: [], description: "" }, { name: "Anne Goldgar", aliases: [] })).toBe(false);
+    expect(candidateNamesPerson({ title: "Charles de l'Écluse", tags: [], description: "" }, { name: "Carolus Clusius", aliases: ["Charles de l'Écluse", "Clusius"] })).toBe(true);
+    expect(candidateNamesPerson({ title: "Clusius statue", tags: [], description: "" }, { name: "Carolus Clusius", aliases: ["Clusius"] })).toBe(false);
+    expect(candidateNamesPerson({ title: "Bust of Voltaire", tags: [], description: "" }, { name: "Voltaire", aliases: [] })).toBe(true);
   });
 });
 

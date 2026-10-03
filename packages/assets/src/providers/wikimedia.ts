@@ -108,7 +108,9 @@ export const wikimediaProvider: AssetProvider = {
   isConfigured: () => true,
   async search(q, ctx) {
     if (q.kind !== "image") return [];
-    const results = parseCommons(await ctx.http.getJson<unknown>(commonsUrl(q), { signal: ctx.signal, cacheTtlSec: 3600 }));
+    const parsed = parseCommons(await ctx.http.getJson<unknown>(commonsUrl(q), { signal: ctx.signal, cacheTtlSec: 3600 }));
+    // Results of a structured "depicts" query carry the QID (identity evidence for portraits).
+    const results = q.entityQid ? parsed.map((r) => ({ ...r, raw: { ...(r.raw as object), p180: q.entityQid } })) : parsed;
     // Identity queries also try the plain name when structured data returns nothing.
     if (results.length === 0 && q.entityQid && q.text) {
       return parseCommons(await ctx.http.getJson<unknown>(commonsUrl({ ...q, entityQid: null }), { signal: ctx.signal, cacheTtlSec: 3600 }));

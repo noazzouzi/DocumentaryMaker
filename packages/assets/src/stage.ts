@@ -10,6 +10,7 @@ import type {
 } from "@docmaker/core";
 import { buildAiDenylist, checkFalPrompt, falAllowedForBeat } from "./denylist";
 import { loadClip } from "./clipsim";
+import { candidateNamesPerson } from "./identity";
 import { buildLedger } from "./ledger";
 import { LicensePolicyEngine } from "./license";
 import { materializeCandidate } from "./materialize";
@@ -86,8 +87,9 @@ export function activeProviders(project: Project, ctx: Pick<AssetsCtx, "config" 
   return out;
 }
 
+const ZERO_SCORE: CandidateScore = { metadata: 0, clip: null, vision: null, technical: null, watermark: null, nsfw: null, total: 0, focal: null, safeCrop: null, notes: "" };
 function scoreOf(rec: CandidateRecord): CandidateScore {
-  return rec.score ?? { metadata: 0, clip: null, vision: null, technical: null, watermark: null, nsfw: null, total: 0, focal: null, safeCrop: null, notes: "" };
+  return rec.score ?? { ...ZERO_SCORE };
 }
 
 function pickFor(plan: BeatPlan, slot: number, asset: FrozenAsset, score: CandidateScore): AssetPick {
@@ -179,6 +181,12 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
   };
 
   const roleByKey = new Map<string, AssetQuery["role"]>();
+  /** candidate key → Wikidata QID it was found by (Commons structured data P180 = depicts). */
+  const depictsByKey = new Map<string, string>();
+  const noteDepicts = (rec: { candidate: CandidateRecord["candidate"]; raw: unknown }) => {
+    const qid = (rec.raw as { p180?: unknown } | null)?.p180;
+    if (typeof qid === "string") depictsByKey.set(keyOf(rec.candidate), qid);
+  };
   const search = async (plan: BeatPlan, queries: AssetQuery[]): Promise<CandidateRecord[]> => {
     const records: CandidateRecord[] = [];
     for (const q of queries) {
@@ -192,6 +200,7 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
           const res: SearchResult[] = await gate.run(id, p.limits.concurrency, () => p.search(q, pctx));
           for (const r of res) {
             records.push({ candidate: r.candidate, score: null, raw: r.raw });
+            noteDepicts(r);
             if (!roleByKey.has(keyOf(r.candidate))) roleByKey.set(keyOf(r.candidate), q.role);
           }
         } catch (e) {
@@ -295,6 +304,7 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
           }
           recent.push(prevBeat.map((p) => { const c = prevFrozen[p.assetId]!.candidate; return c ? keyOf(c) : p.assetId; }));
           const prevDoc = await readJson(path.join(i.projectDir, P.candidates(plan.id)), CandidatesDoc);
+          for (const r of prevDoc?.records ?? []) noteDepicts(r);
           candidatesDocs.push(prevDoc ?? { schemaVersion: 1, beatId: plan.id, queries, records: [] });
           continue;
         }
@@ -413,25 +423,39 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
   }
   picks.sort((a, b) => (planById.get(a.beatId)?.order ?? 0) - (planById.get(b.beatId)?.order ?? 0) || a.slot - b.slot);
 
-  // ---- portraits: user choices (validated) + the first identity pick per public/acknowledged person
+  // ---- portraits: user choices (validated as identity slots) + the first identity pick per public/acknowledged person that
+  // demonstrably shows that person (full name in its metadata, or found through Commons "depicts" = the person's QID)
   const portraits: PicksDocT["portraits"] = [];
   const personOk = (pid: string) => {
     const p = facts.people.find((x) => x.id === pid);
     return p !== undefined && !p.isMinorOrPrivateVictim && (p.publicFigure || i.personAcks.includes(pid));
   };
+  const portraitIssues = (personId: string, a: FrozenAsset) => validatePick({
+    pick: { beatId: `portrait:${personId}`, slot: 0, assetId: a.id, role: "primary", focal: DEFAULT_FOCAL, crop: null, sourceInMs: null, sourceOutMs: null, score: ZERO_SCORE, pickedBy: "user", planKey: "0000000000000000" },
+    plan: null, asset: a, policy: project.assets.licensePolicy, editorial: project.editorial, facts, personAcks: i.personAcks, portraitOf: personId,
+  }).filter((x) => x.level === "error");
   for (const up of i.userPicks.portraits) {
     const a = frozen.get(up.assetId) ?? userFrozen[up.assetId] ?? prevFrozen[up.assetId];
     if (!personOk(up.personId) || !a || a.kind !== "image") continue;
+    const issues = portraitIssues(up.personId, a);
+    if (issues.length > 0) {
+      log.warn("user portrait refused by validatePick", { personId: up.personId, issues: issues.map((x) => x.msg) });
+      continue;
+    }
     portraits.push(up);
     frozen.set(a.id, a);
   }
+  const qidOf = (pid: string) => i.entities.entities.find((e) => e.personId === pid)?.qid ?? facts.people.find((p) => p.id === pid)?.wikidataQid ?? null;
   for (const person of facts.people) {
     if (portraits.some((p) => p.personId === person.id) || !personOk(person.id)) continue;
+    const qid = qidOf(person.id);
     const pk = picks.find((p) => {
       const pl = planById.get(p.beatId);
       const a = frozen.get(p.assetId);
-      return pl && a && a.kind === "image" && pl.visualKind === "archival_photo" && pl.personIds.length === 1 && pl.personIds[0] === person.id
-        && a.candidate !== null && a.candidate.provider !== "procedural";
+      if (!pl || !a || a.kind !== "image" || pl.visualKind !== "archival_photo" || pl.personIds.length !== 1 || pl.personIds[0] !== person.id) return false;
+      if (a.candidate === null || a.candidate.provider === "procedural") return false;
+      const shows = candidateNamesPerson(a.candidate, person) || (qid !== null && depictsByKey.get(keyOf(a.candidate)) === qid);
+      return shows && portraitIssues(person.id, a).length === 0;
     });
     if (pk) portraits.push({ personId: person.id, assetId: pk.assetId });
   }

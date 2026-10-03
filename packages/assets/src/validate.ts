@@ -45,8 +45,17 @@ function isPortraitSlot(asset: FrozenAsset, plan: BeatPlan | null): boolean {
 export function validatePick(i: {
   pick: AssetPick; plan: BeatPlan | null; asset: FrozenAsset; policy: LicensePolicy; editorial: Project["editorial"];
   facts: FactSheet; personAcks: readonly string[];
+  /** The asset is shown as this person's portrait/avatar (quote and social cards, picks.portraits): an identity slot for that
+   *  person whatever the beat's personIds say — AI imagery and minors/non-public persons are refused there (§7.4). */
+  portraitOf?: string | null;
 }): LintIssue[] {
-  const { pick, plan, asset } = i;
+  const { pick, asset } = i;
+  const portraitOf = i.portraitOf ?? null;
+  // A portrait use adds its person to the beat (or stands in for a beat when there is none).
+  const plan: BeatPlan | null = portraitOf === null ? i.plan
+    : i.plan ? (i.plan.personIds.includes(portraitOf) ? i.plan : { ...i.plan, personIds: [...i.plan.personIds, portraitOf] })
+      : null;
+  const people = plan ? plan.personIds : portraitOf !== null ? [portraitOf] : [];
   const where = `${pick.beatId}#${pick.slot}`;
   const out: LintIssue[] = [];
   const err = (msg: string) => out.push({ level: "error", rule: "POLICY_DENIED", where, msg });
@@ -58,27 +67,30 @@ export function validatePick(i: {
   const license = licenseOfAsset(asset);
   const cueTypes = plan ? plan.cueTags.map((t) => t.type) : [];
   const engine = new LicensePolicyEngine(i.policy, { monetized: i.editorial.monetized, fairUseAcknowledged: i.editorial.fairUseAcknowledged });
-  const verdict = engine.evaluate(license, plan ? { personIds: plan.personIds, cueTypes } : null);
+  const verdict = engine.evaluate(license, plan || portraitOf !== null ? { personIds: people, cueTypes } : null);
   if (!verdict.allowed) err(`licence ${license.code} denied: ${verdict.reasons.join("; ")}`);
 
-  // AI-generated imagery never on people beats nor on PERSON_INTRO / SENSITIVE beats.
-  if (license.code === "AI-GENERATED" && plan) {
-    if (plan.personIds.length > 0 && verdict.allowed) err("AI-generated image on a beat about real people");
+  // AI-generated imagery never on people beats, never as a real person's portrait, nor on PERSON_INTRO / SENSITIVE beats.
+  if (license.code === "AI-GENERATED") {
+    if (portraitOf !== null) err(`AI-generated image used as the portrait of ${portraitOf}`);
+    else if (people.length > 0 && verdict.allowed) err("AI-generated image on a beat about real people");
     const bad = cueTypes.filter((c) => c === "PERSON_INTRO" || c === "SENSITIVE");
     if (bad.length > 0) err(`AI-generated image on a ${bad.join("/")} beat`);
   }
 
   // Stock look-alikes never stand in for real people or appear in a negative context.
-  if (peopleRuleBlocks(license, asset.candidate, plan)) {
-    err(`stock look-alike (${license.code}) with people on a ${plan!.personIds.length > 0 ? "person" : "SHOCK/SENSITIVE/REVEAL"} beat`);
+  const peoplePlan = plan ?? (portraitOf !== null ? { personIds: people, cueTags: [] } : null);
+  if (peopleRuleBlocks(license, asset.candidate, peoplePlan)) {
+    err(`stock look-alike (${license.code}) with people on a ${people.length > 0 ? "person" : "SHOCK/SENSITIVE/REVEAL"} beat`);
   }
 
   // Minors / private victims and non-public persons.
-  if (plan && plan.personIds.length > 0 && !isPipelineGenerated(asset)) {
-    const people = new Map<string, Person>(i.facts.people.map((p) => [p.id, p]));
-    const portrait = isPortraitSlot(asset, plan);
-    for (const pid of plan.personIds) {
-      const person = people.get(pid);
+  if (people.length > 0 && !isPipelineGenerated(asset)) {
+    const byId = new Map<string, Person>(i.facts.people.map((p) => [p.id, p]));
+    const slot = isPortraitSlot(asset, plan);
+    for (const pid of people) {
+      const portrait = slot || pid === portraitOf;
+      const person = byId.get(pid);
       if (!person) {
         warn("UNKNOWN_PERSON", `beat references unknown person ${pid}`);
         continue;

@@ -88,7 +88,9 @@ export const directStage: StageDef = {
         beatId: beatId ?? plans[0]?.id ?? "CH1-B001", slot: 0, assetId, role: "primary", focal: { x: 0.5, y: 0.45 }, crop: null, sourceInMs: null, sourceOutMs: null,
         score: ZERO_SCORE, pickedBy: "user", planKey: plan?.planKey ?? "0000000000000000",
       };
-      return e.rt.deps.assets.validatePick({ pick, plan, asset, policy: p.assets.licensePolicy, editorial: p.editorial, facts, personAcks });
+      // An asset that is someone's portrait (quote/social cards, avatars) is checked as an identity slot for that person.
+      const portraitOf = picks.portraits.find((x) => x.assetId === assetId)?.personId ?? null;
+      return e.rt.deps.assets.validatePick({ pick, plan, asset, policy: p.assets.licensePolicy, editorial: p.editorial, facts, personAcks, portraitOf });
     };
     const tokens = buildRenderTokens(ctx.style, p, e.rt.deps.styles.styleFontAssets(ctx.style).map((f) => ({ family: f.family, weight: f.weight, style: f.style, url: f.relPath })));
     const out = e.rt.deps.director.direct({
