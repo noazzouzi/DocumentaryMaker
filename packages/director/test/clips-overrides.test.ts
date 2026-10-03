@@ -142,6 +142,40 @@ describe("applyOverrides", () => {
     expect(out.lint.some((l) => l.rule === "OVERRIDE_REJECTED" && l.where === "bad")).toBe(true);
   });
 
+  it("a replaceSource onto an AI asset gets an illustration label; replacing an AI picture drops the stale label (AI_DISCLOSURE)", () => {
+    const decl = { kind: "ai-generated" as const, license: null, author: "", url: "", note: "" };
+    const illus = (t: Timeline) => t.overlays.filter((o) => o.component === "SourceLabel" && (o.props as { kind: string }).kind === "illustration");
+    const over = (t: Timeline, c: { from: number; dur: number }) => illus(t).filter((o) => o.from < c.from + c.dur && c.from < o.from + o.dur);
+    const realId = clip.source.kind === "image" ? clip.source.assetId : "";
+    // (1) a new AI image swapped onto a non-person beat clip
+    const aiId = "a".repeat(64);
+    const frozen = { ...sc.input.frozen, [aiId]: { ...sc.input.frozen[realId]!, id: aiId, declaration: decl } };
+    const out = direct({ ...sc.input, frozen, overrides: doc([{ id: "ai", createdAt: TEST_NOW, target: target(clip.id), override: { op: "replaceSource", clipId: clip.id, source: { kind: "image", assetId: aiId, crop: null, focal: { x: 0.5, y: 0.5 } } } }]) });
+    expect(out.rejectedOverrides).toEqual([]);
+    const c1 = out.timeline.video.find((c) => c.id === clip.id)!;
+    expect(c1.source.kind === "image" && c1.source.assetId).toBe(aiId);
+    const labels = over(out.timeline, c1);
+    expect(labels).toHaveLength(1);
+    expect(labels[0]!.from).toBe(c1.from);
+    expect(labels[0]!.from + labels[0]!.dur).toBe(c1.from + c1.dur);
+    expect(out.lint.filter((l) => l.rule === "AI_DISCLOSURE")).toEqual([]);
+    expect(out.lint.filter((l) => l.rule === "RESOLVE_MISMATCH" || l.rule === "IDS_UNIQUE")).toEqual([]);
+    // (2) the clip's own picture is AI (labelled by step 7); replacing it with a real photo leaves no false label
+    const frozen2 = { ...sc.input.frozen, [realId]: { ...sc.input.frozen[realId]!, declaration: decl } };
+    const before = direct({ ...sc.input, frozen: frozen2 });
+    expect(over(before.timeline, clip).length).toBeGreaterThan(0);
+    expect(before.lint.filter((l) => l.rule === "AI_DISCLOSURE")).toEqual([]);
+    const other = base.video.map((c) => (c.source.kind === "image" ? c.source.assetId : null)).find((id) => id !== null && id !== realId)!;
+    const after = direct({ ...sc.input, frozen: frozen2, overrides: doc([{ id: "real", createdAt: TEST_NOW, target: target(clip.id), override: { op: "replaceSource", clipId: clip.id, source: { kind: "image", assetId: other, crop: null, focal: { x: 0.5, y: 0.5 } } } }]) });
+    expect(after.rejectedOverrides).toEqual([]);
+    expect(over(after.timeline, clip)).toEqual([]);
+    expect(after.lint.filter((l) => l.rule === "AI_DISCLOSURE")).toEqual([]);
+    // every remaining AI clip is still covered
+    for (const c of after.timeline.video) {
+      if (c.source.kind === "image" && c.source.assetId === realId) expect(over(after.timeline, c).length, c.id).toBeGreaterThan(0);
+    }
+  });
+
   it("a replaceSource refused by validateAsset is a POLICY lint error (§16.6)", () => {
     const imageId = (c: Timeline["video"][number]) => (c.source.kind === "image" ? c.source.assetId : null);
     const other = base.video.map(imageId).find((id) => id !== null && id !== imageId(clip))!;

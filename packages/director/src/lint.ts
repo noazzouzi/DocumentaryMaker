@@ -3,7 +3,8 @@ import {
   COMPONENT_META, buildAnchorIndex, canonicalJson, collectAssetIds, isDocmakerError, resolveTimeline, timelineItemIds,
   type FrozenAsset, type LintIssue, type ProgramLayout, type StyleData, type Timeline,
 } from "@docmaker/core";
-import { rateCap } from "./ctx";
+import { isAiAsset, rateCap } from "./ctx";
+import { aiRuns, uncoveredFrame } from "./disclosure";
 import { holdOf } from "./overlays/hold";
 import { cutsWithSfx, effectiveUpscale, isImpact, maxGapFrames, punchEvents, sfxEvents } from "./stats";
 import { OVERLAPS, keyOf } from "./transitions";
@@ -22,6 +23,7 @@ export const LINT_RULES: Readonly<Record<string, { level: "error" | "warn"; help
   FLASH_CAP: { level: "error", help: "Routine flashes ≤ flash.cap; explicit flashes ≤ explicitMax and ≤ explicitPerMin per 60 s." },
   TRANSITION_RUN: { level: "error", help: "Never 3 identical non-cut transitions in a row; transition kinds ≤ maxKindsPerFilm." },
   POLICY: { level: "error", help: "An on-screen asset fails the licence / AI / person policy (validatePick)." },
+  AI_DISCLOSURE: { level: "error", help: "Every AI-generated asset on screen is covered by a SourceLabel{kind:\"illustration\"}, and no illustration label sits over non-AI picture." },
   PRIVATE_PERSON: { level: "error", help: "Overlay text names a minor or private victim, or a non-public person without a person-ack." },
   CLIP_SHARE: { level: "error", help: "Third-party clip time above maxClipShare.error of the runtime (error) or above .warn (warning)." },
   DENSITY_MAX: { level: "warn", help: "Per 60 s: SFX, impacts, punches and keyword slams stay under their caps." },
@@ -340,7 +342,19 @@ export function lintTimeline(
     const framing = (x: typeof c) => (x.camera.kind === "reframe" ? `r${Math.round(x.camera.keys[0]!.scale * 10)}` : "base");
     if (p.layout === c.layout && framing(p) === framing(c) && !c.beatId?.endsWith("-CLIP")) out.push(issue("warn", "ASSET_REUSE", c.id, `asset reused ${((c.from - p.from - p.dur) / fps).toFixed(1)} s after ${p.id} with the same layout and framing`));
   });
-  void ctx.frozen;
+  // AI_DISCLOSURE (§7.4: every AI image on screen gets SourceLabel{illustration}; none over real pictures)
+  const isAi = (id: string) => isAiAsset(ctx.frozen[id]);
+  const ill = t.overlays.filter((o) => o.component === "SourceLabel" && (o.props as { kind?: unknown }).kind === "illustration");
+  const runs = aiRuns(t, isAi);
+  for (const r of runs) {
+    const f = uncoveredFrame(ill, r.from, r.end);
+    if (f !== null) out.push(issue("error", "AI_DISCLOSURE", t.video[r.first]!.id, `AI-generated asset ${r.assetId.slice(0, 12)} on screen at frame ${f} without an illustration label`));
+  }
+  for (const o of ill) {
+    const covered = runs.filter((r) => r.from < o.from + o.dur && o.from < r.end).map((r) => ({ from: r.from, dur: r.end - r.from }));
+    const f = uncoveredFrame(covered, o.from, o.from + o.dur);
+    if (f !== null) out.push(issue("error", "AI_DISCLOSURE", o.id, `illustration label over non-AI picture at frame ${f}`));
+  }
   void OVERLAPS;
   return out;
 }

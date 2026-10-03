@@ -1,7 +1,7 @@
 // Step 7 (b)–(f), (h)–(j): person intros, date stamps, keyword slams, clip cards/labels, disclosure labels, chapter cards,
 // title sting, safe-messaging card, letterbox.
 import { lerp, spokenText, tokenizeDisplay, type Person } from "@docmaker/core";
-import { cueFrame, cueWord, rateOk, round2, shotIdxAt, truncate, wordCount, type BeatCtx, type Ctx, type Shot } from "../ctx";
+import { cueFrame, cueWord, isAiAsset, rateOk, round2, shotIdxAt, truncate, wordCount, type BeatCtx, type Ctx, type Shot } from "../ctx";
 import { CHAPTER_KICKER, LABEL_TEXT, SAFE_MESSAGING_CARD } from "../resources";
 import { backdropRecipe } from "../shots";
 import { holdOf } from "./hold";
@@ -165,7 +165,7 @@ export function labelOverlays(ctx: Ctx, st: OvState, shots: readonly Shot[]): vo
   // AI assets on screen (runs of consecutive shots)
   for (let i = 0; i < shots.length; i++) {
     const a = shots[i]!.src.assetId ? ctx.frozen[shots[i]!.src.assetId!] : undefined;
-    if (!a || !(a.candidate?.license.code === "AI-GENERATED" || a.declaration?.kind === "ai-generated")) continue;
+    if (!isAiAsset(a)) continue;
     let j = i;
     while (j + 1 < shots.length && shots[j + 1]!.src.assetId === shots[i]!.src.assetId) j++;
     const s = shots[i]!;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COMPONENT_META, docHash, type StyleData, type Timeline } from "@docmaker/core";
+import { COMPONENT_META, docHash, type FrozenAsset, type StyleData, type Timeline } from "@docmaker/core";
 import { TEST_STYLE, makeLayout, makeTimeline } from "@docmaker/core/testing";
 import { LINT_RULES, lintTimeline } from "../src/index";
 import { holdOf } from "../src/overlays/hold";
@@ -8,7 +8,7 @@ import { runs } from "./helpers";
 const TABLE: Record<string, "error" | "warn"> = {
   V_CONTIGUOUS: "error", V_BOUNDS: "error", IDS_UNIQUE: "error", ASSET_MISSING: "error", RESOLVE_MISMATCH: "error", T_OVERLAP: "error",
   MEDIA_RANGE: "error", ZONE_KEEPOUT: "error", OVERSHOOT: "error", FLASH_CAP: "error", TRANSITION_RUN: "error", POLICY: "error",
-  PRIVATE_PERSON: "error", CLIP_SHARE: "error", DENSITY_MAX: "warn", DENSITY_MIN: "warn", STATIC_HOLD: "warn", NO_VISUAL_CHANGE: "warn",
+  AI_DISCLOSURE: "error", PRIVATE_PERSON: "error", CLIP_SHARE: "error", DENSITY_MAX: "warn", DENSITY_MIN: "warn", STATIC_HOLD: "warn", NO_VISUAL_CHANGE: "warn",
   READABILITY: "warn", PRIMARY_SHARE: "warn", SILENT_CUT_SHARE: "warn", SFX_REPEAT: "warn", TECHNIQUE_FLOOR: "warn", UPSCALE: "warn", ASSET_REUSE: "warn",
 };
 
@@ -72,6 +72,29 @@ describe("lintTimeline", () => {
     const w = clone();
     w.render = { ...w.render, tokens: { ...w.render.tokens, layout: { ...w.render.tokens.layout, keepOut: [{ x: 0, y: 600, w: 1920, h: 480, reason: "test" }] } } };
     expect(has(w, "ZONE_KEEPOUT", style)).toBe(true);
+  });
+
+  it("flags an on-screen AI asset without an illustration label, and an illustration label over real picture (AI_DISCLOSURE)", () => {
+    const t = clone();
+    const c = t.video.find((x) => x.source.kind === "image")!;
+    const id = c.source.kind === "image" ? c.source.assetId : "";
+    const frozen = { [id]: { id, declaration: { kind: "ai-generated" }, candidate: null } } as unknown as Record<string, FrozenAsset>;
+    const run = t.video.filter((x) => x.source.kind === "image" && x.source.assetId === id);
+    const ai = (u: Timeline) => lintTimeline(u, TEST_STYLE, { ...ctx, frozen }).filter((i) => i.rule === "AI_DISCLOSURE");
+    expect(ai(t).length).toBeGreaterThan(0);
+    expect(ai(t)[0]!.level).toBe("error");
+    const label = (from: number, dur: number, n: number) => ({
+      id: `ov:test:SourceLabel:${n}`, start: { ref: "program" as const, edge: "start" as const, offset: from }, end: { ref: "program" as const, edge: "start" as const, offset: from + dur },
+      from, dur, beatId: null, band: "hud" as const, z: 303, zone: "topLeft" as const, enterFrames: 6, exitFrames: 6, followsCamera: false,
+      component: "SourceLabel" as const, props: { text: "Illustration (AI-generated)", kind: "illustration" as const, zone: "topLeft" as const },
+    });
+    const u = clone();
+    run.forEach((x, k) => u.overlays.push(label(x.from, x.dur, k)));
+    expect(ai(u)).toEqual([]);
+    const v = clone();
+    run.forEach((x, k) => v.overlays.push(label(x.from, x.dur + 5, k)));
+    expect(ai(v).some((i) => i.msg.includes("non-AI"))).toBe(true);
+    expect(lint(u).filter((i) => i.rule === "AI_DISCLOSURE").length).toBeGreaterThan(0); // no AI asset known → every illustration label is false
   });
 
   it("flags disallowed overshoot, flash caps and transition runs", () => {

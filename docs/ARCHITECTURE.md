@@ -2983,6 +2983,7 @@ Consequences: (1) **any layout change triggers a full re-direct** (the layout ha
 | `FLASH_CAP` | error | routine flash peak ≤ `flash.cap`; explicit ≤ `explicitMax` and ≤ `explicitPerMin` per 60 s |
 | `TRANSITION_RUN` | error | never 3 identical non-cut transitions in a row; kinds ≤ `maxKindsPerFilm` |
 | `POLICY` | error | `validateAsset` errors for any on-screen asset (licence, AI + people, private persons) |
+| `AI_DISCLOSURE` | error | every on-screen AI asset (`isAiAsset`) is covered by `SourceLabel{kind:"illustration"}`, and no illustration label sits over non-AI picture; the director re-derives the labels from the final picture track after overrides |
 | `PRIVATE_PERSON` | error | overlay text/props name a person with `isMinorOrPrivateVictim`, or a non-public figure without `person-ack` |
 | `CLIP_SHARE` | error / warn | clip seconds > `maxClipShare.error` × runtime (error), > `warn` (warning); any clip > `maxClipSeconds` (error) |
 | `DENSITY_MAX` | warn | per 60 s: SFX ≤ `perMin[1]`, impacts ≤ `impactsPerMin[1]`, punches ≤ `punch.perMin[1]`, slams ≤ `keywordSlamPerMin` |

@@ -7,7 +7,8 @@ import { arbitrate, salienceRoom, type ImpactEvent } from "./arbitration";
 import { buildSilences, clipAudio, duckingSpec, musicItems, silenceItems, voClips, voSpans } from "./audio";
 import { assignCameras, camMax } from "./camera";
 import { buildCaptions } from "./captions";
-import { anchorAt, buildCtx, round3, type Ctx, type Shot } from "./ctx";
+import { anchorAt, buildCtx, isAiAsset, round3, type Ctx, type Shot } from "./ctx";
+import { reconcileAiLabels } from "./disclosure";
 import { FxBook, climaxFx, impactShakes, montagePunches, type Fx } from "./fx";
 import { lintTimeline } from "./lint";
 import { buildAssets, buildMarkers, buildUsage } from "./markers";
@@ -228,6 +229,8 @@ export function direct(I: DirectorInput): DirectorOutput {
     const used = new Set(collectAssetIds(timeline));
     timeline = { ...timeline, assets: Object.fromEntries(Object.entries(timeline.assets).filter(([id]) => used.has(id))) };
   }
+  // 13b. AI-illustration disclosure follows the final picture track (overrides may have swapped sources)
+  timeline = reconcileAiLabels(timeline, (id) => isAiAsset(I.frozen[id]));
   // 14. check
   const parsed = Timeline.safeParse(timeline);
   if (!parsed.success) {
