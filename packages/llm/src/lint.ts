@@ -6,7 +6,7 @@ import {
 import {
   ACCUSATORY, AND_THEN, ATTRIBUTION, ATTRIBUTION_REQUIRED_STATUSES, BANNED_OPENERS, countWords, splitSentences,
 } from "./lexicon";
-import { mentionsPerson, normWs } from "./text";
+import { mentionsPerson, normWs, sharedNameTokens } from "./text";
 
 const issue = (level: LintIssue["level"], rule: string, where: string, msg: string): LintIssue => ({ level, rule, where, msg });
 const clipSecOf = (text: string, cps: number) => Math.max(4, text.length / cps + 1);
@@ -32,6 +32,7 @@ export function lintScript(i: LintScriptInput): LintIssue[] {
   const quotes = new Map(facts.quotes.map((q) => [q.id, q]));
   const claims = new Map(facts.claims.map((c) => [c.id, c]));
   const privatePeople = facts.people.filter((p) => p.isMinorOrPrivateVictim);
+  const sharedTokens = sharedNameTokens(facts.people, privatePeople);
   const banned = profile.bannedPhrases[lang].map(normPhrase);
   const present = new Set(i.chapters.map((c) => c.chapterId));
   const complete = outline.chapters.every((c) => present.has(c.id));
@@ -76,7 +77,7 @@ export function lintScript(i: LintScriptInput): LintIssue[] {
           }
         }
         for (const p of privatePeople) {
-          if (mentionsPerson(text, p)) out.push(issue("error", "private-person", s.id, `names ${p.id}, a minor or private victim`));
+          if (mentionsPerson(text, p, { strict: true, ignoreTokens: sharedTokens })) out.push(issue("error", "private-person", s.id, `names ${p.id}, a minor or private victim`));
         }
       } else if (s.type === "clip") {
         const q = s.quoteId ? quotes.get(s.quoteId) : undefined;

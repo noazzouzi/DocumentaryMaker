@@ -4,6 +4,7 @@ import {
   type Budget, type ChapterScript, type FactCheckItem, type Lang, type LintIssue, type RegistryEntry, type RiskFlag,
   type ScriptSegment, type Source, type ThemeOverride,
 } from "@docmaker/core";
+import { maskPersons, sharedNameTokens } from "../text";
 import { applyFrTypography } from "./typography";
 import { normChapterId, normLoopId, normRef, normRefs, normSegmentId, schemaError } from "./ids";
 import type {
@@ -143,31 +144,38 @@ export function factSheetFromWire(w: FactSheetWireLike, o: { registry: readonly 
 }
 type FactSheetWireLike = FactSheetWire;
 
-/** Core → wire (prompts): stable, snake_case, ids kept. */
+/**
+ * Core → wire (prompts): stable, snake_case, ids kept. The names of minors and private victims never reach a prompt:
+ * people[].name is replaced, and every free-text field (titles, summaries, made_by/against, quotes, sources, …) has
+ * their name tokens replaced with "[private person P<n>]".
+ */
 export function factSheetToWire(f: FactSheet): FactSheetWire & { quotes: (FactSheetWire["quotes"][number] & { verification: string })[] } {
+  const blocked = f.people.filter((p) => p.isMinorOrPrivateVictim);
+  const shared = sharedNameTokens(f.people, blocked);
+  const m = (s: string): string => maskPersons(s, blocked, shared);
   return {
-    topic: f.topic, as_of: f.asOf, one_line_premise: f.oneLinePremise, central_question: f.centralQuestion,
+    topic: m(f.topic), as_of: f.asOf, one_line_premise: m(f.oneLinePremise), central_question: m(f.centralQuestion),
     sources: f.sources.map((s) => ({
-      id: s.id, url: s.url, title: s.title, publisher: s.publisher, published_at: s.publishedAt, source_type: s.sourceType,
+      id: s.id, url: m(s.url), title: m(s.title), publisher: s.publisher, published_at: s.publishedAt, source_type: s.sourceType,
       reliability: s.reliability, language: (["fr", "en", "es", "de", "it", "pt", "nl"].includes(s.language) ? s.language : "en") as "en",
     })),
     people: f.people.map((p) => ({
-      id: p.id, name: p.isMinorOrPrivateVictim ? "[private person — never name]" : p.name, role_in_story: p.roleInStory, public_figure: p.publicFigure,
-      is_minor_or_private_victim: p.isMinorOrPrivateVictim, image_queries: p.imageQueries,
+      id: p.id, name: p.isMinorOrPrivateVictim ? "[private person — never name]" : p.name, role_in_story: m(p.roleInStory), public_figure: p.publicFigure,
+      is_minor_or_private_victim: p.isMinorOrPrivateVictim, image_queries: p.isMinorOrPrivateVictim ? [] : p.imageQueries.map(m),
     })),
     timeline: f.timeline.map((e) => ({
-      id: e.id, date: e.date, title: e.title, what_happened: e.whatHappened, person_ids: e.personIds, status: e.status, source_ids: e.sourceIds, drama_value: e.dramaValue,
+      id: e.id, date: e.date, title: m(e.title), what_happened: m(e.whatHappened), person_ids: e.personIds, status: e.status, source_ids: e.sourceIds, drama_value: e.dramaValue,
     })),
     quotes: f.quotes.map((q) => ({
-      id: q.id, speaker_id: q.speakerId, verbatim: q.verbatim, language: (["fr", "en", "es", "de", "it", "pt", "nl"].includes(q.language) ? q.language : "en") as "en",
-      date: q.date, context: q.context, medium: q.medium, source_id: q.sourceId, youtube_search_query: q.youtubeSearchQuery, verification: q.verification,
+      id: q.id, speaker_id: q.speakerId, verbatim: m(q.verbatim), language: (["fr", "en", "es", "de", "it", "pt", "nl"].includes(q.language) ? q.language : "en") as "en",
+      date: q.date, context: m(q.context), medium: q.medium, source_id: q.sourceId, youtube_search_query: m(q.youtubeSearchQuery), verification: q.verification,
     })),
-    figures: f.figures.map((n) => ({ id: n.id, label: n.label, value: n.value, unit: n.unit, as_of: n.asOf, source_ids: n.sourceIds, chartable: n.chartable })),
+    figures: f.figures.map((n) => ({ id: n.id, label: m(n.label), value: n.value, unit: n.unit, as_of: n.asOf, source_ids: n.sourceIds, chartable: n.chartable })),
     claims: f.claims.map((c) => ({
-      id: c.id, summary: c.summary, made_by: c.madeBy, against: c.against, status: c.status, jurisdiction: c.jurisdiction, decision_date: c.decisionDate,
-      subject_response: c.subjectResponse, sensitivity: c.sensitivity, source_ids: c.sourceIds,
+      id: c.id, summary: m(c.summary), made_by: m(c.madeBy), against: m(c.against), status: c.status, jurisdiction: c.jurisdiction, decision_date: c.decisionDate,
+      subject_response: m(c.subjectResponse), sensitivity: c.sensitivity, source_ids: c.sourceIds,
     })),
-    angles: f.angles, gaps: f.gaps,
+    angles: f.angles.map(m), gaps: f.gaps.map(m),
   };
 }
 

@@ -1,10 +1,10 @@
-// Deterministic fact-check rules a–h (§6.3 step 6). Free, synchronous; also run by engine.writeDoc on every script edit.
+// Deterministic fact-check rules a–i (§6.3 step 6; c extended to every attribution-required status, i added). Free, synchronous; also run by engine.writeDoc on every script edit.
 import {
   ESTABLISHED_STATUSES, normWord, sha8, type BeatLang, type BeatPlan, type BeatPlansDoc, type BeatSlicesDoc, type FactCheck,
   type FactCheckItem, type FactSheet, type Lang, type Person, type PublishInfo, type RiskFlag, type Script,
 } from "@docmaker/core";
-import { ACCUSATORY, ATTRIBUTION, DENIAL, splitSentences } from "../lexicon";
-import { mentionsPerson, motionStrings, normWs } from "../text";
+import { ACCUSATORY, ATTRIBUTION, ATTRIBUTION_REQUIRED_STATUSES, DENIAL, splitSentences } from "../lexicon";
+import { mentionsPerson, motionStrings, normWs, sharedNameTokens } from "../text";
 import { extractNumbers, matchesAny, numbersIn } from "./numbers";
 
 /** FC-<sha8(where|normWord(sentence)|claimKind|origin)> — stable across re-runs. */
@@ -75,6 +75,7 @@ export function deterministicFactChecks(i: DeterministicInput): FactCheckItem[] 
   const people = new Map(fs.people.map((p) => [p.id, p]));
   const acks = new Set(i.personAcks ?? []);
   const flaggedPeople = fs.people.filter((p) => p.isMinorOrPrivateVictim || (!p.publicFigure && !acks.has(p.id)));
+  const sharedTokens = sharedNameTokens(fs.people, flaggedPeople);
   const quoteRisk = (qid: string, where: string, surface: FactCheckItem["surface"], sentence: string) => {
     const q = quotes.get(qid);
     if (!q) return;
@@ -88,7 +89,7 @@ export function deterministicFactChecks(i: DeterministicInput): FactCheckItem[] 
   };
   const personRisk = (text: string, where: string, surface: FactCheckItem["surface"]) => {
     for (const p of flaggedPeople) {
-      if (!mentionsPerson(text, p)) continue;
+      if (!mentionsPerson(text, p, { strict: true, ignoreTokens: sharedTokens })) continue;
       const why = p.isMinorOrPrivateVictim ? "a minor or private victim" : "a non-public person (no person-ack)";
       add(item("h", where, surface, text, "fact", "private_person_named", "high", [p.id], `names ${p.id}, ${why}`, "remove the name or describe the role", p.id));
     }
@@ -120,14 +121,25 @@ export function deterministicFactChecks(i: DeterministicInput): FactCheckItem[] 
       }
       if (seg.type !== "narration") return;
       const text = seg.displayText;
-      for (const sen of splitSentences(text)) numberRisk(sen, seg.factIds, seg.id, "narration");
+      const segClaims = seg.factIds.map((f) => claims.get(f)).filter((c): c is NonNullable<typeof c> => c !== undefined);
+      for (const sen of splitSentences(text)) {
+        numberRisk(sen, seg.factIds, seg.id, "narration");
+        // (i) accusatory narration without attribution or legal status (the gating twin of lint accusatory-unattributed)
+        if (ACCUSATORY[lang].test(sen) && !ATTRIBUTION[lang].test(sen)) {
+          const named = fs.people.filter((p) => mentionsPerson(sen, p)).map((p) => p.id);
+          const involved = named.length > 0 || segClaims.length > 0;
+          add(item("i", seg.id, "narration", sen, "allegation", "needs_attribution", involved ? "high" : "medium", [...named, ...segClaims.map((c) => c.id)],
+            "accusatory wording voiced as narrator fact, without attribution or legal status", "", sen));
+        }
+      }
       const next = ch.segments.slice(k + 1).find((s) => s.type === "narration");
-      for (const f of seg.factIds) {
-        const c = claims.get(f);
-        if (!c) continue;
-        if (c.sensitivity === "high" && !ATTRIBUTION[lang].test(text)) {
-          add(item("c", seg.id, "narration", text, "allegation", "needs_attribution", "high", [c.id],
-            `cites ${c.id} (high sensitivity, ${c.status}) without attribution or status wording`, "", c.id));
+      for (const c of segClaims) {
+        // (c) a high-sensitivity claim, or any claim whose status requires attribution (allegation, charged, denied…)
+        const needsWording = c.sensitivity === "high" || (ATTRIBUTION_REQUIRED_STATUSES as readonly string[]).includes(c.status);
+        if (needsWording && !ATTRIBUTION[lang].test(text)) {
+          const risk = c.sensitivity !== "low" || c.against.trim() !== "" ? "high" : "medium";
+          add(item("c", seg.id, "narration", text, "allegation", "needs_attribution", risk, [c.id],
+            `cites ${c.id} (${c.sensitivity} sensitivity, ${c.status}) without attribution or status wording`, "", c.id));
         }
         if (c.subjectResponse.trim() !== "") {
           const both = `${text} ${next?.displayText ?? ""}`;
@@ -151,10 +163,14 @@ export function deterministicFactChecks(i: DeterministicInput): FactCheckItem[] 
     const strings = onScreenStrings(plan, t, people);
     const claimIds = plan.factIds.filter((f) => claims.has(f));
     const established = claimIds.length > 0 && claimIds.every((c) => (ESTABLISHED_STATUSES as readonly string[]).includes(claims.get(c)!.status));
+    // a person beat: model-supplied personIds, or a fact-sheet person named in the beat text or on screen
+    const beatText = t?.text ?? "";
+    const named = fs.people.filter((p) => !plan.personIds.includes(p.id) && [beatText, ...strings].some((x) => mentionsPerson(x, p))).map((p) => p.id);
+    const personIds = [...plan.personIds, ...named];
     for (const s of strings) {
       numberRisk(s, plan.factIds, plan.id, "on-screen");
-      if (plan.personIds.length > 0 && ACCUSATORY[lang].test(s) && !established) {
-        add(item("f", plan.id, "on-screen", s, "allegation", "needs_attribution", "high", [...plan.personIds, ...claimIds],
+      if (personIds.length > 0 && ACCUSATORY[lang].test(s) && !established) {
+        add(item("f", plan.id, "on-screen", s, "allegation", "needs_attribution", "high", [...personIds, ...claimIds],
           "accusatory on-screen text about a person without an established (convicted / judicially found) claim"));
       }
       personRisk(s, plan.id, "on-screen");

@@ -13,25 +13,41 @@ const APOS = "['’]";
 export const ACCUSATORY: Readonly<Record<Lang, RegExp>> = {
   en: wordRegex(
     "rap(?:e|ed|ist|ists)|abus(?:e|ed|er|ers|ive)|assault(?:ed|s)?|molest\\w*|pedophil\\w*|paedophil\\w*|fraud(?:ster|sters|ulent)?|scam(?:med|mer|mers)?" +
-      "|stole|steals?|thie(?:f|ves)|criminals?|murder(?:ed|er|ers|s)?|embezzl\\w*|beat (?:her|him|them)|beat (?:his|her|their) \\w+|swindl\\w*|extort\\w*|groom(?:ed|er|ing)" +
-      "|defraud\\w*|harass\\w*|kill(?:ed|er|ers|ing)?|launder\\w*|brib\\w*|corrupt\\w*|li(?:ed|ar|ars)|cheat(?:ed|er|ers|ing|s)?",
+      "|stole|stolen|steal(?:s|ing)?|thie(?:f|ves)|rob(?:bed|ber|bers|bery|bing)|criminals?|murder(?:ed|er|ers|s)?|embezzl\\w*|beat (?:her|him|them)" +
+      "|beat (?:his|her|their) \\w+|swindl\\w*|extort\\w*|groom(?:ed|er|ing)|defraud\\w*|harass\\w*|kill(?:ed|er|ers|ing)?|launder\\w*|brib\\w*" +
+      "|corrupt\\w*|li(?:ed|ar|ars)|cheat(?:ed|er|ers|ing|s)?|con(?:ned|ning)|con (?:artist|man|men)",
   ),
   fr: wordRegex(
-    "viol(?:é|ée|és|ées|eur|eurs|er|ait)?|abus(?:é|ée|eur|eurs)|agress(?:é|ée|eur|eurs|ion|ions|ait)|p[ée]dophile\\w*|fraud(?:e|es|eur|eurs|uleux|uleuse)" +
-      "|escro(?:c|cs|querie|queries)|a vol[ée]|voleur|voleurs|criminel(?:le|s|les)?|meurtr(?:e|ier|iers|ière)|d[ée]tourn(?:é|ée|ement|ements)" +
-      "|battu(?:e|s|es)?|frapp(?:é|ée|ait)|extorqu\\w*|harc[eè]l\\p{L}*|tu[ée]e?s?|corromp\\p{L}*|blanchi\\p{L}*|menteu(?:r|rs|se|ses)",
+    "viol(?:é|ée|és|ées|eur|eurs|er|ait)?|abus(?:é|ée|eur|eurs)|agress(?:é|ée|eur|eurs|ion|ions|ait)|p[ée]dophile\\w*|fraud\\p{L}*" +
+      "|escro(?:c|cs|querie|queries)|escroqu\\p{L}*|arnaqu\\p{L}*|(?:a|ont|avait|avaient|aurait|auraient) vol[ée]|vol(?:ait|aient)|voleur|voleuse|voleurs" +
+      "|criminel(?:le|s|les)?|meurtr(?:e|ier|iers|ière)|assassin\\p{L}*|d[ée]tourn(?:é|ée|ement|ements|ait)|battu(?:e|s|es)?|frapp(?:é|ée|ait)" +
+      "|extorqu\\p{L}*|harc[eè]l\\p{L}*|tu[ée]e?s?|corromp\\p{L}*|corruption|soudoy\\p{L}*|pots?-de-vin|blanchi\\p{L}*|menteu(?:r|rs|se|ses)" +
+      "|ment(?:i|ait|aient|ir)|trich(?:é|ait|eur|eurs|euse)",
   ),
 };
 
-/** Attribution / legal-status vocabulary (makes an accusatory sentence acceptable). */
+/**
+ * Attribution / legal-status CONSTRUCTIONS (make an accusatory sentence acceptable). Incidental words that merely
+ * appear near an accusation — said, judge, court, trial, tried, pending, cour, juge, procès — do not count on their own:
+ * "He embezzled two million and lied to the judge." is not attributed; "Prosecutors said he embezzled…" is.
+ */
 export const ATTRIBUTION: Readonly<Record<Lang, RegExp>> = {
   en: wordRegex(
-    "alleg\\w*|accus\\w*|according to|claim\\w*|reported(?:ly)?|deni\\w*|found (?:him|her|them|that)|convicted|charged|pleaded|jury|judge|judges|court|courts" +
-      "|lawsuit|sued|settled|prosecutors?|testified|indicted|acquitted|says|said|insist\\w*|suspected|investigat\\w*|charges|pending|tried|trial",
+    "alleg\\w*|accus\\w*|according to|claim(?:s|ed|ing)?|reportedly|reported (?:that|he|she|they)|(?:is|are|was|were) (?:reported|said|believed|suspected) to" +
+      "|deni(?:ed|es|al|als)|deny|found (?:him|her|them|that)|convicted|charged|pleaded|indicted|acquitted|sued|settled|lawsuits?|prosecutors?" +
+      "|(?:awaiting|awaits|stand|stands|standing|stood|went on|goes on|on) trial|(?:case|charges|appeal|trial|investigation) (?:is |are |remains? )?pending|pending (?:trial|appeal)" +
+      "|testified|testimony|investigat\\w*|suspected|suspects?|insist\\w*|(?:faces|facing|faced) (?:\\w+ )?charges|charges (?:of|against)" +
+      "|(?:court|jury|judge|judges|tribunal|panel|regulators?) (?:found|ruled|held|concluded|determined|decided|ordered)" +
+      "|(?:said|says|told \\p{L}+(?: \\p{L}+)?|stated|wrote|writes|argued|argues|maintain(?:s|ed)?) (?:that|he|she|they|it|his|her|their|him)" +
+      "|(?:he|she|they|we|i) (?:said|says|claimed|claims|wrote|writes|told \\p{L}+)",
   ),
   fr: wordRegex(
-    `aurait|auraient|pr[ée]sum[ée]e?s?|accus\\w*|selon|d${APOS}apr[eè]s|affirm\\w*|d[ée]nonc\\w*|reproch\\w*|condamn[ée]e?s?|mis en examen|mise en examen|inculp\\w*` +
-      "|jug[ée]e?s?|tribunal|tribunaux|cour|plainte|plaintes|proc[eè]s|nie|nient|ni[ée]|d[ée]ment\\w*|soup[cç]onn\\w*|enqu[eê]te\\w*|relax[ée]e?|acquitt[ée]e?",
+    `aurait|auraient|serait|seraient|pr[ée]sum[ée]e?s?|accus\\p{L}*|selon|d${APOS}apr[eè]s|affirm\\p{L}*|d[ée]nonc\\p{L}*|reproch\\p{L}*|condamn[ée]e?s?` +
+      "|mise? en examen|inculp\\p{L}*|plaintes?|nie|nient|ni[ée]e?s?|d[ée]ment\\p{L}*|soup[cç]onn\\p{L}*|enqu[eê]te\\p{L}*|relax[ée]e?s?|acquitt[ée]e?s?" +
+      "|t[ée]moign\\p{L}*|jug[ée]e?s? (?:coupables?|responsables?|pour)|proc[eè]s en cours|(?:sera|seront|doit [êe]tre|doivent [êe]tre|va [êe]tre|vont [êe]tre) jug[ée]e?s?" +
+      "|(?:tribunal|tribunaux|cour|juge|juges|justice|jury) (?:a |l[’']a |les a |ont )?(?:estim[ée]|jug[ée]|condamn[ée]|reconnu|conclu|consid[ée]r[ée]|[ée]tabli|retenu)" +
+      `|(?:dit|disent|d[ée]clar[ée]|racont[ée]|expliqu[ée]|[ée]crit|soutenu|assur[ée]) (?:que|qu${APOS})` +
+      "|(?:a-t-(?:il|elle)|ont-(?:ils|elles)) (?:dit|d[ée]clar[ée]|racont[ée]|expliqu[ée])|(?:dit|raconte|explique|d[ée]clare)-(?:t-)?(?:il|elle|ils|elles)",
   ),
 };
 
