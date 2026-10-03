@@ -175,3 +175,23 @@ export const CONTACT_UA_HOSTS: readonly string[] = ["commons.wikimedia.org", "up
 4. `findPassage` also returns `matchStartMs`/`matchEndMs` (additive); `ytDownload` accepts an optional `o.durationSec` (whole-video download when ≤ 15 min).
 5. Extra exports: `activeProviders`, `QuotaBuckets`, `parse*` provider parsers, `licenseInfo`, `parseCcLicense`, `declarationLicense`, `requireDeclaration`, `ledgerEntryFor`, `buildLedger`, `resolveClips`, `loadClip`, `falAllowedForBeat`, `falPrompt`, `FAL_PROMPT_SUFFIX`, `FAL_NEGATIVE_PROMPT`.
 6. Live provider tests (`DOCMAKER_LIVE_TESTS=1`; run with `NODE_USE_ENV_PROXY=1` behind a proxy) passed on 2026-10-03 against Wikidata, Commons, Openverse, LOC, NASA and the Internet Archive.
+
+## 2026-10-03 render (W8) → engine (W10), core `RenderRequest` (I), styles (W1) — notes; no blocking contract change
+
+**Problem.**
+1. **`RenderRequest` carries no loudness targets.** The post-AAC gate needs `truePeakGate` and `targetLufs`; render reads them from `<projectDir>/project.json` (`audio.truePeakGate`, `audio.targetLufs`), defaulting to −1 dBTP / −14 LUFS. A failed gate is reported as a `log` warning starting with `LOUDNESS_GATE:` and in `RenderResult.loudness` (QA decides).
+2. **`lutCube: null` on a master render** → render generates the cube itself from `timeline.grade.lut` (`cachedLutCube`, `<home>/cache/luts/<hash>.cube`), because the engine never imports `@docmaker/render`. `grain` is taken from the request as is (the engine passes `grade.grainFfmpeg`). Draft never runs post.
+3. **`LutParams.intensity` = split-tone intensity** (HF `splitTone.intensity`; HF teal-orange = 0.62 reproduces Appendix A exactly); `shadows`/`highlights` are the split-tone RGB offsets. It is not a global LUT strength, so `cinematic-essay`'s `intensity: 0.7` with zero split tone has no effect (W1: fine if intended; otherwise propose an additive `LutParams.strength`).
+4. **Frame-count verification uses `ffprobe -count_packets`** (no decode; one packet per frame for h264/ProRes) instead of `-count_frames`: seconds instead of minutes on a 30-min master. Tests verify independently with `-count_frames`.
+5. **Deterministic raster:** for `gl: "swangle"` render sets `__RESERVED_IS_INSIDE_REMOTION_LAMBDA=true` only around `openBrowser()` (W7's proposal, serialized and restored) → `--disable-gpu-rasterization`; stills rendered twice are bit-identical.
+6. **Re-entrancy of the render lock:** `RenderService` methods take `config.renderLockFile` themselves (re-entrant only inside the same service call via AsyncLocalStorage). Callers must NOT wrap them in their own `withFileLock(renderLockFile)` (pid-owned lock → self-deadlock).
+7. **Outputs:** `renderStills` returns the still paths (`frame-NNNNNN.jpg`) followed by the sheets (`sheet-NN.jpg`); `qaSheetPlan(timeline)` gives the §12.6 default QA groups (per chapter + per transition type) for the QA stage to call `renderStills` once per group. `renderGeneratedStills` names files `gen-<sha12(source+tokens)>.png` (identical sources share a file; existing files are reused); clips without a generated/solid source are skipped with a `log` event. `renderOverlays` writes `<outDir>/<itemId sanitized>.mov`. Overlay/generated-still progress events use `stage: "export"`, stills `stage: "qa"`.
+8. **`render.json` is also written for frame-range renders** (`frames < durationInFrames`). After a full render, chunk files no longer in the plan are deleted; frame-range renders keep the cache.
+9. `disallowFallbackToOffthreadVideo` (§12.2 "tests set") is an `@remotion/media` component prop, not a renderer option: render cannot set it (W7).
+
+**Proposed diff.** (optional, for I)
+```ts
+// RenderRequest (ops.ts)
+targetLufs: z.number().default(-14), truePeakGate: z.number().default(-1),
+```
+**Local workaround.** Items 1–2 as described; everything else is behaviour documentation.
