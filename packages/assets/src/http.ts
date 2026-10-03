@@ -17,6 +17,8 @@ export const VIDEO_MAX_BYTES = 2048 * MiB;
 export const HEADER_TIMEOUT_MS = 10_000;
 const BODY_IDLE_TIMEOUT_MS = 30_000;
 const MAX_REDIRECTS = 5;
+/** How often the persisted host cooldowns (other jobs' 429s) are re-read. */
+const COOLDOWN_REREAD_MS = 5_000;
 /** Hosts allowed over plain http (ccMixter has no https API). */
 export const HTTP_ALLOWED_HOSTS: readonly string[] = ["ccmixter.org"];
 
@@ -28,6 +30,7 @@ export interface HttpClientInternals {
   retryBaseMs?: number; // default 1000
   maxRetryAfterMs?: number; // default 60 000
   env?: NodeJS.ProcessEnv; // proxy detection
+  now?: () => number; // tests drive the host cooldown clock
 }
 
 // ------------------------------------------------------------------------------------------------ SSRF guard
@@ -190,6 +193,60 @@ export function createHttpClient(o: { config: RuntimeConfig; logger: Logger } & 
   const maxRetryAfterMs = o.maxRetryAfterMs ?? 60_000;
   /** Errors raised before the request left the machine (DNS, SSRF guard, connection refused). */
   const notSent = new WeakSet<Error>();
+  const now = o.now ?? (() => Date.now());
+
+  // ---- per-host circuit breaker: a 429 with a wait hint closes the host until then, for every request of every job (the
+  // state is persisted next to the response cache). Within the cap we wait; beyond it we fail fast without a request.
+  const cooldownFile = path.join(config.paths.httpCache, "host-cooldown.json");
+  const cooldown = new Map<string, number>();
+  let cooldownReadAt = -Infinity;
+  const readCooldowns = async (): Promise<Record<string, number>> => {
+    try {
+      const j = JSON.parse(await readFile(cooldownFile, "utf8")) as unknown;
+      return j && typeof j === "object" ? (j as Record<string, number>) : {};
+    } catch {
+      return {};
+    }
+  };
+  async function cooldownUntil(host: string): Promise<number> {
+    if (now() - cooldownReadAt > COOLDOWN_REREAD_MS) {
+      cooldownReadAt = now();
+      for (const [h, t] of Object.entries(await readCooldowns())) if (typeof t === "number" && t > (cooldown.get(h) ?? 0)) cooldown.set(h, t);
+    }
+    return cooldown.get(host) ?? 0;
+  }
+  async function tripHost(host: string, retryAfterMs: number): Promise<void> {
+    const until = now() + retryAfterMs;
+    if (until <= (cooldown.get(host) ?? 0)) return;
+    cooldown.set(host, until);
+    logger.warn("host rate-limited us; pausing requests to it", { host, seconds: Math.round(retryAfterMs / 1000) });
+    try {
+      const all = await readCooldowns();
+      const t = now();
+      const next: Record<string, number> = {};
+      for (const [h, u] of Object.entries(all)) if (typeof u === "number" && u > t) next[h] = u;
+      next[host] = Math.max(next[host] ?? 0, until);
+      await writeFileAtomic(cooldownFile, JSON.stringify(next));
+    } catch (e) {
+      logger.debug("host cooldown write failed", { error: (e as Error).message });
+    }
+  }
+  async function honourCooldown(url: string, signal: AbortSignal): Promise<void> {
+    const host = new URL(url).hostname.toLowerCase();
+    const rem = (await cooldownUntil(host)) - now();
+    if (rem <= 0) return;
+    if (rem > maxRetryAfterMs) {
+      const err = new DocmakerError("PROVIDER_RATE_LIMIT", `${host} is rate-limiting this machine; no request for ${Math.ceil(rem / 1000)} s`, {
+        retryable: false, details: { status: 429, retryAfterMs: rem, hostCooldown: true },
+      });
+      notSent.add(err);
+      throw err;
+    }
+    await new Promise<void>((resolve, reject) => {
+      const t = setTimeout(resolve, rem);
+      signal.addEventListener("abort", () => { clearTimeout(t); reject(new DocmakerError("CANCELED", "request canceled")); }, { once: true });
+    });
+  }
 
   const assertOnline = () => {
     if (config.offline) throw new DocmakerError("OFFLINE", "offline mode: network access is disabled", { hint: "unset DOCMAKER_OFFLINE / project.assets.offline to use online providers" });
@@ -210,6 +267,7 @@ export function createHttpClient(o: { config: RuntimeConfig; logger: Logger } & 
         if (e instanceof Error) notSent.add(e);
         throw e;
       }
+      await honourCooldown(url, opts.signal);
       if (new URL(url).origin !== origin0) crossed = true;
       const headers: Record<string, string> = { accept: req.accept, ...(crossed ? {} : opts.headers ?? {}) };
       // The User-Agent is ours, per host (contact only for CONTACT_UA_HOSTS); callers cannot override it.
@@ -255,6 +313,7 @@ export function createHttpClient(o: { config: RuntimeConfig; logger: Logger } & 
           snippet = (await res.text()).slice(0, 300);
         } catch { /* ignore */ }
         const rate = res.status === 429;
+        if (rate && typeof retryAfterMs === "number" && retryAfterMs > 0) await tripHost(new URL(url).hostname.toLowerCase(), retryAfterMs);
         const retryable = rate || res.status >= 500 || res.status === 408;
         throw new DocmakerError(rate ? "PROVIDER_RATE_LIMIT" : "PROVIDER_ERROR", `HTTP ${res.status} from ${redactUrl(url)}`, {
           retryable, details: { status: res.status, retryAfterMs, snippet },

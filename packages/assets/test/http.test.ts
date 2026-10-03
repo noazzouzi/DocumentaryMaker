@@ -199,6 +199,44 @@ describe("retries, caps, cache, timeouts", () => {
     await expect(http.getJson("https://api.openverse.org/v1/images/", { signal })).rejects.toMatchObject({ details: { retryAfterMs: null } });
   });
 
+  it("a 429 with a long Retry-After closes the host: later requests fail fast without a request, across clients", async () => {
+    const config = makeConfig({ offline: false });
+    const f = fakeFetch((url) => (url.includes("upload.wikimedia.org") ? new Response("please use thumbnails", { status: 429, headers: { "retry-after": "600" } }) : new Response("{}")));
+    const http = createHttpClient({ config, logger: quietLogger(), fetchImpl: f.impl, lookup: publicLookup, retryBaseMs: 1 });
+    const signal = new AbortController().signal;
+    const dir = tmpDir();
+    for (let k = 0; k < 20; k++) {
+      await expect(http.download(`https://upload.wikimedia.org/wikipedia/commons/a/ab/F${k}.jpg`, path.join(dir, `f${k}.jpg`), { signal })).rejects.toMatchObject({ code: "PROVIDER_RATE_LIMIT" });
+    }
+    expect(f.calls.filter((c) => c.url.includes("upload.wikimedia.org"))).toHaveLength(1);
+    // Other hosts are unaffected.
+    await expect(http.getJson("https://api.openverse.org/v1/images/", { signal })).resolves.toEqual({});
+    // A later job (new client, same home) honours the persisted breaker.
+    const http2 = createHttpClient({ config, logger: quietLogger(), fetchImpl: f.impl, lookup: publicLookup, retryBaseMs: 1 });
+    await expect(http2.getJson("https://upload.wikimedia.org/x", { signal })).rejects.toMatchObject({ code: "PROVIDER_RATE_LIMIT", details: { hostCooldown: true } });
+    expect(f.calls.filter((c) => c.url.includes("upload.wikimedia.org"))).toHaveLength(1);
+    // Once the window has passed, requests go out again.
+    let t = Date.now() + 601_000;
+    const http3 = createHttpClient({ config, logger: quietLogger(), fetchImpl: f.impl, lookup: publicLookup, retries: 0, now: () => t });
+    await expect(http3.getJson("https://upload.wikimedia.org/y", { signal })).rejects.toMatchObject({ code: "PROVIDER_RATE_LIMIT" });
+    expect(f.calls.filter((c) => c.url.includes("upload.wikimedia.org"))).toHaveLength(2);
+  });
+
+  it("a short host cooldown makes concurrent requests to that host wait instead of hammering it", async () => {
+    const config = makeConfig({ offline: false });
+    let n = 0;
+    const stamps: number[] = [];
+    const f = fakeFetch(() => { stamps.push(Date.now()); return ++n === 1 ? new Response("", { status: 429, headers: { "retry-after": "0.3" } }) : new Response("{}"); });
+    const http = createHttpClient({ config, logger: quietLogger(), fetchImpl: f.impl, lookup: publicLookup, retryBaseMs: 1 });
+    const signal = new AbortController().signal;
+    const a = http.getJson("https://api.example.org/a", { signal });
+    await new Promise((r) => setTimeout(r, 50));
+    const b = http.getJson("https://api.example.org/b", { signal }); // starts while the host is closed
+    await expect(Promise.all([a, b])).resolves.toEqual([{}, {}]);
+    expect(stamps).toHaveLength(3);
+    expect(Math.min(stamps[1]!, stamps[2]!) - stamps[0]!).toBeGreaterThanOrEqual(250);
+  });
+
   it("enforces size caps (content-length and streamed)", async () => {
     const config = makeConfig({ offline: false });
     const big = new Uint8Array(4096);
