@@ -5,6 +5,7 @@ import { SFX_RECIPES as RECIPES } from "./sfx/recipes";
 import type { SfxRecipe as Recipe } from "./sfx/recipes";
 import { ensureSfxPackImpl, loadSfxEntriesImpl } from "./sfx/packs";
 import type { AudioCtx as Ctx } from "./util";
+import { assembleVoProgramImpl } from "./vo/assemble";
 
 export type AudioCtx = Ctx;
 export type SfxRecipe = Recipe;
@@ -29,7 +30,7 @@ export function scanMusicLibrary(dir: string, ctx: AudioCtx): Promise<{ file: st
 
 /** Places segment WAVs at frameToSample48k(segment.from) (+ REVEAL insertions), digital silence elsewhere, then bakes −16 LUFS. */
 export function assembleVoProgram(i: { layout: Omit<ProgramLayout, "voProgram">; projectDir: string; outRel: string }, ctx: AudioCtx): Promise<{ sha256: string; bakedGainDb: number; durationMs: number }> {
-  throw notImplemented("audio.assembleVoProgram");
+  return assembleVoProgramImpl(i, ctx);
 }
 /** Node mixer driven by core computeGainTables (preview parity) → mix.wav (s24 stereo 48 kHz) + 4 stems + loudness. */
 export function mixTimeline(t: Timeline, i: { projectDir: string; outMixRel: string; stemRels: Record<"vo" | "music" | "sfx" | "clip", string>; targetLufs: number; truePeakTarget: number }, ctx: AudioCtx): Promise<Omit<LoudnessDoc, "schemaVersion" | "lang">> {
@@ -45,3 +46,5 @@ export { PROCEDURAL_LICENSE, PROCEDURAL_PACK, PROCEDURAL_VERSION, proceduralDir,
 export { OPTIONAL_PACKS, installedEntriesById, readInstalledManifest } from "./sfx/packs";
 export type { SfxPackId } from "./sfx/packs";
 export { syncPointMs } from "./sfx/analyze";
+export { VO_PEAK_GUARD_DBFS, VO_TARGET_LUFS, planVoParts } from "./vo/assemble";
+export type { VoPart } from "./vo/assemble";

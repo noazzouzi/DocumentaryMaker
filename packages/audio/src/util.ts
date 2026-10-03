@@ -59,6 +59,15 @@ export async function loadAudio48k(file: string, channels: 1 | 2, ctx: { config:
   });
 }
 
+/** Length in 48 kHz samples (header only for 48 kHz WAVs, else a decode). */
+export async function audioLength48k(file: string, ctx: { config: RuntimeConfig; signal: AbortSignal }): Promise<number> {
+  if (/\.wav$/i.test(file)) {
+    const h = await readWavHeader(file);
+    if (h.sampleRate === SR) return h.frames;
+  }
+  return (await loadAudio48k(file, 1, ctx)).data[0]!.length;
+}
+
 /** Downmix (average) or duplicate channels to reach `channels`. */
 export function matchChannels(w: WavData, channels: 1 | 2): WavData {
   if (w.channels === channels) return w;
