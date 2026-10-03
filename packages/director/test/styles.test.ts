@@ -46,6 +46,28 @@ describe("built-in styles (loaded with @docmaker/styles, deep-frozen inputs)", a
       }
     });
 
+    it(`${st.data.manifest.id}: handheld noise never uncovers a frame edge of a cover clip`, () => {
+      const amp = st.data.cameraPolicy.handheld?.ampPx ?? 0;
+      for (const seed of [77, 5]) {
+        const input = policyScenario({ seed }).input;
+        const out = direct({ ...input, style: st.data, renderTokens: renderTokensOf(st.data) });
+        let n = 0;
+        for (const c of out.timeline.video) {
+          if (c.layout !== "cover" || c.camera.handheld === null) continue;
+          const ox = c.camera.origin.x * 1920, oy = c.camera.origin.y * 1080;
+          for (const k of c.camera.keys) {
+            const s1 = k.scale - 1;
+            expect(k.x + amp, c.id).toBeLessThanOrEqual(s1 * ox + 1e-6);
+            expect(amp - k.x, c.id).toBeLessThanOrEqual(s1 * (1920 - ox) + 1e-6);
+            expect(k.y + amp, c.id).toBeLessThanOrEqual(s1 * oy + 1e-6);
+            expect(amp - k.y, c.id).toBeLessThanOrEqual(s1 * (1080 - oy) + 1e-6);
+          }
+          n++;
+        }
+        if (amp > 0) expect(n).toBeGreaterThan(10);
+      }
+    });
+
     it(`${st.data.manifest.id}: priority-5 impacts stay inside the style's impactsPerMin (no DENSITY_MAX on its own output)`, () => {
       for (const make of [() => tulipInputs().input, () => policyScenario({ seconds: 600, chapters: 5 }).input]) {
         const input = make();

@@ -23,7 +23,23 @@ function easeFor(kind: CameraMove["ease"], motion: Pick<MotionTokens, "kbEase">)
 type Channel = "scale" | "x" | "y" | "rot";
 const CHANNELS: Channel[] = ["scale", "x", "y", "rot"];
 
-export function clipCameraAt(cam: CameraMove, localFrame: number, motion: Pick<MotionTokens, "kbEase">, opts?: { fps?: number; seed?: number }): ClipCameraSample {
+/**
+ * Smallest scale at which a cover-filled frame (width × height, transform origin `cam.origin`) translated by (x, y)
+ * still covers the frame: x ≤ (s−1)·ox, −x ≤ (s−1)·(W−ox), and the same for y. Sides closer than 1 px to the origin
+ * cannot be covered by scaling and are ignored.
+ */
+export function minCoverScale(x: number, y: number, origin: { x: number; y: number }, width: number, height: number): number {
+  const ox = origin.x * width, oy = origin.y * height;
+  let need = 1;
+  const side = (t: number, d: number) => { if (t > 0 && d >= 1) need = Math.max(need, 1 + t / d); };
+  side(x, ox); side(-x, width - ox); side(y, oy); side(-y, height - oy);
+  return Math.min(need, 1.25);
+}
+
+export function clipCameraAt(
+  cam: CameraMove, localFrame: number, motion: Pick<MotionTokens, "kbEase">,
+  opts?: { fps?: number; seed?: number; cover?: { width: number; height: number } },
+): ClipCameraSample {
   const keys = [...cam.keys].sort((a, b) => a.f - b.f);
   const out: ClipCameraSample = { scale: 1, x: 0, y: 0, rot: 0, blurPx: 0 };
   if (keys.length === 0) return out;
@@ -73,6 +89,9 @@ export function clipCameraAt(cam: CameraMove, localFrame: number, motion: Pick<M
   out.scale = Math.max(0.05, finite(out.scale, 1));
   out.x = finite(out.x);
   out.y = finite(out.y);
+  // cover-filled pictures never show the background: the overlap-handle extrapolation (below the first / past the
+  // last key) and the handheld noise may leave the cover region, so the scale is raised back to it
+  if (opts?.cover) out.scale = Math.max(out.scale, minCoverScale(out.x, out.y, cam.origin, opts.cover.width, opts.cover.height));
   out.rot = finite(out.rot);
   return out;
 }

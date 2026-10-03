@@ -85,6 +85,7 @@ function tryPunch(ctx: Ctx, env: PunchEnv, c: PunchCand, fill: boolean): Fx | nu
   const si = shotIdxAt(env.shots, a);
   const s = env.shots[si]!;
   if (s.role === "montage") return null;
+  if (s.src.kind === "generated" && s.src.recipe === "keywordCard") return null; // a punch would crop the keyword
   const follower = env.st.items.find((o) => !o.dropped && COMPONENT_META[o.component].followsCamera && o.from <= a && a < o.from + o.dur);
   const pictureOk = s.src.kind === "image" || s.src.kind === "video";
   if (!pictureOk && !follower) return null;

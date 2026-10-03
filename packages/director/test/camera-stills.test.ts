@@ -5,6 +5,7 @@ import { direct } from "../src/index";
 import { effectiveUpscale } from "../src/stats";
 import { errorsOf, runs, scaleAt } from "./helpers";
 import { policyScenario } from "./scenario";
+import { tulipInputs } from "./tulip";
 
 describe("Ken Burns", () => {
   it("never stalls at a cut: d(scale)/df at f = 0 and f = dur − 1 is ≥ 50 % of the mean slope", () => {
@@ -167,5 +168,26 @@ describe("montage", () => {
       expect(punch?.amt ?? TEST_STYLE.cameraPolicy.montage.beatPunch.amt).toBeCloseTo(TEST_STYLE.cameraPolicy.montage.beatPunch.amt, 6);
     }
     expect(snapped).toBeGreaterThan(0);
+  });
+});
+
+describe("generated keyword cards", () => {
+  it("are never reframed or punched: camera ≤ 1.05, no span zoom (punch) over them (SHOCK plate hits are momentary)", () => {
+    // every third non-clip beat becomes a text card without picks (→ generated keywordCard backdrop)
+    const input = tulipInputs().input;
+    const tc = new Set(input.plans.filter((p, k) => k % 3 === 1 && /-B\d{3}$/.test(p.id)).map((p) => p.id));
+    const plans = input.plans.map((p) => (tc.has(p.id) ? { ...p, visualKind: "text_card" as const } : p));
+    const picks = { ...input.picks, picks: input.picks.picks.filter((p) => !tc.has(p.beatId)) };
+    const out = direct({ ...input, plans, picks });
+    expect(errorsOf(out)).toEqual([]);
+    const t = out.timeline;
+    const cards = t.video.filter((c) => c.source.kind === "generated" && c.source.recipe === "keywordCard");
+    expect(cards.length).toBeGreaterThan(0);
+    for (const c of cards) {
+      expect(c.camera.kind, c.id).not.toBe("reframe");
+      for (const k of c.camera.keys) expect(k.scale, c.id).toBeLessThanOrEqual(1.05 + 1e-9);
+      const zooms = t.fx.filter((f) => f.fx === "zoom" && f.shape === "span" && f.target !== "all" && f.from < c.from + c.dur && c.from < f.from + f.dur && f.from >= c.from);
+      expect(zooms.map((f) => f.id), c.id).toEqual([]);
+    }
   });
 });

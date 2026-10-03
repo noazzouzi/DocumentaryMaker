@@ -223,6 +223,26 @@ describe("easing + clip camera", () => {
     expect(clipCameraAt(stat, 999, motion)).toEqual({ scale: 1.04, x: 3, y: 4, rot: 0, blurPx: 0 });
   });
 
+  it("cover layouts never extrapolate or jitter below the cover scale (dissolve handles, handheld)", () => {
+    const motion = { kbEase: KB };
+    const cover = { width: 1920, height: 1080 };
+    const creep = cam({ kind: "creep", ease: "linear", keys: [{ f: 0, scale: 1, x: 0, y: 0, rot: 0 }, { f: 150, scale: 1.06, x: 0, y: 0, rot: 0 }] });
+    expect(clipCameraAt(creep, -14, motion).scale).toBeLessThan(1); // without the cover bound: ink borders in the head handle
+    expect(clipCameraAt(creep, -14, motion, { cover }).scale).toBeGreaterThanOrEqual(1);
+    const hh = { ...creep, handheld: { ampPx: 1, fps: 3 } };
+    for (let f = -15; f < 165; f++) {
+      const c = clipCameraAt(hh, f, motion, { fps: 30, seed: 7, cover });
+      const ox = hh.origin.x * 1920, oy = hh.origin.y * 1080;
+      expect(c.x, `f${f}`).toBeLessThanOrEqual((c.scale - 1) * ox + 1e-9);
+      expect(-c.x, `f${f}`).toBeLessThanOrEqual((c.scale - 1) * (1920 - ox) + 1e-9);
+      expect(c.y, `f${f}`).toBeLessThanOrEqual((c.scale - 1) * oy + 1e-9);
+      expect(-c.y, `f${f}`).toBeLessThanOrEqual((c.scale - 1) * (1080 - oy) + 1e-9);
+    }
+    // inside the keys a valid move is unchanged
+    const c = cam({});
+    expect(clipCameraAt(c, 50, motion, { cover })).toEqual(clipCameraAt(c, 50, motion));
+  });
+
   it("monotone ease never overshoots between keys", () => {
     const c = cam({ ease: "monotone", keys: [{ f: 0, scale: 1, x: 0, y: 0, rot: 0 }, { f: 30, scale: 1.3, x: 0, y: 0, rot: 0 }, { f: 60, scale: 1.3, x: 0, y: 0, rot: 0 }, { f: 90, scale: 1.1, x: 0, y: 0, rot: 0 }] });
     for (let f = 0; f <= 90; f++) {

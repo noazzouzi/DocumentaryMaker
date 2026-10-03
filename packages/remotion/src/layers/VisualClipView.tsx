@@ -38,7 +38,8 @@ export const VisualClipView: React.FC<{ seq: SeriesSeq; exit: VelocityEdge | nul
   const frame = useCurrentFrame();
   const clip = seq.clip;
   const local = frame - seq.headHandle;
-  const cam = clipCameraAt(clip.camera, local, env.tokens.motion, { fps: env.fps, seed: seedOf(clip.id) });
+  const cover = clip.layout === "cover" ? { width: env.width, height: env.height } : undefined;
+  const cam = clipCameraAt(clip.camera, local, env.tokens.motion, { fps: env.fps, seed: seedOf(clip.id), cover });
   const cameraStyle = cameraCss(cam, clip.camera.origin);
   const fullFrame = clip.layout === "cover" || clip.layout === "contain-blur";
   let vx: VelocityXf = NO_VELOCITY;

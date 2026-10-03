@@ -51,8 +51,14 @@ export function assignCameras(ctx: Ctx, shots: Shot[], o: CameraOptions): void {
       ease: "linear", origin, blurFromPx: 0, handheld: null, direction: "none",
     });
     let cam: CameraMove;
+    const textCard = s.src.kind === "generated" && s.src.recipe === "keywordCard";
     const tension = b && (b.cueTypes.has("TENSION_BUILD") || b.cueTypes.has("IRONY")) && s.role !== "clip";
-    if (s.role === "clip") {
+    if (textCard) {
+      // the keyword is sized to the safe width: never reframe it (that crops the first and last letters) — a gentle
+      // push ≤ KEYWORD_MAX_SCALE, or a gentle pull on a camera-change shot of the same card
+      const push = Math.min(KEYWORD_MAX_SCALE - 1, Math.max(0.015, 0.012 * (dur / ctx.fps)));
+      cam = s.change || s.zoomCut ? creep(KEYWORD_MAX_SCALE, KEYWORD_MAX_SCALE - push) : creep(1, 1 + push);
+    } else if (s.role === "clip") {
       cam = creep(1, Math.min(maxS, lerp(ctx.P.clip.creep, r())));
     } else if (tension && b) {
       const beatShots = shots.filter((x) => x.beatId === b.id);
@@ -98,11 +104,31 @@ export function assignCameras(ctx: Ctx, shots: Shot[], o: CameraOptions): void {
         cam = { ...staticCam(base, origin), kind: "reframe" };
       } else cam = staticCam(Math.min(1.04, maxS), origin);
     }
-    if (ctx.P.handheld) cam.handheld = ctx.P.handheld;
+    if (ctx.P.handheld) {
+      cam.handheld = ctx.P.handheld;
+      // the ±ampPx noise must never uncover a frame edge: keep the origin off the frame edges and give every key the
+      // overscan its translation + the noise amplitude needs (cover-like layouts; framed layouts sit on a backdrop)
+      if (coverLike && ctx.P.handheld.ampPx > 0) cam = handheldOverscan(cam, ctx.P.handheld.ampPx);
+    }
     if (cam.direction !== "none") prevDir = cam.direction as Dir;
     lastBase.set(srcKey, Math.min(...cam.keys.map((k) => k.scale)));
     s.camera = cam;
   }
+}
+
+/** Largest camera scale on a generated keyword card (the word fills the safe width: 1650 of 1920 px). */
+export const KEYWORD_MAX_SCALE = 1.05;
+const HANDHELD_ORIGIN = [0.1, 0.9] as const;
+
+/** Overscan for handheld noise: every key covers |x| + amp and |y| + amp on both sides of its origin. */
+export function handheldOverscan(cam: CameraMove, amp: number): CameraMove {
+  const origin = { x: clamp(cam.origin.x, HANDHELD_ORIGIN[0], HANDHELD_ORIGIN[1]), y: clamp(cam.origin.y, HANDHELD_ORIGIN[0], HANDHELD_ORIGIN[1]) };
+  const ox = origin.x * W, oy = origin.y * H;
+  const keys = cam.keys.map((k) => {
+    const need = 1 + Math.max((k.x + amp) / ox, (amp - k.x) / (W - ox), (k.y + amp) / oy, (amp - k.y) / (H - oy), (2 * amp) / Math.min(W, H)) + 0.002;
+    return k.scale >= need ? k : { ...k, scale: Math.ceil(need * 10000) / 10000 };
+  });
+  return { ...cam, origin, keys };
 }
 
 function kenBurns(
