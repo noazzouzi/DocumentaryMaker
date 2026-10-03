@@ -11,6 +11,7 @@ import { cleanText, fmt, rationalTime, stem } from "./util";
 export const CROSS_DISSOLVE_UID = "FxPlug:4731E73A-8DAC-4113-9A30-AE85B1761265";
 const BLEND_MODE: Record<ExportClip["blend"], number | null> = { normal: null, screen: 10, add: 8, multiply: 4, overlay: 14 };
 const ROLE: Record<ExportAudioTrack["role"], string> = { dialogue: "dialogue", music: "music", effects: "effects", clip: "dialogue", stem: "effects" };
+const STEM_ROLE: Record<string, string> = { vo: "dialogue", music: "music", sfx: "effects", clip: "dialogue" };
 
 export function fcpFormatName(et: ExportTimeline): string {
   const r = et.fps.num / et.fps.den;
@@ -86,6 +87,7 @@ export function writeFcpxml(et: ExportTimeline, o: { version: "1.10" | "1.11" | 
         const still = m.kind === "image";
         const a: Record<string, string | number> = { ref: assetRef.get(m.id)!, lane: ti + 1, name: cleanText(c.name), offset: T(local(p, c.start)), start: T(still ? 0 : c.sourceIn), duration: T(c.duration) };
         if (!c.enabled || !track.enabled) a.enabled = 0;
+        if (!still && m.hasAudio) a.srcEnable = "video";
         const x = el.ele(still ? "video" : "asset-clip", a);
         writeVideoAdjust(x, c, still ? 0 : c.sourceIn, T, et);
         for (const mk of c.markers) writeMarker(x, (still ? 0 : c.sourceIn) + mk.frame, mk, T);
@@ -101,7 +103,7 @@ export function writeFcpxml(et: ExportTimeline, o: { version: "1.10" | "1.11" | 
       pushAnchor(p, (el) => {
         const a: Record<string, string | number> = { ref: assetRef.get(m.id)!, lane: -(ti + 1), name: cleanText(c.name), offset: T(local(p, c.start)), start: T(c.sourceIn), duration: T(c.duration) };
         if (!c.enabled || !track.enabled) a.enabled = 0;
-        a.audioRole = ROLE[track.role];
+        a.audioRole = track.role === "stem" ? STEM_ROLE[c.id.replace(/^stem:/, "")] ?? "effects" : ROLE[track.role];
         const x = el.ele("asset-clip", a);
         writeVolume(x, c.gainDb, c.sourceIn, T);
       });
@@ -124,7 +126,10 @@ export function writeFcpxml(et: ExportTimeline, o: { version: "1.10" | "1.11" | 
       ref: assetRef.get(it.media.id)!, name: cleanText(it.clip.name), offset: T(it.clip.start), start: T(it.srcStart), duration: T(it.clip.duration),
     };
     if (!it.clip.enabled || !v1.enabled) a.enabled = 0;
-    if (!it.still) a.tcFormat = "NDF";
+    if (!it.still) {
+      a.tcFormat = "NDF";
+      if (it.media.hasAudio) a.srcEnable = "video"; // V1 is muted (clip sound lives on its own audio lane)
+    }
     const el = spine.ele(it.still ? "video" : "asset-clip", a);
     writeVideoAdjust(el, it.clip, it.srcStart, T, et);
     for (const fn of anchors.get(it) ?? []) fn(el);

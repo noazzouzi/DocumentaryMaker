@@ -264,6 +264,15 @@ export function toExportTimeline(t: Timeline, ctx: ToExportCtx): ExportTimeline 
     a1.push({ id: "vo:program", name: media.get(r.id).name, mediaId: r.id, start: 0, duration: N, sourceIn: 0, gainDb: constGain(0), enabled: true });
   }
   const pushAudio = (name: string, role: ExportAudioTrack["role"], channels: 1 | 2, clips: ExportAudioClip[]) => {
+    // a clip never reads past the end of its media (NLEs reject out > file duration)
+    for (const c of clips) {
+      const md = media.get(c.mediaId).durationFrames;
+      if (md !== null && md > c.sourceIn && c.sourceIn + c.duration > md) {
+        c.duration = md - c.sourceIn;
+        c.gainDb = c.gainDb.filter((k) => k.frame < c.duration);
+        if (!c.gainDb.length) c.gainDb = constGain(0);
+      }
+    }
     packLanes(clips).forEach((lane, n) => {
       // channel layout follows the media (a mono music file stays mono; stereo VO is not exploded as mono)
       const chans = lane.map((c) => media.get(c.mediaId).audioChannels);

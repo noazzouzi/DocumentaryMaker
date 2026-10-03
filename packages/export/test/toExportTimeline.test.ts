@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { ExportTimeline, computeGainTables, type FxCue, type Timeline, type VisualClip } from "@docmaker/core";
 import { makeTimeline } from "@docmaker/core/testing";
-import { loopPieces, mirroredSfxKey, packLanes, pictureKey, toExportTimeline } from "../src/index";
+import { loopPieces, mirroredSfxKey, overlayKey, packLanes, pictureKey, toExportTimeline, writeFcpxml, writeXmeml } from "../src/index";
 import { fakeConform } from "./helpers";
 
 const DIR = "/tmp/proj/export/en";
@@ -200,6 +200,31 @@ describe("edge cases", () => {
     const a4 = exportOf(t).audio.find((a) => a.name === "A4 Clip audio")!;
     expect(a4.clips[0]).toMatchObject({ start: 60, duration: 60, sourceIn: 75 });
     expect(a4.clips[0]!.gainDb).toEqual([{ frame: 0, value: -3, interp: "linear" }]);
+  });
+
+  it("rendered overlays (M3) go to V2 graphics / V3 HUD alpha tracks instead of markers", () => {
+    const t = clone(base);
+    const conformed = fakeConform(t, DIR);
+    const items = t.overlays.slice(0, 2);
+    for (const it of items) {
+      conformed[overlayKey(it.id)] = { assetId: null, localPath: `${DIR}/media/ovl-${it.id.replace(/[^a-z0-9]/gi, "")}.mov`, name: `ovl-${it.id.replace(/[^a-z0-9]/gi, "")}.mov`, kind: "video", width: 1920, height: 1080, durationFrames: it.dur, hasVideo: true, hasAudio: false, audioChannels: null, alpha: true };
+    }
+    const et = toExportTimeline(t, { exportDir: DIR, exportRoot: null, conformed });
+    const v2 = et.video.slice(1).flatMap((v) => v.clips);
+    expect(v2.map((c) => c.id).sort()).toEqual(items.map((i) => i.id).sort());
+    for (const it of items) expect(et.markers.some((m) => m.name === it.component && m.frame === it.from && m.duration === it.dur)).toBe(false);
+    expect(writeXmeml(et, { flavour: "premiere" })).toContain("<alphatype>straight</alphatype>");
+  });
+
+  it("video with sound is placed muted on V1 in FCPXML (srcEnable=video); audio never reads past its media", () => {
+    const t = clone(base);
+    const et = exportOf(t);
+    if (t.video.some((c) => c.source.kind === "video")) expect(writeFcpxml(et, { version: "1.10" })).toMatch(/<asset-clip [^>]*srcEnable="video"/);
+    const conformed = fakeConform(t, DIR);
+    const v = t.audio.vo[0]!;
+    conformed[v.assetId]!.durationFrames = v.sourceInFrames + v.dur - 7;
+    const et2 = toExportTimeline(t, { exportDir: DIR, exportRoot: null, conformed });
+    expect(et2.audio[0]!.clips[0]!.duration).toBe(v.dur - 7);
   });
 
   it("generated sources use the gen:<clipId> still", () => {
