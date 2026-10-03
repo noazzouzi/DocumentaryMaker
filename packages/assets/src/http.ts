@@ -1,0 +1,397 @@
+// HttpClient (§7.5): offline refusal before any DNS/socket, SSRF guard (every hop), per-host User-Agent, header timeout,
+// p-retry (honours Retry-After), TTL response cache, streaming size caps. All network I/O of the product goes through here.
+import dns from "node:dns";
+import { createWriteStream } from "node:fs";
+import { mkdir, readFile, rename, rm } from "node:fs/promises";
+import net from "node:net";
+import path from "node:path";
+import pRetry from "p-retry";
+import { DocmakerError, isDocmakerError } from "@docmaker/core";
+import type { HttpClient, HttpGetOptions, Logger, RuntimeConfig } from "@docmaker/core";
+import { sha256Bytes, userAgentFor } from "@docmaker/core/node";
+import { writeFileAtomic } from "./util";
+
+export const MiB = 1024 * 1024;
+export const DEFAULT_MAX_BYTES = 256 * MiB; // images, audio, JSON, HTML
+export const VIDEO_MAX_BYTES = 2048 * MiB;
+export const HEADER_TIMEOUT_MS = 10_000;
+const BODY_IDLE_TIMEOUT_MS = 30_000;
+const MAX_REDIRECTS = 5;
+/** Hosts allowed over plain http (ccMixter has no https API). */
+export const HTTP_ALLOWED_HOSTS: readonly string[] = ["ccmixter.org"];
+
+export type LookupFn = (host: string) => Promise<{ address: string; family: number }[]>;
+export interface HttpClientInternals {
+  fetchImpl?: typeof fetch; // tests inject a fake transport
+  lookup?: LookupFn; // tests inject DNS answers
+  retries?: number; // default 3
+  retryBaseMs?: number; // default 1000
+  maxRetryAfterMs?: number; // default 60 000
+  env?: NodeJS.ProcessEnv; // proxy detection
+}
+
+// ------------------------------------------------------------------------------------------------ SSRF guard
+const BLOCK_V4: [string, number][] = [
+  ["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16], ["172.16.0.0", 12],
+  ["192.0.0.0", 24], ["192.0.2.0", 24], ["192.88.99.0", 24], ["192.168.0.0", 16], ["198.18.0.0", 15], ["198.51.100.0", 24],
+  ["203.0.113.0", 24], ["224.0.0.0", 4], ["240.0.0.0", 4],
+];
+const BLOCK_V6: [string, number][] = [
+  ["::", 128], ["::1", 128], ["fc00::", 7], ["fe80::", 10], ["fec0::", 10], ["ff00::", 8], ["2001:db8::", 32], ["100::", 64],
+];
+const blockList = new net.BlockList();
+for (const [a, p] of BLOCK_V4) blockList.addSubnet(a, p, "ipv4");
+for (const [a, p] of BLOCK_V6) blockList.addSubnet(a, p, "ipv6");
+
+/** Expands an IPv6 literal to 8 hextets (numbers); null when malformed. */
+function expandV6(ip: string): number[] | null {
+  let s = ip.toLowerCase().replace(/^\[|\]$/g, "").split("%")[0]!;
+  let tailV4: number[] = [];
+  const m = /^(.*:)(\d+\.\d+\.\d+\.\d+)$/.exec(s);
+  if (m) {
+    const parts = m[2]!.split(".").map(Number);
+    if (parts.some((x) => !(x >= 0 && x <= 255))) return null;
+    tailV4 = [(parts[0]! << 8) | parts[1]!, (parts[2]! << 8) | parts[3]!];
+    s = m[1]!.endsWith("::") ? m[1]! : m[1]!.slice(0, -1);
+  }
+  const halves = s.split("::");
+  if (halves.length > 2) return null;
+  const parse = (h: string) => (h === "" ? [] : h.split(":").map((x) => (/^[0-9a-f]{1,4}$/.test(x) ? parseInt(x, 16) : NaN)));
+  const head = parse(halves[0]!);
+  const tail = halves.length === 2 ? parse(halves[1]!) : [];
+  const total = head.length + tail.length + tailV4.length;
+  if (halves.length === 1 && total !== 8) return null;
+  if (total > 8) return null;
+  const out = [...head, ...Array(8 - total).fill(0), ...tail, ...tailV4];
+  return out.some((x) => Number.isNaN(x)) ? null : out;
+}
+
+/** true for loopback, private, link-local, CGNAT, multicast, reserved and documentation ranges (v4 and v6, incl. v4-mapped). */
+export function isBlockedAddress(ip: string): boolean {
+  const fam = net.isIP(ip.replace(/^\[|\]$/g, "").split("%")[0]!);
+  if (fam === 4) return blockList.check(ip, "ipv4");
+  if (fam !== 6) return true; // not an IP literal → refuse (callers resolve names first)
+  const h = expandV6(ip);
+  if (!h) return true;
+  // IPv4-mapped (::ffff:a.b.c.d), IPv4-compatible (::a.b.c.d) and NAT64 (64:ff9b::/96) carry a v4 address in the low 32 bits.
+  const v4 = `${h[6]! >> 8}.${h[6]! & 255}.${h[7]! >> 8}.${h[7]! & 255}`;
+  const mapped = h.slice(0, 5).every((x) => x === 0) && h[5] === 0xffff;
+  const compat = h.slice(0, 6).every((x) => x === 0) && !(h[6] === 0 && h[7]! <= 1);
+  const nat64 = h[0] === 0x64 && h[1] === 0xff9b && h.slice(2, 6).every((x) => x === 0);
+  if (mapped || compat || nat64) return blockList.check(v4, "ipv4");
+  const norm = h.map((x) => x.toString(16)).join(":");
+  return blockList.check(norm, "ipv6");
+}
+
+function hasProxy(env: NodeJS.ProcessEnv): boolean {
+  return ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"].some((k) => (env[k] ?? "") !== "");
+}
+
+/** Origin + path only (query strings may carry API keys). */
+export function redactUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.origin}${u.pathname}`;
+  } catch {
+    return "<invalid url>";
+  }
+}
+
+function ssrfError(msg: string, url: string): DocmakerError {
+  return new DocmakerError("POLICY_DENIED", `blocked request: ${msg}`, { details: { url: redactUrl(url) } });
+}
+
+/** Scheme + host checks, then DNS: every resolved address must be public. Called for the first URL and every redirect. */
+export async function guardUrl(url: string, o: { lookup: LookupFn; env: NodeJS.ProcessEnv; logger?: Logger }): Promise<URL> {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    throw new DocmakerError("VALIDATION", "invalid URL");
+  }
+  const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (u.username || u.password) throw ssrfError("credentials in URL", url);
+  if (u.protocol === "http:") {
+    if (!HTTP_ALLOWED_HOSTS.includes(host)) throw ssrfError("plain http is not allowed", url);
+  } else if (u.protocol !== "https:") {
+    throw ssrfError(`scheme ${u.protocol} is not allowed`, url);
+  }
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) {
+    throw ssrfError("local host name", url);
+  }
+  if (net.isIP(host) !== 0) {
+    if (isBlockedAddress(host)) throw ssrfError("private or reserved address", url);
+    return u;
+  }
+  let addrs: { address: string; family: number }[];
+  try {
+    addrs = await o.lookup(host);
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    // Behind an egress proxy the local resolver may not know public names: the proxy resolves them (and the name checks above hold).
+    if (hasProxy(o.env) && (code === "ENOTFOUND" || code === "EAI_AGAIN" || code === "ESERVFAIL")) {
+      o.logger?.debug("dns lookup failed; deferring resolution to the proxy", { host });
+      return u;
+    }
+    throw new DocmakerError("PROVIDER_ERROR", `cannot resolve ${host}`, { retryable: code === "EAI_AGAIN", cause: e });
+  }
+  if (addrs.length === 0) throw new DocmakerError("PROVIDER_ERROR", `cannot resolve ${host}`);
+  for (const a of addrs) if (isBlockedAddress(a.address)) throw ssrfError(`${host} resolves to a private or reserved address`, url);
+  return u;
+}
+
+const defaultLookup: LookupFn = async (host) => dns.promises.lookup(host, { all: true, verbatim: true });
+
+/** Retry-After: delta-seconds or an HTTP date → ms (null when absent). */
+export function parseRetryAfter(v: string | null, now = Date.now()): number | null {
+  if (!v) return null;
+  const s = v.trim();
+  if (/^\d+(\.\d+)?$/.test(s)) return Math.round(Number(s) * 1000);
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? Math.max(0, t - now) : null;
+}
+
+// ------------------------------------------------------------------------------------------------ client
+interface Req { method: "GET" | "POST"; url: string; body: string | null; contentType: string | null; accept: string }
+
+export function createHttpClient(o: { config: RuntimeConfig; logger: Logger } & HttpClientInternals): HttpClient {
+  const { config, logger } = o;
+  const fetchImpl = o.fetchImpl ?? ((...a: Parameters<typeof fetch>) => globalThis.fetch(...a));
+  const lookup = o.lookup ?? defaultLookup;
+  const env = o.env ?? process.env;
+  const retries = o.retries ?? 3;
+  const retryBaseMs = o.retryBaseMs ?? 1000;
+  const maxRetryAfterMs = o.maxRetryAfterMs ?? 60_000;
+
+  const assertOnline = () => {
+    if (config.offline) throw new DocmakerError("OFFLINE", "offline mode: network access is disabled", { hint: "unset DOCMAKER_OFFLINE / project.assets.offline to use online providers" });
+  };
+
+  /** One attempt: guarded redirect loop; resolves with the final 2xx response (body unread). */
+  async function attempt(req: Req, opts: HttpGetOptions): Promise<{ res: Response; finalUrl: string; idle: AbortController }> {
+    let url = req.url;
+    let method = req.method;
+    let body = req.body;
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      if (opts.signal.aborted) throw new DocmakerError("CANCELED", "request canceled");
+      await guardUrl(url, { lookup, env, logger });
+      const headers: Record<string, string> = { accept: req.accept, ...(opts.headers ?? {}) };
+      // The User-Agent is ours, per host (contact only for CONTACT_UA_HOSTS); callers cannot override it.
+      for (const k of Object.keys(headers)) if (k.toLowerCase() === "user-agent") delete headers[k];
+      headers["user-agent"] = userAgentFor(url, config);
+      if (body !== null && req.contentType) headers["content-type"] = req.contentType;
+      const headerCtl = new AbortController();
+      const idle = new AbortController();
+      const timeoutMs = opts.timeoutMs ?? HEADER_TIMEOUT_MS;
+      const timer = setTimeout(() => headerCtl.abort(), timeoutMs);
+      let res: Response;
+      try {
+        res = await fetchImpl(url, {
+          method, headers, body: body ?? undefined, redirect: "manual",
+          signal: AbortSignal.any([opts.signal, headerCtl.signal, idle.signal]),
+        });
+      } catch (e) {
+        if (opts.signal.aborted) throw new DocmakerError("CANCELED", "request canceled", { cause: e });
+        if (headerCtl.signal.aborted) throw new DocmakerError("PROVIDER_ERROR", `no response headers within ${timeoutMs} ms from ${redactUrl(url)}`, { retryable: true });
+        throw new DocmakerError("PROVIDER_ERROR", `network error for ${redactUrl(url)}: ${(e as Error).message}`, { retryable: true, cause: e });
+      } finally {
+        clearTimeout(timer);
+      }
+      if ([301, 302, 303, 307, 308].includes(res.status)) {
+        const loc = res.headers.get("location");
+        await res.body?.cancel().catch(() => undefined);
+        if (!loc) throw new DocmakerError("PROVIDER_ERROR", `redirect without location from ${redactUrl(url)}`);
+        url = new URL(loc, url).toString();
+        if (res.status === 303 || ((res.status === 301 || res.status === 302) && method === "POST")) {
+          method = "GET";
+          body = null;
+        }
+        continue;
+      }
+      if (res.status < 200 || res.status >= 300) {
+        const retryAfterMs = parseRetryAfter(res.headers.get("retry-after"));
+        let snippet = "";
+        try {
+          snippet = (await res.text()).slice(0, 300);
+        } catch { /* ignore */ }
+        const rate = res.status === 429;
+        const retryable = rate || res.status >= 500 || res.status === 408;
+        throw new DocmakerError(rate ? "PROVIDER_RATE_LIMIT" : "PROVIDER_ERROR", `HTTP ${res.status} from ${redactUrl(url)}`, {
+          retryable, details: { status: res.status, retryAfterMs, snippet },
+        });
+      }
+      return { res, finalUrl: url, idle };
+    }
+    throw new DocmakerError("PROVIDER_ERROR", `too many redirects (> ${MAX_REDIRECTS}) from ${redactUrl(req.url)}`);
+  }
+
+  async function readCapped(res: Response, maxBytes: number, idle: AbortController, url: string): Promise<Uint8Array> {
+    const len = Number(res.headers.get("content-length") ?? "NaN");
+    if (Number.isFinite(len) && len > maxBytes) {
+      await res.body?.cancel().catch(() => undefined);
+      throw new DocmakerError("PROVIDER_ERROR", `response too large (${len} > ${maxBytes} bytes) from ${redactUrl(url)}`);
+    }
+    if (!res.body) return new Uint8Array();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    const reader = res.body.getReader();
+    let timer = setTimeout(() => idle.abort(), BODY_IDLE_TIMEOUT_MS);
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        clearTimeout(timer);
+        if (done) break;
+        total += value.byteLength;
+        if (total > maxBytes) {
+          await reader.cancel().catch(() => undefined);
+          throw new DocmakerError("PROVIDER_ERROR", `response exceeds ${maxBytes} bytes from ${redactUrl(url)}`);
+        }
+        chunks.push(value);
+        timer = setTimeout(() => idle.abort(), BODY_IDLE_TIMEOUT_MS);
+      }
+    } catch (e) {
+      if (isDocmakerError(e)) throw e;
+      throw new DocmakerError("PROVIDER_ERROR", `body read failed for ${redactUrl(url)}: ${(e as Error).message}`, { retryable: true, cause: e });
+    } finally {
+      clearTimeout(timer);
+    }
+    const out = new Uint8Array(total);
+    let off = 0;
+    for (const c of chunks) {
+      out.set(c, off);
+      off += c.byteLength;
+    }
+    return out;
+  }
+
+  function withRetry<T>(label: string, opts: HttpGetOptions, fn: () => Promise<T>): Promise<T> {
+    return pRetry(fn, {
+      retries,
+      minTimeout: retryBaseMs,
+      factor: 2,
+      signal: opts.signal,
+      shouldRetry: ({ error }) => (isDocmakerError(error) ? error.retryable : !opts.signal.aborted),
+      onFailedAttempt: async ({ error, retriesLeft }) => {
+        if (retriesLeft <= 0 || !isDocmakerError(error) || !error.retryable) return;
+        logger.debug("http retry", { label, error: error.message, retriesLeft });
+        const ra = (error.details as { retryAfterMs?: number | null } | undefined)?.retryAfterMs;
+        if (typeof ra === "number" && ra > 0) {
+          if (ra > maxRetryAfterMs) throw error; // the provider asks us to wait too long: give up now
+          await new Promise<void>((resolve, reject) => {
+            const t = setTimeout(resolve, ra);
+            opts.signal.addEventListener("abort", () => { clearTimeout(t); reject(new DocmakerError("CANCELED", "request canceled")); }, { once: true });
+          });
+        }
+      },
+    });
+  }
+
+  // ---- response cache (<home>/cache/http/<aa>/<key>.json); never stores URLs or headers (they may carry keys)
+  const cacheFile = (key: string) => path.join(config.paths.httpCache, key.slice(0, 2), `${key}.json`);
+  const cacheKey = (req: Req, opts: HttpGetOptions) => {
+    const h = Object.entries(opts.headers ?? {}).map(([k, v]) => `${k.toLowerCase()}:${v}`).sort().join("\n");
+    return sha256Bytes(`${req.method} ${req.url}\n${req.accept}\n${h}\n${req.body ?? ""}`);
+  };
+  async function cacheGet(key: string, ttlSec: number): Promise<string | null> {
+    try {
+      const j = JSON.parse(await readFile(cacheFile(key), "utf8")) as { storedAt: number; body: string };
+      if (typeof j.storedAt === "number" && Date.now() - j.storedAt < ttlSec * 1000 && typeof j.body === "string") return j.body;
+    } catch { /* miss */ }
+    return null;
+  }
+  async function cachePut(key: string, body: string): Promise<void> {
+    try {
+      await writeFileAtomic(cacheFile(key), JSON.stringify({ storedAt: Date.now(), body }));
+    } catch (e) {
+      logger.debug("http cache write failed", { error: (e as Error).message });
+    }
+  }
+
+  async function text(req: Req, opts: HttpGetOptions): Promise<string> {
+    assertOnline();
+    const ttl = opts.cacheTtlSec ?? 0;
+    const key = ttl > 0 ? cacheKey(req, opts) : "";
+    if (ttl > 0) {
+      const hit = await cacheGet(key, ttl);
+      if (hit !== null) return hit;
+    }
+    const body = await withRetry(redactUrl(req.url), opts, async () => {
+      const { res, idle, finalUrl } = await attempt(req, opts);
+      logger.debug("http", { method: req.method, url: redactUrl(finalUrl), status: res.status });
+      const bytes = await readCapped(res, opts.maxBytes ?? DEFAULT_MAX_BYTES, idle, finalUrl);
+      return new TextDecoder("utf-8").decode(bytes);
+    });
+    if (ttl > 0) await cachePut(key, body);
+    return body;
+  }
+
+  function parseJson<T>(s: string, url: string): T {
+    try {
+      return JSON.parse(s) as T;
+    } catch (e) {
+      throw new DocmakerError("PROVIDER_ERROR", `invalid JSON from ${redactUrl(url)}`, { cause: e });
+    }
+  }
+
+  return {
+    async getJson<T>(url: string, opts: HttpGetOptions): Promise<T> {
+      return parseJson<T>(await text({ method: "GET", url, body: null, contentType: null, accept: "application/json" }, opts), url);
+    },
+    async getText(url: string, opts: HttpGetOptions): Promise<string> {
+      return text({ method: "GET", url, body: null, contentType: null, accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5" }, opts);
+    },
+    async postForm<T>(url: string, form: Record<string, string>, opts: HttpGetOptions): Promise<T> {
+      const body = new URLSearchParams(form).toString();
+      return parseJson<T>(await text({ method: "POST", url, body, contentType: "application/x-www-form-urlencoded", accept: "application/json" }, { ...opts, cacheTtlSec: 0 }), url);
+    },
+    async postJson<T>(url: string, payload: unknown, opts: HttpGetOptions): Promise<T> {
+      return parseJson<T>(await text({ method: "POST", url, body: JSON.stringify(payload), contentType: "application/json", accept: "application/json" }, { ...opts, cacheTtlSec: 0 }), url);
+    },
+    async download(url: string, destPath: string, opts: HttpGetOptions): Promise<{ bytes: number; mime: string; finalUrl: string }> {
+      assertOnline();
+      const maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
+      await mkdir(path.dirname(destPath), { recursive: true });
+      const part = `${destPath}.part`;
+      return withRetry(redactUrl(url), opts, async () => {
+        const { res, finalUrl, idle } = await attempt({ method: "GET", url, body: null, contentType: null, accept: "*/*" }, opts);
+        const len = Number(res.headers.get("content-length") ?? "NaN");
+        if (Number.isFinite(len) && len > maxBytes) {
+          await res.body?.cancel().catch(() => undefined);
+          throw new DocmakerError("PROVIDER_ERROR", `file too large (${len} > ${maxBytes} bytes) at ${redactUrl(finalUrl)}`);
+        }
+        const out = createWriteStream(part);
+        let total = 0;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          if (res.body) {
+            const reader = res.body.getReader();
+            timer = setTimeout(() => idle.abort(), BODY_IDLE_TIMEOUT_MS);
+            for (;;) {
+              const { done, value } = await reader.read();
+              clearTimeout(timer);
+              if (done) break;
+              total += value.byteLength;
+              if (total > maxBytes) {
+                await reader.cancel().catch(() => undefined);
+                throw new DocmakerError("PROVIDER_ERROR", `download exceeds ${maxBytes} bytes at ${redactUrl(finalUrl)}`);
+              }
+              if (!out.write(value)) await new Promise<void>((r) => out.once("drain", () => r()));
+              timer = setTimeout(() => idle.abort(), BODY_IDLE_TIMEOUT_MS);
+            }
+          }
+          await new Promise<void>((resolve, reject) => out.end((err?: Error | null) => (err ? reject(err) : resolve())));
+          await rename(part, destPath);
+        } catch (e) {
+          if (timer) clearTimeout(timer);
+          out.destroy();
+          await rm(part, { force: true });
+          if (isDocmakerError(e)) throw e;
+          if (opts.signal.aborted) throw new DocmakerError("CANCELED", "download canceled");
+          throw new DocmakerError("PROVIDER_ERROR", `download failed for ${redactUrl(finalUrl)}: ${(e as Error).message}`, { retryable: true, cause: e });
+        }
+        logger.debug("http download", { url: redactUrl(finalUrl), bytes: total });
+        return { bytes: total, mime: (res.headers.get("content-type") ?? "application/octet-stream").split(";")[0]!.trim(), finalUrl };
+      });
+    },
+  };
+}
