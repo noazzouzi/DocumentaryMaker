@@ -35,7 +35,6 @@ export function renderScore(o: ScoreOptions): Score {
   const inst = instrumentsFor(o.mood, o.energy);
   const R = (k: string) => rngFor(o.seed, `${SYNTH_VERSION}:${o.mood}:${o.energy}:${k}`);
   const beatLen = (60 * sr) / o.bpm;
-  const barLen = 4 * beatLen;
 
   const pad = new Bus(total);
   const dry = new Bus(total);
