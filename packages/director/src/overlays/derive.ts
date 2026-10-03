@@ -5,7 +5,7 @@ import {
 } from "@docmaker/core";
 import { clamp, cueFrame, cueWord, round2, shotIdxAt, truncate, type BeatCtx, type Ctx, type Shot } from "../ctx";
 import { evidenceBoard, photoBurstFrames, photoBurstProps } from "./fromMotion";
-import { holdOf } from "./hold";
+import { boundFullFrameHold, holdOf } from "./hold";
 import { CLS, addOv, cooldownOk, enterOf, overshootOk, personById, personRule, portraitFor, type OvState } from "./state";
 import { keywordSlam } from "./cues";
 import { fillAts, syncWords } from "./sync";
@@ -217,7 +217,7 @@ export function cueComponents(ctx: Ctx, st: OvState, shots: readonly Shot[]): Bl
       const pick = weightedPick(weights, ctx.R(`cmp:${b.id}:${k}`));
       const c = cands.find((x) => x.comp === pick)!;
       const h = holdOf(c.comp, c.d.props, ctx.fps, { narratedEnd: c.d.narratedEnd ?? null, contentFrames: c.d.contentFrames });
-      const dur = c.d.dur ?? h.dur;
+      const dur = c.d.dur ?? boundFullFrameHold(ctx, b, c.comp, c.d.from, h.dur, c.d.narratedEnd ?? null);
       const ov = addOv(ctx, st, {
         component: c.comp, ref: b.id, beatId: b.id, from: c.d.from, dur, props: c.d.props, cls: CLS.cue, origin: "cue",
         anchorWord: c.d.anchorWord, subBeats: c.d.subBeats, readHold: Math.min(h.readHold, h.maxHold),

@@ -1,6 +1,6 @@
 // Readability holds per COMPONENT_META.read (§4.11 ReadPolicy, §9.3 step 7).
 import { COMPONENT_META, framesAt, secToFrames, type OverlayComponentId } from "@docmaker/core";
-import { truncate } from "../ctx";
+import { truncate, type BeatCtx, type Ctx } from "../ctx";
 
 /** Strings at dotted paths ("items.headline", "lines", "left.label") of a props object. */
 export function textAt(props: unknown, path: string): string[] {
@@ -25,6 +25,37 @@ function readSecFormula(texts: string[]): number {
   return latin / 15 + cjk / 4.5;
 }
 
+/** Longest reading-time (formula) hold of a full-frame graphics card, seconds. */
+export const FULL_FRAME_READ_MAX_SEC = 6;
+/** A full-frame card may run into the next beat with its own picked asset only up to this many seconds after its entry. */
+export const FULL_FRAME_INTO_PICKED_SEC = 4;
+
+const endsSentence = (t: string) => /[.?!…]["»”’)]?$/u.test(t.trim());
+
+/**
+ * Bounds the hold of a full-frame graphics card that is not VO-synced (narratedEnd null): it ends at most 0.75 s after the
+ * narrated sentence that contains the end of its beat, and runs into the next beat that has its own picked asset only up
+ * to FULL_FRAME_INTO_PICKED_SEC after its entry (that asset must be seen). VO-synced cards keep their narrated hold.
+ */
+export function boundFullFrameHold(ctx: Ctx, b: BeatCtx, component: OverlayComponentId, from: number, dur: number, narratedEnd: number | null): number {
+  const m = COMPONENT_META[component];
+  if (!m.fullFrame || m.band !== "graphics" || narratedEnd !== null) return dur;
+  const minHold = framesAt(ctx.fps, m.minHold30);
+  let end = from + dur;
+  // end of the sentence that the beat's last word belongs to
+  let sentEnd = b.end;
+  for (let i = b.wordEnd - 1; b.wordEnd > b.wordStart && i < ctx.words.length && i < b.wordEnd + 60; i++) {
+    const w = ctx.words[i]!;
+    if (i >= b.wordEnd && w.segmentId !== ctx.words[b.wordEnd - 1]?.segmentId) break;
+    sentEnd = w.from + w.dur;
+    if (endsSentence(w.text)) break;
+  }
+  end = Math.min(end, Math.max(from + minHold, sentEnd + ctx.S(0.75)));
+  const next = ctx.beats.find((x) => x.from >= b.end && x.from < end && (ctx.picksByBeat.get(x.id)?.length ?? 0) > 0);
+  if (next) end = Math.max(next.from, Math.min(end, from + ctx.S(FULL_FRAME_INTO_PICKED_SEC)));
+  return Math.max(Math.min(dur, minHold), end - from);
+}
+
 export interface Hold { readHold: number; minHold: number; maxHold: number; enter: number; exit: number; dur: number; over: boolean }
 
 /**
@@ -36,7 +67,9 @@ export function holdOf(component: OverlayComponentId, props: unknown, fps: numbe
   const enter = framesAt(fps, m.enter30), exit = framesAt(fps, m.exit30);
   const minHold = framesAt(fps, m.minHold30), maxHold = framesAt(fps, m.maxHold30);
   const texts = readText(component, props);
-  const formula = () => enter + secToFrames(Math.max(1.5, readSecFormula(texts) + 1.5), fps);
+  // a full-frame card hides the picture: reading-time holds are capped (the narration has moved on by then)
+  const cap = m.fullFrame && m.band === "graphics" ? enter + secToFrames(FULL_FRAME_READ_MAX_SEC, fps) : Infinity;
+  const formula = () => Math.min(cap, enter + secToFrames(Math.max(1.5, readSecFormula(texts) + 1.5), fps));
   let readHold: number;
   switch (m.read.mode) {
     case "formula": readHold = formula(); break;

@@ -2093,6 +2093,9 @@ export const OVERLAY_PROPS = {
  *  narrated — readHold = (last narrated word end − item.from) + S(0.6) when VO-synced, else formula
  *  none     — no text to read
  * dur = clamp(readHold, minHold, maxHold); readHold > maxHold → text truncated (formula) or a READABILITY warning — never an error.
+ * Full-frame graphics cards (fullFrame, band graphics): the formula readHold is capped at enter + S(6); when not VO-synced the
+ * director also ends them ≤ 0.75 s after the narrated sentence holding the end of their beat, and lets them run into the
+ * next beat with its own picked asset only until entry + S(4) (that asset must be seen).
  */
 export interface ReadPolicy { mode: "formula" | "glance" | "title" | "narrated" | "none"; textFields: readonly string[] }
 export interface ComponentMeta {

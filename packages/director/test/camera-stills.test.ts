@@ -212,3 +212,17 @@ describe("text cards under text overlays", () => {
     expect(t.video.some((c) => c.source.kind === "generated" && c.source.recipe === "keywordCard" && c.source.text !== "")).toBe(true); // cards without an overlay keep their headline
   });
 });
+
+describe("full-frame cards", () => {
+  it("a reading-time QuoteCard holds ≤ 6 s and does not hide the next picked beat beyond 4 s after its entry", () => {
+    const t = runs().tulip.timeline;
+    const cards = t.overlays.filter((o) => o.component === "QuoteCard" && ((o.props as { words: unknown[] }).words.length === 0));
+    expect(cards.length).toBeGreaterThan(0);
+    for (const o of cards) {
+      expect(o.dur, o.id).toBeLessThanOrEqual(o.enterFrames + 6 * t.fps);
+      // picture clips of other beats with their own picked asset that start under the card
+      const hidden = t.video.filter((c) => c.beatId !== o.beatId && c.beatId?.endsWith("-CLIP") === false && (c.source.kind === "image" || c.source.kind === "video") && c.from > o.from && c.from < o.from + o.dur);
+      for (const c of hidden) expect(o.from + o.dur, `${o.id} over ${c.id}`).toBeLessThanOrEqual(Math.max(c.from, o.from + 4 * t.fps));
+    }
+  });
+});

@@ -4,7 +4,7 @@ import {
   type OverlayComponentId,
 } from "@docmaker/core";
 import { clamp, cueFrame, round2, truncate, type BeatCtx, type Ctx } from "../ctx";
-import { fitFormula, holdOf } from "./hold";
+import { boundFullFrameHold, fitFormula, holdOf } from "./hold";
 import { CLS, addOv, enterOf, personById, personRule, policyOf, portraitFor, type Ov, type OvState } from "./state";
 import { fillAts, findSpoken, syncWords } from "./sync";
 
@@ -89,7 +89,7 @@ export function templateOverlays(ctx: Ctx, st: OvState): void {
       h = holdOf(built.component, props, ctx.fps, { narratedEnd: built.narratedEnd, contentFrames: built.contentFrames });
     }
     addOv(ctx, st, {
-      component: built.component, ref: b.id, beatId: b.id, from: built.from, dur: h.dur, props, cls: CLS.template, origin: "template",
+      component: built.component, ref: b.id, beatId: b.id, from: built.from, dur: boundFullFrameHold(ctx, b, built.component, built.from, h.dur, built.narratedEnd), props, cls: CLS.template, origin: "template",
       anchorWord: built.anchorWord, subBeats: built.subBeats, readHold: Math.min(h.readHold, h.maxHold),
     });
   }
