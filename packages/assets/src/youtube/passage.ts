@@ -77,8 +77,9 @@ export function tokenize(text: string): string[] {
   return text.split(/\s+/u).map(normWord).filter((t) => t !== "");
 }
 
-/** Finds `quote` in timed transcript words. null when below the 0.6 acceptance threshold. */
-export function findPassage(quote: string, words: readonly WordTiming[], o: { maxClipMs: number }): { score: number; startMs: number; endMs: number; matchedText: string } | null {
+/** Finds `quote` in timed transcript words. null when below the 0.6 acceptance threshold.
+ *  matchStartMs/matchEndMs bound the matched words themselves (the shot snap never cuts into them). */
+export function findPassage(quote: string, words: readonly WordTiming[], o: { maxClipMs: number }): { score: number; startMs: number; endMs: number; matchedText: string; matchStartMs: number; matchEndMs: number } | null {
   const q = tokenize(quote);
   // Transcript word → token(s); keep a token → word index map (a word may hold several tokens, e.g. "can't stop").
   const toks: string[] = [];
@@ -115,5 +116,5 @@ export function findPassage(quote: string, words: readonly WordTiming[], o: { ma
     endMs = startMs + o.maxClipMs;
   }
   const matchedText = words.slice(first, last + 1).map((w) => w.text).join(" ");
-  return { score, startMs: Math.round(startMs), endMs: Math.round(endMs), matchedText };
+  return { score, startMs: Math.round(startMs), endMs: Math.round(endMs), matchedText, matchStartMs: matchStart, matchEndMs: matchEnd };
 }

@@ -7,6 +7,7 @@ import { freezeFile } from "../freeze";
 import { attributionText, licenseInfo } from "../license";
 import type { AssetsCtx } from "../types";
 import { errMsg, makeTmpDir, nowIso, rmrf } from "../util";
+import { detectCuts, snapToCuts } from "./cuts";
 import { findPassage, PASSAGE_ACCEPT } from "./passage";
 import { dropYtSource, parseYoutubeId, ytDownload, ytFetchTranscript, ytSearch, ytUrl, type YtSearchHit } from "./ytdlp";
 
@@ -109,7 +110,12 @@ async function resolveOne(segmentId: string, quote: Quote, i: { project: Project
   if (!i.project.editorial.fairUseAcknowledged) {
     return { clip: { ...base, assetId: null, status: "skipped-policy", youtube: ref, passageInMs: null, passageOutMs: null, reason: `passage found${ambiguity}; download waits for the fair-use acknowledgement` }, frozen: null, words: null };
   }
-  const r = await downloadAndFreeze({ videoId: best.hit.id, durationSec: best.hit.durationSec, startMs: best.p.startMs, endMs: best.p.endMs, words: best.words, candidate: youtubeCandidate(best.hit, ref), projectDir: i.projectDir, fps: i.project.video.fps, keepSource: i.project.assets.keepSourceDownloads }, ctx);
+  const r = await downloadAndFreeze({
+    videoId: best.hit.id, durationSec: best.hit.durationSec, startMs: best.p.startMs, endMs: best.p.endMs, words: best.words, candidate: youtubeCandidate(best.hit, ref),
+    projectDir: i.projectDir, fps: i.project.video.fps, keepSource: i.project.assets.keepSourceDownloads, snapTo: { startMs: best.p.matchStartMs, endMs: best.p.matchEndMs },
+  }, ctx);
+  ref.startMs = r.startMs;
+  ref.endMs = r.endMs;
   return {
     clip: { ...base, assetId: r.frozen.id, status: "found", youtube: ref, passageInMs: r.passageInMs, passageOutMs: r.passageOutMs, reason: `match ${best.p.score}${ambiguity}` },
     frozen: r.frozen,
@@ -117,8 +123,9 @@ async function resolveOne(segmentId: string, quote: Quote, i: { project: Project
   };
 }
 
-/** yt-dlp download (whole ≤ 15 min, else a section with handles) → clip-v1 → freeze; words re-timed to the conformed file. */
-export async function downloadAndFreeze(o: { videoId: string; durationSec: number | null; startMs: number; endMs: number; words: readonly WordTiming[]; candidate: ReturnType<typeof youtubeCandidate>; projectDir: string; fps: number; keepSource: boolean }, ctx: AssetsCtx): Promise<{ frozen: FrozenAsset; passageInMs: number; passageOutMs: number; words: WordTiming[] }> {
+/** yt-dlp download (whole ≤ 15 min, else a section with handles) → optional shot snap (±0.5 s, never into the matched words)
+ *  → clip-v1 → freeze; words re-timed to the conformed file. Returns the final passage on the source clock. */
+export async function downloadAndFreeze(o: { videoId: string; durationSec: number | null; startMs: number; endMs: number; words: readonly WordTiming[]; candidate: ReturnType<typeof youtubeCandidate>; projectDir: string; fps: number; keepSource: boolean; snapTo?: { startMs: number; endMs: number } | null }, ctx: AssetsCtx): Promise<{ frozen: FrozenAsset; passageInMs: number; passageOutMs: number; words: WordTiming[]; startMs: number; endMs: number }> {
   const tmp = await makeTmpDir("clip");
   try {
     const sectionStart = Math.max(0, o.startMs - DEFAULT_HANDLE_MS - 1000);
@@ -126,12 +133,24 @@ export async function downloadAndFreeze(o: { videoId: string; durationSec: numbe
     const file = await ytDownload(o.videoId, { sectionMs: section, outDir: tmp, durationSec: o.durationSec }, { config: ctx.config, signal: ctx.signal, logger: ctx.logger, onProgress: (p) => ctx.progress(p, "downloading clip") });
     const whole = !file.startsWith(tmp + path.sep);
     const offset = whole ? 0 : sectionStart;
-    const conf = await conformClip(file, tmp, { fps: o.fps, passageInMs: o.startMs - offset, passageOutMs: o.endMs - offset, handleMs: DEFAULT_HANDLE_MS }, ctx);
-    const frozen = await freezeFile({ file, kind: "video", role: "clip", candidate: o.candidate, declaration: null, conform: conf, projectDir: o.projectDir }, ctx);
+    let win = { startMs: o.startMs, endMs: o.endMs };
+    if (o.snapTo) {
+      try {
+        const cuts = await detectCuts(file, Math.max(0, o.startMs - offset - 1000), o.endMs - offset + 1000, { config: ctx.config, signal: ctx.signal, logger: ctx.logger });
+        win = snapToCuts(win, o.snapTo, cuts.map((c) => c + offset));
+      } catch (e) {
+        if (isDocmakerError(e) && e.code === "CANCELED") throw e;
+        ctx.logger.debug("shot detection failed; passage kept", { error: errMsg(e) });
+      }
+    }
+    const conf = await conformClip(file, tmp, { fps: o.fps, passageInMs: win.startMs - offset, passageOutMs: win.endMs - offset, handleMs: DEFAULT_HANDLE_MS }, ctx);
+    // The ledger and the frozen candidate carry the final (snapped) passage.
+    const candidate = o.candidate.youtube ? { ...o.candidate, youtube: { ...o.candidate.youtube, startMs: win.startMs, endMs: win.endMs } } : o.candidate;
+    const frozen = await freezeFile({ file, kind: "video", role: "clip", candidate, declaration: null, conform: conf, projectDir: o.projectDir }, ctx);
     const origin = offset + (conf.sourceInMs ?? 0);
     const words = rebaseWords(o.words, origin, offset + (conf.sourceOutMs ?? Number.MAX_SAFE_INTEGER), origin);
     if (whole && !o.keepSource) await dropYtSource(ctx.config, o.videoId);
-    return { frozen, passageInMs: conf.passageInMs, passageOutMs: conf.passageOutMs, words };
+    return { frozen, passageInMs: conf.passageInMs, passageOutMs: conf.passageOutMs, words, startMs: win.startMs, endMs: win.endMs };
   } finally {
     await rmrf(tmp);
   }
