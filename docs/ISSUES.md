@@ -196,3 +196,29 @@ export const CONTACT_UA_HOSTS: readonly string[] = ["commons.wikimedia.org", "up
 targetLufs: z.number().default(-14), truePeakGate: z.number().default(-1),
 ```
 **Local workaround.** Items 1–2 as described; everything else is behaviour documentation.
+
+## 2026-10-03 audio (W5) → core node WAV I/O (I), engine (W10), director (W6), remotion (W7) — notes; no blocking contract change
+
+**Problem.**
+1. **Long programs are read whole.** `readWav` has no ranged/streaming reader, so `mixTimeline` holds the decoded VO program in memory (30 min mono ≈ 0.35 GB of float32 plus the file buffer while decoding) and `encodeBlock` writes one `Buffer.writeIntLE` call per sample (≈ 60 % of the mixer's run time: a 10-min mix takes ≈ 32 s and ≈ 0.6 GB RSS on this machine). Audio keeps no copy of the WAV code (§11).
+2. **Optional packs need a directory.** `ensureSfxPack(pack)` keeps its §4.19 signature: for `procedural` it generates; for `remotion-sfx-cc0` / `hyperframes-pixabay` / `user` it returns the imported manifest or throws `UPSTREAM_MISSING` (hint: setup command). Importing is the additive `importSfxPack(pack, srcDir, ctx, { license? })`: the engine/CLI downloads the CC0 `@remotion/sfx` files (`whoosh`, `whip`, `pageTurn`, `shutterOld`, `shutterModern`, `mouseClick`, `ding`; everything else is ignored) through its own `HttpClient` into a folder, or passes the user's HyperFrames SFX folder (`manifest.json`, Pixabay licence, `no-redistribution`), or a user folder (`<category>/<file>` or `<category>-<n>.<ext>` + `license.json`; a missing licence is refused, never USER-OWNED). `loadSfxEntries` skips packs that are not installed (warning) and generates `procedural` on demand.
+3. **`scanMusicLibrary` results** (additive fields): `file` is the `audio-norm-v1` copy in `<home>/cache/music-norm/<sha16>.wav` (pcm_s16le, −18 LUFS, TP −1.5; the original is never modified); `sourceFile`, `sourceSha256`, `licenseDeclared`. An undeclared track comes back as `UNKNOWN` with `unknown-rights` (`UNDECLARED_LICENSE`) — W11/W10 must collect an UploadDeclaration before using it. Moods come from `moods.json` (`{ "<file name>": [...] }`, invalid moods dropped) or the parent folder name. Beat grids need the Python venv (`runSidecar("beats")`); without it `bpm: null`, `beatsMs: []`.
+4. **Sidecar `beats`** (`python/docmaker_sidecar/cmd_beats.py`, MIT copy of beats.py): one addition — a half-beat check on the kick band, because bright off-beat hats won the full-band comb on the procedural tense bed (phase locked half a beat off). The tracker reports beats ≈ 10 ms early; the Node side builds a steady grid `phase + k·period + BEATS_LATENCY_MS (10)`. The downbeat (bar phase) stays the original heuristic (most kick energy) and can be off by two beats on four-on-the-floor material. `energy` = audio_energy.py. Both read 8/16/24/32-bit PCM. Both need `numpy` (already in `python/pyproject.toml`).
+5. **Mixer behaviour the other packages should know** (W6, W7, W10):
+   - SFX sync: a cue whose `sfxId` + `assetId` match an installed manifest entry is placed so the file's `peakOffsetMs` lands exactly on `frameToSample48k(eventFrame)` (sub-frame accurate); otherwise `eventFrame − from` frames are used.
+   - Silences are exact sample masks (digital zero on `[from, from+dur)`), with 2.5 ms ramps just *outside* the span; gain tables are interpolated per sample then smoothed (5 ms) — the Player steps per frame (expected small preview difference).
+   - `ClipAudio` items honour silences affecting `clip` even when `duckUnderVo` is false (only the VO ducking is skipped); cut clip/music/SFX edges get 2.5 ms de-click ramps.
+   - Pan is equal power normalised to unity at the centre (√2·cos/sin): a centred stereo SFX plays at the level the director computed; a hard-panned one gains up to +3 dB on its side.
+   - `loop` cues only loop when the manifest says the entry is `loopable` (unknown entries: trusted).
+   - `LoudnessDoc.limiterMaxGrDb` is a positive number of dB (0 = limiter idle); `gainDb` is the gain applied to the master and to every stem (stems sum to the master when the limiter is idle). The limiter re-aims the gain at most twice so the integrated loudness stays within ±0.3 LU of the target.
+6. **Procedural SFX pack facts** (W6): ids `procedural:<category>/<n>` with 0-based variants; every §11.2 category including M2 ones is generated (≈ 53 files, ≈ 6 s, `<home>/sfx/procedural/v1`, regenerated when the recipe stamp changes). For noise sweeps (`whoosh.*`) `peakOffsetMs` is the designed envelope peak, cross-checked against a two-slope envelope fit (generation fails if they differ by > 25 ms); other sync points are measured. Normalisation is a linear gain (sounds < 400 ms: peak at the middle of the category range; longer: −20 LUFS with a −1 dBFS sample-peak ceiling; bleep: −18 dBFS) — not ffmpeg `loudnorm`, whose dynamic mode would reshape short envelopes.
+7. **Procedural music** is normalised with a measured linear gain (`measureEbur128`) instead of `twoPassLoudnorm` (deterministic, never falls back to dynamic mode); output s24 stereo with `<hash>.json` metadata next to it. The engine still owns the seed (`project.seed ⊕ fnv1a32(mood + energy)`) and the freeze.
+8. **`densityReport.chapterRmsDb` is nominal** (timeline levels × gain tables, no decoding): QA should present it as an estimate next to the measured LoudnessDoc.
+
+**Proposed diff.** (optional, for I, after P1)
+```ts
+// core/src/node/wav.ts — streaming read for long programs + a faster s24 encoder
+export async function readWavRange(path: string, startFrame: number, frames: number): Promise<WavData>;
+// encodeBlock: write s24 through a Uint8Array/DataView loop instead of Buffer.writeIntLE per sample
+```
+**Local workaround.** None needed: the mixer works block-wise on everything it renders and only the decoded sources are held whole.
