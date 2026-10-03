@@ -5,8 +5,9 @@ import { writeExportBundle as writeBundleImpl } from "./bundle";
 import { conformForNle as conformImpl } from "./conform";
 import { writeMarkersEdl as edlImpl } from "./edl";
 import { writeFcpxml as fcpxmlImpl } from "./fcpxml";
-import { notImplemented } from "./notImplemented";
 import { writeOtio as otioImpl } from "./otio";
+import { writePublishKit as publishImpl } from "./publish";
+import { writeEditorialReport as reportImpl } from "./report";
 import { exportReadme as readmeImpl } from "./readme";
 import { writeSrt as srtImpl } from "./srt";
 import { toExportTimeline as toEtImpl } from "./toExportTimeline";
@@ -23,6 +24,8 @@ export { allMarkers } from "./edl";
 export { bundleFileNames, nonPortableSummary } from "./readme";
 export { srtGroups, wrapLines } from "./srt";
 export { CROSS_DISSOLVE_UID, fcpFormatName } from "./fcpxml";
+export { chapterLines, chapterStamp } from "./publish";
+export { assetSpans, clipUsage } from "./report";
 
 /** Copies/hardlinks + converts media into export/<lang>/media/ (stills cover-cropped to 1920×1080 from VisualSource crop/focal). */
 export function conformForNle(t: Timeline, i: { projectDir: string; exportDir: string; generatedStills: Record<string, string>; overlays: Record<string, string> | null; stems: Record<string, string> }, ctx: ExportCtx): Promise<ConformMap> {
@@ -48,12 +51,10 @@ export function writeSrt(t: Timeline): string {
   return srtImpl(t);
 } // non-burned "srt"/"clip"/"translation" groups only (never "keywords")
 export function writePublishKit(i: { t: Timeline; publish: PublishInfo | null; credits: string; lang: Lang }): string {
-  void i;
-  throw notImplemented("export.writePublishKit");
+  return publishImpl(i);
 } // publish.<lang>.md
 export function writeEditorialReport(i: { t: Timeline; facts: FactSheet; factCheck: FactCheck; ledger: Ledger; usage: UsageDoc; voice: VoiceTrack | null; lang: Lang }): string {
-  void i;
-  throw notImplemented("export.writeEditorialReport");
+  return reportImpl(i);
 }
 export function exportReadme(i: { t: Timeline; formats: ExportFormat[]; exportRoot: string | null; asOf: string; hasReference: boolean; lang: Lang }): string {
   return readmeImpl(i);
