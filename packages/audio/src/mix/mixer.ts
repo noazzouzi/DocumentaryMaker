@@ -132,7 +132,9 @@ class Renderer {
         let env = 1;
         if (it.fadeIn > 0 && local < it.fadeIn) env = local / it.fadeIn;
         if (it.fadeOut > 0 && dur - local <= it.fadeOut) env = Math.min(env, (dur - local) / it.fadeOut);
-        if (it.declickIn && local < DECLICK) env *= local / DECLICK;
+        // the de-click ramp starts at the first audible sample (programme sample 0 when the item starts before it)
+        const audible = local - Math.max(0, -it.start);
+        if (it.declickIn && audible < DECLICK) env *= audible / DECLICK;
         if (it.declickOut && dur - local <= DECLICK) env *= (dur - local) / DECLICK;
         const tg = gt ? gt[n - b0]! : mk ? mk[n - b0]! : 1;
         const e = env * tg;

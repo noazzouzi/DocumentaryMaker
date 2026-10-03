@@ -85,8 +85,10 @@ async function sourcesFor(pack: ImportablePack, srcDir: string, ctx: AudioCtx): 
     const m = JSON.parse(await readFile(mf, "utf8")) as Record<string, { file?: string }>;
     for (const key of Object.keys(m).sort()) {
       const category = HYPERFRAMES_CATEGORY[key];
-      const file = m[key]?.file ? path.join(srcDir, m[key]!.file!) : null;
+      const file = m[key]?.file ? path.resolve(srcDir, m[key]!.file!) : null;
       if (!category) { ctx.logger.warn("SFX pack: unmapped sound skipped", { pack, key }); continue; }
+      const rel = file ? path.relative(path.resolve(srcDir), file) : "";
+      if (file && (rel === "" || rel.startsWith("..") || path.isAbsolute(rel))) { ctx.logger.warn("SFX pack: file outside the pack folder skipped", { pack, key }); continue; }
       if (!file || !existsSync(file)) { ctx.logger.warn("SFX pack: file missing", { pack, key }); continue; }
       out.push({ key, file, category });
     }
@@ -139,16 +141,17 @@ export async function importSfxPack(pack: ImportablePack, srcDir: string, ctx: A
       for (const [k, s] of sources.entries()) {
         checkAbort(ctx.signal, "SFX pack import");
         ctx.progress(k / sources.length, `importing ${s.key}`);
-        const variant = variants.get(s.category) ?? 0;
-        variants.set(s.category, variant + 1);
         let data: Float32Array[] = (await loadAudio48k(s.file, 2, ctx)).data.map((c) => c.slice());
         const loopable = LOOPABLE.has(s.category);
         if (!loopable) data = trimTrailingSilence(data);
         const durationMs = Math.round(((data[0]?.length ?? 0) * 1000) / SR);
-        const base = `${s.category}-${variant}`;
-        const out = path.join(build, `${base}.wav`);
         const pk = toDb(samplePeak(data));
         if (pk <= -144) { ctx.logger.warn("SFX pack: silent file skipped", { key: s.key }); continue; }
+        // variants are numbered after the silent-file check: no gaps (impact/0, impact/1, …)
+        const variant = variants.get(s.category) ?? 0;
+        variants.set(s.category, variant + 1);
+        const base = `${s.category}-${variant}`;
+        const out = path.join(build, `${base}.wav`);
         let gainDb = categoryMidPeakDb(s.category) - pk;
         if (durationMs >= 400) {
           await writeWav(out, { sampleRate: SR, channels: 2, data }, "f32");
