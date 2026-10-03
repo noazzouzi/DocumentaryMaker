@@ -40,12 +40,12 @@ export function nodeVersionCheck(version: string): DoctorCheck {
 }
 const fmtBytes = (n: number) => (n >= GiB ? `${(n / GiB).toFixed(1)} GiB` : `${Math.round(n / 1024 ** 2)} MiB`);
 
-async function tool(cmd: string, args: string[], signal: AbortSignal): Promise<{ ok: boolean; out: string }> {
+async function tool(cmd: string, args: string[], signal: AbortSignal): Promise<{ ok: boolean; out: string; stdout: string }> {
   try {
     const r = await run(cmd, args, { signal, timeoutMs: 8000 });
-    return { ok: r.code === 0, out: r.stdout + r.stderr };
+    return { ok: r.code === 0, out: r.stdout + r.stderr, stdout: r.stdout };
   } catch {
-    return { ok: false, out: "" };
+    return { ok: false, out: "", stdout: "" };
   }
 }
 
@@ -91,7 +91,7 @@ export async function runDoctor(rt: Runtime, o: { probeNetwork?: boolean; signal
   add({ id: "platform", ok: process.platform !== "win32", level: process.platform === "win32" ? "error" : "info", value: plat, hint: process.platform === "win32" ? "use WSL2" : null });
   add(nodeVersionCheck(process.versions.node));
   const pnpm = await tool("pnpm", ["--version"], signal);
-  const pv = pnpm.out.trim();
+  const pv = pnpm.stdout.trim().split(/\r?\n/)[0] ?? "";
   add({ id: "pnpm", ok: pnpm.ok && /^10\./.test(pv), level: "warn", value: pnpm.ok ? pv : "not found", hint: pnpm.ok && /^10\./.test(pv) ? null : "install pnpm 10 (corepack enable)" });
   const proxyVars = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"].filter((k) => (rt.env[k] ?? "") !== "");
   const proxyOk = proxyVars.length === 0 || rt.env.NODE_USE_ENV_PROXY === "1";
@@ -110,7 +110,7 @@ export async function runDoctor(rt: Runtime, o: { probeNetwork?: boolean; signal
   const fp = await tool(config.ffprobe, ["-hide_banner", "-version"], signal);
   add({ id: "ffprobe", ok: fp.ok, level: "error", value: fp.ok ? (parseFfmpegVersion(fp.out)?.join(".") ?? "ok") : "not found", hint: fp.ok ? null : "install ffprobe (ships with ffmpeg)" });
   const tar = await tool("tar", ["--version"], signal);
-  add({ id: "tar", ok: tar.ok, level: "warn", value: tar.ok ? tar.out.split("\n")[0]!.trim() : "not found", hint: tar.ok ? null : "install tar (model extraction)" });
+  add({ id: "tar", ok: tar.ok, level: "warn", value: tar.ok ? tar.stdout.split("\n")[0]!.trim() : "not found", hint: tar.ok ? null : "install tar (model extraction)" });
 
   // Chrome, GL, fonts, Remotion licence
   const exe = config.browserExecutable && isExec(config.browserExecutable) ? config.browserExecutable : isExec(path.join(config.repoRoot, REPO_CHROME_REL)) ? path.join(config.repoRoot, REPO_CHROME_REL) : null;
@@ -158,7 +158,8 @@ export async function runDoctor(rt: Runtime, o: { probeNetwork?: boolean; signal
     const v = sub(m);
     add({ id: `model:${m}`, ok: v !== null, level: "info", value: v ?? "not installed (optional)", hint: v ? null : m === "whisper" ? "docmaker setup --whisper faster-whisper" : `docmaker setup --tts ${m === "kokoro" ? "kokoro" : "piper:<voice>"}` });
   }
-  add({ id: "clip", ok: existsSync(config.paths.ml), level: "info", value: existsSync(config.paths.ml) && readdirSync(config.paths.ml).length ? "installed" : "not installed (optional, M3)", hint: null });
+  const clip = existsSync(config.paths.ml) && readdirSync(config.paths.ml).length > 0;
+  add({ id: "clip", ok: clip, level: "info", value: clip ? "installed" : "not installed (optional, M3)", hint: null });
 
   // keys, contact, disk, residue
   checks.push(...secretChecks(rt.secrets));

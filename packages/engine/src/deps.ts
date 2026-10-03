@@ -23,7 +23,7 @@ export type AssetsApi = Pick<typeof assetsPkg,
 };
 export type VoiceApi = Pick<typeof voicePkg,
   | "buildTtsText" | "synthesizeTrack" | "importRecording" | "voiceSettingsHash" | "editedAfterTake" | "estimateTtsCost" | "createTtsProvider"
-  | "calibrateVoice" | "teleprompterHtml" | "ensureModel" | "voiceLicense">;
+  | "calibrateVoice" | "teleprompterHtml" | "ensureModel" | "voiceLicense" | "installWhisperCppRuntime">;
 export type AudioApi = Pick<typeof audioPkg,
   "ensureSfxPack" | "loadSfxEntries" | "generateMusic" | "scanMusicLibrary" | "assembleVoProgram" | "mixTimeline" | "densityReport">;
 export type DirectorApi = Pick<typeof directorPkg, "layoutProgram" | "direct" | "DIRECTOR_VERSION">;

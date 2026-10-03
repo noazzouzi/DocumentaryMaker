@@ -1,12 +1,13 @@
 // createEngine (§4.19, §5.5): the Engine implementation (in-process runner; "worker" runner forwards jobs to a forked
 // job worker, see worker.ts). Reads/writes/approvals/estimates/styles/assets run in the calling process.
+import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   DocmakerError, ENV_KEYS, P, UserPicksDoc, VARIANT_STAGES, canonicalJson, docEntryFor, hashJson, type Approval, type CostEstimate, type CostTracker, type GateId,
   type HomeConfig, type JobEvent, type JobRecord, type JobRequest, type Lang, type NewProjectInput, type PipelineEstimate, type Project,
   type RenderPresetId, type StageId, type StyleSuggestion,
 } from "@docmaker/core";
-import { ProjectStore, ensureHome, readHomeConfig, writeHomeConfig, writeSecret } from "@docmaker/core/node";
+import { ProjectStore, ensureHome, readHomeConfig, run, writeHomeConfig, writeSecret } from "@docmaker/core/node";
 import type { z } from "zod";
 import type { DemoOptions, Engine, EngineOptions, ImpactReport, StageStatus } from "./types";
 import { REAL_DEPS } from "./deps";
@@ -467,20 +468,70 @@ class EngineImpl implements Engine {
     }
   }
 
-  async runDemo(opts: DemoOptions): Promise<{ slug: string; jobId: string; mp4: string; exportDir: string }> {
+  /** Additive (CLI): creates the demo project and submits its pipeline job without waiting. */
+  async startDemo(opts: DemoOptions): Promise<{ slug: string; jobId: string; mp4: string; exportDir: string; langs: Lang[]; preset: RenderPresetId }> {
     const o: DemoOptions = { ...opts, langs: opts.langs?.length ? opts.langs : ["en"], preset: (opts.preset ?? "draft") as RenderPresetId };
     const plan = await createDemoProject(this.rt, o);
     const { jobId } = await this.submit({
       slug: plan.project.slug, kind: "demo", stage: null, from: "research", to: "qa", langs: plan.langs, force: false,
       options: plan.onlyChapters ? { onlyChapters: plan.onlyChapters } : {}, preset: plan.preset,
     });
-    const rec = await this.waitForJob(jobId);
+    const outs = demoOutputs(path.join(this.rt.config.projectsDir, plan.project.slug), plan.langs[0]!, plan.preset);
+    return { slug: plan.project.slug, jobId, ...outs, langs: plan.langs, preset: plan.preset };
+  }
+
+  async runDemo(opts: DemoOptions): Promise<{ slug: string; jobId: string; mp4: string; exportDir: string }> {
+    const d = await this.startDemo(opts);
+    const rec = await this.waitForJob(d.jobId);
     if (rec.status !== "succeeded") {
       throw new DocmakerError(rec.error?.code ?? (rec.status === "canceled" ? "CANCELED" : rec.status === "waiting-approval" ? "GATE_REQUIRED" : "INTERNAL"),
-        `the demo job ${jobId} ended ${rec.status}${rec.error ? `: ${rec.error.message}` : ""}`, { details: { slug: plan.project.slug, jobId } });
+        `the demo job ${d.jobId} ended ${rec.status}${rec.error ? `: ${rec.error.message}` : ""}`, { details: { slug: d.slug, jobId: d.jobId } });
     }
-    const outs = demoOutputs(path.join(this.rt.config.projectsDir, plan.project.slug), plan.langs[0]!, plan.preset);
-    return { slug: plan.project.slug, jobId, ...outs };
+    return { slug: d.slug, jobId: d.jobId, mp4: d.mp4, exportDir: d.exportDir };
+  }
+
+  /** Additive (CLI `setup`): installs one optional component; returns a short description of what is in place. */
+  async setupComponent(what: SetupComponent, arg: string | null, o: { signal: AbortSignal; progress: (pct: number, msg: string) => void }): Promise<string> {
+    const config = this.rt.config;
+    await ensureHome(config);
+    const progress = (pct: number, msg: string) => o.progress(pct, msg);
+    switch (what) {
+      case "sfx": {
+        const pack = arg === "remotion" ? "remotion-sfx-cc0" : (arg ?? "procedural");
+        if (!["procedural", "remotion-sfx-cc0", "hyperframes-pixabay", "user"].includes(pack)) throw new DocmakerError("VALIDATION", `unknown SFX pack ${pack}`);
+        const m = await this.rt.deps.audio.ensureSfxPack(pack as "procedural", { config, logger: this.rt.logger, signal: o.signal, progress });
+        return `${m.entries.length} sounds (${m.pack} ${m.version})`;
+      }
+      case "tts": {
+        if (!arg) throw new DocmakerError("VALIDATION", "--tts needs kokoro or piper:<voice>");
+        const dir = await this.rt.deps.voice.ensureModel(arg, { config, secrets: this.rt.secrets, logger: this.rt.logger, signal: o.signal, progress, costs: looseCosts() });
+        return dir;
+      }
+      case "python":
+      case "yt-dlp":
+        return this.setupPython(o.signal);
+      case "whisper": {
+        if (arg === "whisper-cpp") return this.rt.deps.voice.installWhisperCppRuntime(config, o.signal);
+        if (arg && arg !== "faster-whisper") throw new DocmakerError("VALIDATION", "--whisper must be faster-whisper or whisper-cpp");
+        return `${await this.setupPython(o.signal)} (faster-whisper downloads its model on first use into ${path.join(config.paths.models, "whisper")})`;
+      }
+      case "clip":
+        throw new DocmakerError("TOOL_MISSING", "the CLIP runtime is a later milestone (M3)", { hint: "vision rerank works without it" });
+    }
+  }
+
+  private async setupPython(signal: AbortSignal): Promise<string> {
+    const config = this.rt.config;
+    const pyDir = path.join(config.repoRoot, "python");
+    const lock = existsSync(path.join(pyDir, "uv.lock"));
+    const r = await run("uv", ["sync", "--project", pyDir, ...(lock ? ["--locked"] : [])], {
+      signal, timeoutMs: 30 * 60_000, env: { ...this.rt.env, UV_PROJECT_ENVIRONMENT: config.paths.pyVenv },
+    }).catch((e: unknown) => {
+      if ((e as { code?: string }).code === "TOOL_MISSING") throw new DocmakerError("TOOL_MISSING", "uv is not installed", { hint: "install uv: https://docs.astral.sh/uv/getting-started/installation/" });
+      throw e;
+    });
+    if (r.code !== 0) throw new DocmakerError("TOOL_MISSING", `uv sync failed: ${r.stderr.split("\n").filter(Boolean).slice(-4).join(" | ")}`);
+    return `${config.paths.pyVenv} (faster-whisper, yt-dlp)`;
   }
 
   async close(): Promise<void> {
@@ -489,7 +540,16 @@ class EngineImpl implements Engine {
   }
 }
 
-export async function createEngineImpl(opts: EngineOptions): Promise<Engine & { readonly rt: Runtime; readonly jobs: JobManager; waitForJob(jobId: string): Promise<JobRecord> }> {
+export type SetupComponent = "sfx" | "tts" | "python" | "yt-dlp" | "whisper" | "clip";
+
+export type EngineExt = Engine & {
+  setupComponent(what: SetupComponent, arg: string | null, o: { signal: AbortSignal; progress: (pct: number, msg: string) => void }): Promise<string>;
+  readonly rt: Runtime; readonly jobs: JobManager;
+  waitForJob(jobId: string): Promise<JobRecord>;
+  startDemo(opts: DemoOptions): Promise<{ slug: string; jobId: string; mp4: string; exportDir: string; langs: Lang[]; preset: RenderPresetId }>;
+};
+
+export async function createEngineImpl(opts: EngineOptions): Promise<EngineExt> {
   const env = opts.env ?? process.env;
   const cwd = opts.cwd ?? env.DOCMAKER_REPO_ROOT ?? process.cwd();
   const rt = createRuntime({ cwd, env, deps: opts.deps ?? REAL_DEPS, renderClient: opts.renderClient, llmOverride: opts.llmOverride ?? null, logger: opts.logger });

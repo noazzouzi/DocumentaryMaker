@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env -S node --disable-warning=UNDICI-EHPA
 // docmaker CLI shim (SPEC §15). Runs apps/cli/src/main.ts from source through tsx, from any working directory
 // (tsx is registered in-process from this file's location instead of `node --import tsx`, which resolves from cwd).
 // When a proxy variable is set, re-exec once with NODE_USE_ENV_PROXY=1 so the built-in fetch of Node honours it
@@ -16,8 +16,18 @@ if (hasProxy && process.env.NODE_USE_ENV_PROXY !== "1") {
   if (r.error) throw r.error;
   process.exit(r.status ?? 1);
 } else {
+  // the built-in proxy agent is experimental on Node 22: silence only that warning (as --disable-warning does on re-exec)
+  const emit = process.emitWarning.bind(process);
+  process.emitWarning = (warning, ...rest) => {
+    const code = typeof rest[0] === "object" && rest[0] !== null ? rest[0].code : rest[1];
+    if (code === "UNDICI-EHPA" || (typeof warning === "string" && warning.includes("EnvHttpProxyAgent is experimental"))) return;
+    emit(warning, ...rest);
+  };
   const { register } = await import("tsx/esm/api");
   register();
   const { runCli } = await import(new URL("../src/main.ts", import.meta.url).href);
-  await runCli(process.argv);
+  const code = await runCli(process.argv);
+  process.exitCode = code;
+  // let stdout drain; force the exit if a stray handle keeps the loop alive
+  setTimeout(() => process.exit(code), 3000).unref();
 }

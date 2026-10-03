@@ -34,6 +34,7 @@ export function runJobWorker(o: { renderClient: RenderClient; cwd: string }): Pr
 
 // ---- additive exports
 export { createEngineImpl, memoStore, secretNameOf } from "./engine";
+export type { EngineExt, SetupComponent } from "./engine";
 export type { EngineDeps, StylesApi, LlmApi, AssetsApi, VoiceApi, AudioApi, DirectorApi, ExportApi } from "./deps";
 export { REAL_DEPS, withStubFallback, isNotImplemented } from "./deps";
 export { JobManager, requestKey, isTerminal } from "./jobs";
