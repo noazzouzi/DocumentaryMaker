@@ -38,7 +38,8 @@ export function parseJson3(json: unknown): WordTiming[] {
       const next = segs[k + 1];
       let end = next ? t0 + Math.max(0, Math.round(next.tOffsetMs ?? 0)) : evEnd;
       if (end <= start) end = next ? start : Math.max(start, evEnd);
-      const conf = typeof seg.acAsrConf === "number" ? Math.max(0, Math.min(1, seg.acAsrConf / 255)) : null;
+      // acAsrConf is 0..255; YouTube emits 0 when it has no estimate, so 0 means unknown.
+      const conf = typeof seg.acAsrConf === "number" && seg.acAsrConf > 0 ? Math.min(1, seg.acAsrConf / 255) : null;
       out.push(...splitByChars(seg.utf8!.replace(/\n/g, " ").trim(), start, end, conf));
     });
   }

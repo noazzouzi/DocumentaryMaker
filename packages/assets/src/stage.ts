@@ -2,6 +2,7 @@
 // The stage never writes user-picks.json or usage. Media files are hardlinked into <project>/media/ by freezeFile.
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import sharp from "sharp";
 import { CandidatesDoc, docHash, DocmakerError, hashJson, isDocmakerError, LocalIndexDoc, P, PicksDoc } from "@docmaker/core";
 import type {
   AssetPick, AssetProvider, AssetProviderId, AssetQuery, BeatPlan, BeatPlansDoc, CandidateRecord, CandidateScore, ClipResolution, ClipWordsDoc,
@@ -206,9 +207,13 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
     try {
       const thumbs: { rec: CandidateRecord; file: string }[] = [];
       for (const [k, r] of top.entries()) {
-        const file = path.join(tmp, `t${k}.img`);
+        const raw = path.join(tmp, `t${k}.download`);
+        const file = path.join(tmp, `t${k}.jpg`);
         try {
-          await ctx.http.download(r.record.candidate.previewUrl, file, { signal: ctx.signal, maxBytes: 8 * 1024 * 1024 });
+          await ctx.http.download(r.record.candidate.previewUrl, raw, { signal: ctx.signal, maxBytes: 8 * 1024 * 1024 });
+          // The Reranker contract: local JPEG thumbnails ≤ 768 px (whatever the provider served: webp, png, gif…).
+          await sharp(raw, { failOn: "none", animated: false }).rotate().resize({ width: 768, height: 768, fit: "inside", withoutEnlargement: true })
+            .flatten({ background: "#000000" }).jpeg({ quality: 85 }).toFile(file);
           thumbs.push({ rec: r.record, file });
         } catch (e) {
           log.debug("thumbnail download failed", { error: errMsg(e) });

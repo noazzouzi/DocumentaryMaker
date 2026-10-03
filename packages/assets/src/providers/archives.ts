@@ -33,7 +33,8 @@ export function parseIaMetadata(json: unknown, kind: "image" | "video", doc?: Ia
       .filter((f) => /\.mp4$/i.test(f.name) && /h\.264|mpeg4/i.test(f.format ?? "") && Number(f.height ?? 0) <= 1080)
       .sort((a, b) => Number(b.height ?? 0) - Number(a.height ?? 0) || Number(/h\.264/i.test(b.format ?? "")) - Number(/h\.264/i.test(a.format ?? "")))[0];
   } else {
-    best = files.filter((f) => /\.jpe?g$/i.test(f.name) && !/thumb/i.test(f.format ?? "") && !f.name.includes(".thumbs/"))
+    // Skip derived thumbnails and the item tile (__ia_thumb.jpg, format "Item Tile").
+    best = files.filter((f) => /\.jpe?g$/i.test(f.name) && !/thumb|tile/i.test(f.format ?? "") && !f.name.includes(".thumbs/") && !/(^|\/)__ia_thumb\./.test(f.name))
       .sort((a, b) => Number(b.size ?? 0) - Number(a.size ?? 0))[0];
   }
   if (!best) return null;
