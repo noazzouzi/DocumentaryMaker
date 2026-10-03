@@ -162,7 +162,7 @@ if (args.includes("--write-subs")) {
   const lang = args[args.indexOf("--sub-langs") + 1];
   fs.copyFileSync(mode.json3, out.replace("%(id)s", id).replace("%(ext)s", lang + ".json3")); process.exit(0);
 }
-if (args.includes("-J")) { process.stdout.write(JSON.stringify({ id, title: "Interview", duration: mode.duration, channel: "Archive Channel", channel_is_verified: true, language: "en", subtitles: { en: [{}] }, automatic_captions: {} })); process.exit(0); }
+if (args.includes("-J")) { process.stdout.write(JSON.stringify({ id, title: "Interview", duration: mode.duration, channel: "Archive Channel", channel_is_verified: true, language: "en", subtitles: mode.noSubs ? {} : { en: [{}] }, automatic_captions: {} })); process.exit(0); }
 if (args.includes("-f")) {
   let dur = mode.duration; const s = args.indexOf("--download-sections");
   if (s >= 0) { const m = /\\*([\\d.]+)-([\\d.]+)/.exec(args[s + 1]); dur = Number(m[2]) - Number(m[1]); }
@@ -212,6 +212,25 @@ describe("yt-dlp wrapper and clip resolution (fake binary)", () => {
     expect(calls.at(-1)).toEqual(expect.arrayContaining(["--skip-download", "--write-subs", "--write-auto-subs", "--sub-langs", "en", "--sub-format", "json3/vtt"]));
   });
 
+  it("no subtitles + Python sidecar → bestaudio and local ASR (faster-whisper pieces merged)", async () => {
+    fake.setMode({ search, duration: 12, noSubs: true });
+    expect(await ytFetchTranscript("AAAAAAAAAAA", "en", ctx)).toEqual({ words: [], kind: "none", lang: null }); // no venv yet
+    const venvBin = path.join(config.paths.pyVenv, "bin");
+    mkdirSync(venvBin, { recursive: true });
+    const pieces = [[" it", 4000, 4200], [" is", 4300, 4500], [" l", 4600, 4700], ["’ecluse", 4700, 5000], [".", 5000, 5000]].map(([text, startMs, endMs]) => ({ text, startMs, endMs, p: 0.9 }));
+    writeFileSync(path.join(venvBin, "python"), `#!/bin/sh\nout=""\nwhile [ $# -gt 0 ]; do if [ "$1" = "--out" ]; then out="$2"; fi; shift; done\nprintf '%s' '${JSON.stringify({ words: pieces, durationSec: 12, rtf: 0.1 })}' > "$out"\n`);
+    chmodSync(path.join(venvBin, "python"), 0o755);
+    try {
+      const t = await ytFetchTranscript("AAAAAAAAAAA", "en", ctx);
+      expect(t.kind).toBe("local-asr");
+      expect(t.words.map((w) => w.text)).toEqual(["it", "is", "l’ecluse."]);
+      expect(t.words[2]).toMatchObject({ startMs: 4600, endMs: 5000, confidence: 0.9 });
+      expect(fake.calls().some((a) => a.includes("ba/b"))).toBe(true);
+    } finally {
+      cleanup(path.join(config.paths.pyVenv));
+    }
+  }, 60_000);
+
   it("maps failures; retries rate limits (≤ 2) then gives up", async () => {
     fake.setMode({ error: "ERROR: HTTP Error 403: Forbidden" });
     await expect(ytSearch("x", ctx)).rejects.toMatchObject({ code: "YT_FORBIDDEN" });
@@ -259,7 +278,7 @@ describe("yt-dlp wrapper and clip resolution (fake binary)", () => {
     expect(r.upgradedQuotes).toEqual(["Q1"]);
     // keepSourceDownloads:false drops the cached full source.
     expect(existsSync(path.join(config.paths.cache, "yt", "AAAAAAAAAAA.mp4"))).toBe(false);
-    const dl = fake.calls().find((a) => a.includes("-f"))!;
+    const dl = fake.calls().find((a) => a.includes("-f") && a.includes("mp4"))!;
     expect(dl).toEqual(expect.arrayContaining(["-t", "mp4", "--progress-template", "download:%(progress._percent_str)s"]));
   }, 120_000);
 

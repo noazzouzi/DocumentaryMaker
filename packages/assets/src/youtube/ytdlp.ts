@@ -4,7 +4,7 @@ import { mkdir, readdir, readFile, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { DocmakerError, isDocmakerError } from "@docmaker/core";
 import type { RuntimeConfig, WordTiming } from "@docmaker/core";
-import { run } from "@docmaker/core/node";
+import { ffmpeg, run, runSidecar } from "@docmaker/core/node";
 import { makeTmpDir, rmrf } from "../util";
 import { parseJson3, parseVtt, pickSubtitleTrack } from "./json3";
 
@@ -126,17 +126,77 @@ export async function ytInfo(videoId: string, ctx: YtCtx): Promise<Record<string
 export async function ytFetchTranscript(videoId: string, lang: string, ctx: YtCtx): Promise<{ words: WordTiming[]; kind: "manual" | "asr-orig" | "asr" | "translated" | "local-asr" | "none"; lang: string | null }> {
   const info = await ytInfo(videoId, ctx);
   const track = pickSubtitleTrack(info as Parameters<typeof pickSubtitleTrack>[0], lang);
-  if (!track) return { words: [], kind: "none", lang: null };
-  const tmp = await makeTmpDir("ytsubs");
+  if (track) {
+    const tmp = await makeTmpDir("ytsubs");
+    try {
+      await ytRun(["--skip-download", "--write-subs", "--write-auto-subs", "--sub-langs", track.key, "--sub-format", "json3/vtt", "-o", path.join(tmp, "%(id)s.%(ext)s"), ytUrl(videoId)], ctx);
+      const files = await readdir(tmp);
+      const j3 = files.find((f) => f.endsWith(".json3"));
+      const vtt = files.find((f) => f.endsWith(".vtt"));
+      let words: WordTiming[] = [];
+      if (j3) words = parseJson3(JSON.parse(await readFile(path.join(tmp, j3), "utf8")));
+      else if (vtt) words = parseVtt(await readFile(path.join(tmp, vtt), "utf8"));
+      if (words.length > 0) return { words, kind: track.kind, lang: track.key };
+    } finally {
+      await rmrf(tmp);
+    }
+  }
+  // No usable subtitles: transcribe the audio locally when the Python sidecar (faster-whisper) is installed.
+  const durationSec = Number(info.duration ?? 0) || 0;
+  if (sidecarReady(ctx.config) && durationSec > 0 && durationSec <= LOCAL_ASR_MAX_SEC) {
+    try {
+      const words = await ytLocalAsr(videoId, lang, ctx);
+      if (words.length > 0) return { words, kind: "local-asr", lang: lang || null };
+    } catch (e) {
+      if (isDocmakerError(e) && e.code === "CANCELED") throw e;
+      ctx.logger?.warn("local transcription failed", { videoId, error: (e as Error).message });
+    }
+  }
+  return { words: [], kind: "none", lang: null };
+}
+
+/** Local ASR is only worth it for videos up to 30 min (the passage search reads the top 5 results). */
+export const LOCAL_ASR_MAX_SEC = 30 * 60;
+
+export function sidecarReady(config: RuntimeConfig): boolean {
+  return existsSync(path.join(config.paths.pyVenv, "bin", "python"));
+}
+
+/** faster-whisper pieces → words: a piece without a leading space continues the previous word; punctuation-only pieces attach. */
+export function mergeAsrPieces(pieces: readonly { text: string; startMs: number; endMs: number; p: number | null }[]): WordTiming[] {
+  const out: WordTiming[] = [];
+  for (const w of pieces) {
+    if (!w.text.trim()) continue;
+    const startMs = Math.max(0, Math.round(w.startMs));
+    const endMs = Math.max(startMs, Math.round(w.endMs));
+    const conf = w.p === null || w.p === undefined ? null : Math.max(0, Math.min(1, w.p));
+    const last = out[out.length - 1];
+    if (last && (!/^\s/u.test(w.text) || /^\s*[.,!?;:…»"”]+\s*$/u.test(w.text))) {
+      last.text += w.text.trim();
+      last.endMs = Math.max(last.endMs, endMs);
+      if (conf !== null) last.confidence = last.confidence === null ? conf : Math.min(last.confidence, conf);
+      continue;
+    }
+    out.push({ text: w.text.trim(), startMs, endMs, confidence: conf });
+  }
+  return out;
+}
+
+/** bestaudio (yt-dlp) → 16 kHz mono WAV → sidecar `asr` (faster-whisper, word timestamps). */
+export async function ytLocalAsr(videoId: string, lang: string, ctx: YtCtx): Promise<WordTiming[]> {
+  const tmp = await makeTmpDir("ytasr");
   try {
-    await ytRun(["--skip-download", "--write-subs", "--write-auto-subs", "--sub-langs", track.key, "--sub-format", "json3/vtt", "-o", path.join(tmp, "%(id)s.%(ext)s"), ytUrl(videoId)], ctx);
-    const files = await readdir(tmp);
-    const j3 = files.find((f) => f.endsWith(".json3"));
-    const vtt = files.find((f) => f.endsWith(".vtt"));
-    let words: WordTiming[] = [];
-    if (j3) words = parseJson3(JSON.parse(await readFile(path.join(tmp, j3), "utf8")));
-    else if (vtt) words = parseVtt(await readFile(path.join(tmp, vtt), "utf8"));
-    return { words, kind: words.length > 0 ? track.kind : "none", lang: track.key };
+    await ytRun(["-f", "ba/b", "--progress-template", "download:%(progress._percent_str)s", "-o", path.join(tmp, "%(id)s.%(ext)s"), ytUrl(videoId)], ctx);
+    const src = (await readdir(tmp)).find((f) => f.startsWith(videoId));
+    if (!src) throw new DocmakerError("PROVIDER_ERROR", "yt-dlp produced no audio");
+    const wav = path.join(tmp, "audio.wav");
+    await ffmpeg(["-i", path.join(tmp, src), "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", wav], { config: ctx.config, signal: ctx.signal });
+    const base = (lang || "").split("-")[0]!.toLowerCase();
+    const out = await runSidecar<{ words: { text: string; startMs: number; endMs: number; p: number | null }[] }>("asr", {
+      audio: wav, lang: /^[a-z]{2,3}$/.test(base) ? base : null, model: "large-v3-turbo", initialPrompt: null, vad: true, beamSize: 5,
+      computeType: "int8", threads: 4, modelsDir: path.join(ctx.config.paths.models, "whisper", "fw"),
+    }, { config: ctx.config, signal: ctx.signal, timeoutMs: 2 * 3600_000 });
+    return mergeAsrPieces(out.words ?? []);
   } finally {
     await rmrf(tmp);
   }
