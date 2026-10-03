@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE fcpxml>
+<fcpxml version="1.10">
+  <resources>
+    <format id="r1" name="FFVideoFormat1080p30" frameDuration="1/30s" width="1920" height="1080" colorSpace="1-1-1 (Rec. 709)"/>
+    <format id="r2" name="FFVideoFormatRateUndefined" width="1920" height="1080" colorSpace="1-13-1"/>
+    <asset id="r3" name="photo" start="0s" duration="0s" hasVideo="1" format="r2" videoSources="1">
+      <media-rep kind="original-media" src="file:///Users/me/DocumentaryMaker/projects/demo/media/photo.jpg"/>
+    </asset>
+    <asset id="r4" name="broll" start="0s" duration="900/30s" hasVideo="1" format="r1" videoSources="1">
+      <media-rep kind="original-media" src="file:///Users/me/DocumentaryMaker/projects/demo/media/broll.mp4"/>
+    </asset>
+    <asset id="r5" name="lowerthird" start="0s" duration="90/30s" hasVideo="1" format="r1" videoSources="1">
+      <media-rep kind="original-media" src="file:///Users/me/DocumentaryMaker/projects/demo/render/lowerthird.mov"/>
+    </asset>
+    <asset id="r6" name="narration" start="0s" duration="360/30s" hasAudio="1" audioSources="1" audioChannels="1" audioRate="48000">
+      <media-rep kind="original-media" src="file:///Users/me/DocumentaryMaker/projects/demo/audio/narration.wav"/>
+    </asset>
+    <asset id="r7" name="music" start="0s" duration="3600/30s" hasAudio="1" audioSources="1" audioChannels="2" audioRate="48000">
+      <media-rep kind="original-media" src="file:///Users/me/DocumentaryMaker/projects/demo/audio/music.wav"/>
+    </asset>
+    <effect id="r8" name="Cross Dissolve" uid="FxPlug:4731E73A-8DAC-4113-9A30-AE85B1761265"/>
+  </resources>
+  <library>
+    <event name="DocumentaryMaker">
+      <project name="Demo">
+        <sequence format="r1" duration="360/30s" tcStart="0s" tcFormat="NDF" audioLayout="stereo" audioRate="48k">
+          <spine>
+            <video ref="r3" name="photo" offset="0s" start="0s" duration="180/30s">
+              <adjust-transform>
+                <param name="scale">
+                  <keyframeAnimation>
+                    <keyframe time="0s" value="1 1"/>
+                    <keyframe time="195/30s" value="1.2 1.2"/>
+                  </keyframeAnimation>
+                </param>
+              </adjust-transform>
+              <asset-clip ref="r6" lane="-1" name="narration" offset="0s" start="0s" duration="360/30s" audioRole="dialogue"/>
+              <asset-clip ref="r7" lane="-2" name="music" offset="0s" start="0s" duration="360/30s" audioRole="music">
+                <adjust-volume amount="-6dB">
+                  <param name="amount">
+                    <keyframeAnimation>
+                      <keyframe time="0s" value="-6dB"/>
+                      <keyframe time="30/30s" value="-18dB"/>
+                      <keyframe time="330/30s" value="-18dB"/>
+                      <keyframe time="359/30s" value="-96dB"/>
+                    </keyframeAnimation>
+                  </param>
+                </adjust-volume>
+              </asset-clip>
+              <marker start="0s" duration="1/30s" value="Hook" note="Cold open"/>
+            </video>
+            <transition name="Cross Dissolve" offset="165/30s" duration="30/30s">
+              <filter-video ref="r8" name="Cross Dissolve"/>
+            </transition>
+            <asset-clip ref="r4" name="broll" offset="180/30s" start="300/30s" duration="180/30s" tcFormat="NDF">
+              <asset-clip ref="r5" lane="1" name="lowerthird" offset="330/30s" start="0s" duration="90/30s">
+                <adjust-blend>
+                  <param name="amount">
+                    <keyframeAnimation>
+                      <keyframe time="0s" value="0"/>
+                      <keyframe time="6/30s" value="1"/>
+                    </keyframeAnimation>
+                  </param>
+                </adjust-blend>
+              </asset-clip>
+              <marker start="300/30s" duration="1/30s" value="B-roll: court footage" note="source in 00:00:10:00"/>
+              <marker start="330/30s" duration="90/30s" value="Lower third" note="name + title, 3 s"/>
+            </asset-clip>
+          </spine>
+        </sequence>
+      </project>
+    </event>
+  </library>
+</fcpxml>

@@ -1,0 +1,31 @@
+1
+00:00:00,367 --> 00:00:01,433
+In 1637, a single
+
+2
+00:00:01,467 --> 00:00:02,567
+tulip bulb sold for
+
+3
+00:00:02,600 --> 00:00:04,033
+5,500 guilders in Haarlem.
+
+4
+00:00:04,333 --> 00:00:05,900
+Merchants traded bulbs they
+
+5
+00:00:05,933 --> 00:00:07,000
+had never seen, on
+
+6
+00:00:07,067 --> 00:00:08,433
+paper, in smoky taverns.
+
+7
+00:00:08,867 --> 00:00:10,367
+It collapsed. Then came
+
+8
+00:00:10,400 --> 00:00:10,933
+the panic.
