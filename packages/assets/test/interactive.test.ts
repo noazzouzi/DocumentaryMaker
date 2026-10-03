@@ -11,6 +11,7 @@ import {
   buildCredits, buildLedger, freezeCandidate, importLocalDir, importUpload, ledgerEntryFor, licenseInfo, liveSearch, requireDeclaration,
   resolveAssets,
 } from "../src/index";
+import { cleanAuthor } from "../src/util";
 import { createLocalProvider } from "../src/providers/local";
 import { cleanup, fakeFetch, makeConfig, makeCtx, publicLookup, quietLogger, tmpDir } from "./helpers";
 import { createHttpClient } from "../src/index";
@@ -185,11 +186,30 @@ describe("buildCredits", () => {
     const order = ["## Archival", "## Stock", "## Clips", "## Music", "## Sound effects", "## Voice", "## AI-generated", "## Fonts", "## YouTube description"].map((h) => md.indexOf(h));
     expect(order.every((x) => x >= 0)).toBe(true);
     expect([...order].sort((x, y) => x - y)).toEqual(order);
-    expect(md).toContain('"Title a" by Author a — CC BY-SA 4.0 — https://example.org/a');
+    // CC BY*: the licence link and the modification notice (every still is cropped and animated); a ShareAlike note.
+    expect(md).toContain('"Title a" by Author a — CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/) — https://example.org/a — cropped and animated');
+    expect(md).toMatch(/> ShareAlike: works marked CC BY-SA/);
     expect(md).not.toContain("Title d");
     expect(md).toContain("CBS News — https://www.youtube.com/watch?v=AAAAAAAAAAA [01:05–01:13]");
     expect(md).toContain("Voice: Alba (Piper) by Rhasspy contributors, CC BY 4.0");
     expect(md).toMatch(/altered or synthetic content/);
+  });
+  it("credit lines carry a clean author (Commons Artist templates, repeated names, emoji)", () => {
+    const messy = asset("f", { provider: "wikimedia", license: licenseInfo("CC-BY-SA", { version: "4.0" }), author: { name: "Donald Trung Quoc Don (Chữ Hán: 徵國單) - Wikimedia Commons - © CC BY-SA 4.0 International . ( Want to use this image? ) ( No Fake News 💬 )", url: null } });
+    const twice = asset("9", { provider: "wikimedia", license: licenseInfo("PDM"), author: { name: "Unknown artist Unknown artist", url: null } });
+    const l2 = buildLedger([messy, twice]);
+    const md = buildCredits({ ledger: l2, usage: { schemaVersion: 1, lang: "en", usage: [messy, twice].map((a) => ({ assetId: a.id, itemIds: ["v1"] })) }, lang: "en", voice: null, music: { schemaVersion: 1, tracks: [] }, sfx: [] });
+    expect(md).toContain('"Title f" by Donald Trung Quoc Don — CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/)');
+    expect(md).not.toMatch(/Want to use|💬|Fake News/);
+    expect(md).toContain('"Title 9" by Unknown artist — Public Domain — https://example.org/9');
+    expect(md).not.toMatch(/Public Domain[^\n]*cropped/); // the modification notice is for attribution licences
+    const fr = buildCredits({ ledger: l2, usage: { schemaVersion: 1, lang: "fr", usage: [messy].map((a) => ({ assetId: a.id, itemIds: ["v1"] })) }, lang: "fr", voice: null, music: { schemaVersion: 1, tracks: [] }, sfx: [] });
+    expect(fr).toContain("par Donald Trung Quoc Don");
+    expect(fr).toContain("recadré et animé");
+    expect(fr).toContain("Partage dans les mêmes conditions");
+    expect(cleanAuthor("by Rembrandt van Rijn")).toBe("Rembrandt van Rijn");
+    expect(cleanAuthor("  ")).toBeNull();
+    expect(cleanAuthor("A".repeat(30) + " " + "B".repeat(40))!.length).toBeLessThanOrEqual(61);
   });
   it("warns about the ElevenLabs free tier; French headings", () => {
     const md = buildCredits({ ledger, usage: { ...usage, lang: "fr" }, lang: "fr", voice: eleven, music: { schemaVersion: 1, tracks: [] }, sfx: [] });

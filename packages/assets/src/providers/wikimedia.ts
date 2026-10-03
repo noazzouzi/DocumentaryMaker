@@ -1,7 +1,7 @@
 // Wikimedia Commons (keyless; contact User-Agent). Identity search uses structured data: haswbstatement:P180=<QID>.
 import type { AssetProvider, AssetQuery, Candidate, LicenseRestriction } from "@docmaker/core";
 import { licenseInfo, parseCcLicense } from "../license";
-import { nowIso, stripHtml } from "../util";
+import { cleanAuthor, nowIso, stripHtml } from "../util";
 import { downloadOriginal, qs, yearOf, type SearchResult } from "./common";
 
 export const COMMONS_API = "https://commons.wikimedia.org/w/api.php";
@@ -76,7 +76,7 @@ export function parseCommons(json: unknown): SearchResult[] {
     const lic = parseCcLicense(short) ?? parseCcLicense(mv(m, "UsageTerms")) ?? parseCcLicense(mv(m, "LicenseUrl"));
     const restrictions: LicenseRestriction[] = /personality/i.test(mv(m, "Restrictions")) ? ["personality"] : [];
     if (/trademark/i.test(mv(m, "Restrictions"))) restrictions.push("trademark");
-    const artist = stripHtml(mv(m, "Artist")) || null;
+    const artist = cleanAuthor(stripHtml(mv(m, "Artist")));
     const dl = commonsDownload(ii);
     const title = (p.title ?? "").replace(/^File:/, "").replace(/\.[a-z0-9]+$/i, "").replace(/_/g, " ");
     const license = lic

@@ -158,6 +158,25 @@ export function stripHtml(s: string): string {
     .trim();
 }
 
+/**
+ * A printable author for credit lines from free-form provider text (Commons "Artist" is often a whole wiki template):
+ * the first name-like part (before " - ", " (", " | ", "©"…), no emoji, a repeated phrase collapsed ("Unknown artist Unknown
+ * artist"), at most ~60 characters. null when nothing usable is left.
+ */
+export function cleanAuthor(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  let s = raw.replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, " ").replace(/\s+/g, " ").trim();
+  s = s.split(/\s+[-–—|]\s+|\s*\(|\s*©|\s*;\s+|\s+\/\s+/u)[0] ?? "";
+  s = s.replace(/^(?:by|par)\s+/i, "").replace(/[\s,.:;·•-]+$/u, "").trim();
+  const rep = /^(.+?)(?:\s+\1)+$/iu.exec(s);
+  if (rep) s = rep[1]!;
+  if (s.length > 60) {
+    const cut = s.slice(0, 60);
+    s = `${cut.slice(0, Math.max(cut.lastIndexOf(" "), 40))}…`;
+  }
+  return s === "" ? null : s;
+}
+
 export function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw new DocmakerError("CANCELED", "canceled");
 }
