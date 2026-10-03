@@ -202,6 +202,14 @@ export function toExportTimeline(t: Timeline, ctx: ToExportCtx): ExportTimeline 
   // ---------------------------------------------------------------- V1 (spine)
   const mediaDurOf = (c: VisualClip): number | null => (c.source.kind === "video" ? assetOf(c.source.assetId)?.durationFrames ?? null : null);
   const plans = t.video.map((c, i) => planTransition(t.video[i - 1], c, mediaDurOf));
+  // a clip cannot host two transitions whose halves overlap (NLEs reject it): keep the earlier one
+  for (let i = 1; i + 1 < plans.length; i++) {
+    const a = plans[i]!.out;
+    const b = plans[i + 1]!.out;
+    if (a && b && a.duration / 2 + b.duration / 2 > t.video[i]!.dur) {
+      plans[i + 1] = { out: null, notes: [...plans[i + 1]!.notes, marker(0, `${b.kind} not portable (hard cut)`, "overlaps the previous transition")] };
+    }
+  }
   const v1Clips: ExportClip[] = [];
   const v1Transitions: ExportTransition[] = [];
   for (const [i, clip] of t.video.entries()) {

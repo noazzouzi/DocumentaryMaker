@@ -241,28 +241,35 @@ export function evenFrames(a: number, b: number, max: number): number[] {
   return [...out].sort((x, y) => x - y);
 }
 
-/** Drops keys that the linear interpolation of their kept neighbours reproduces within eps (keeps ends). */
+/**
+ * Drops keys that the linear interpolation of their kept neighbours reproduces within eps (keeps both ends).
+ * Swing-door corridor per channel: O(n), so hour-long gain curves stay cheap.
+ */
 export function simplifyLinear(pts: { f: number; v: number[] }[], eps: number[]): { f: number; v: number[] }[] {
   if (pts.length <= 2) return pts;
+  const C = pts[0]!.v.length;
   const out = [pts[0]!];
   let anchor = 0;
+  let lo = new Array<number>(C).fill(-Infinity);
+  let hi = new Array<number>(C).fill(Infinity);
   for (let i = 1; i < pts.length - 1; i++) {
     const a = pts[anchor]!;
+    const p = pts[i]!;
     const b = pts[i + 1]!;
-    let ok = true;
-    for (let j = anchor + 1; j <= i && ok; j++) {
-      const p = pts[j]!;
-      const t = (p.f - a.f) / Math.max(1e-9, b.f - a.f);
-      for (let c = 0; c < p.v.length; c++) {
-        if (Math.abs(a.v[c]! + (b.v[c]! - a.v[c]!) * t - p.v[c]!) > eps[c]!) {
-          ok = false;
-          break;
-        }
-      }
+    const dp = p.f - a.f;
+    const db = b.f - a.f;
+    let ok = dp > 0 && db > 0;
+    for (let c = 0; c < C && ok; c++) {
+      lo[c] = Math.max(lo[c]!, (p.v[c]! - eps[c]! - a.v[c]!) / dp);
+      hi[c] = Math.min(hi[c]!, (p.v[c]! + eps[c]! - a.v[c]!) / dp);
+      const s = (b.v[c]! - a.v[c]!) / db;
+      if (s < lo[c]! - 1e-12 || s > hi[c]! + 1e-12) ok = false;
     }
     if (!ok) {
-      out.push(pts[i]!);
+      out.push(p);
       anchor = i;
+      lo = new Array<number>(C).fill(-Infinity);
+      hi = new Array<number>(C).fill(Infinity);
     }
   }
   out.push(pts[pts.length - 1]!);
