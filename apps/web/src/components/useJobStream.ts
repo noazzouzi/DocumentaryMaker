@@ -20,7 +20,7 @@ export interface JobStreamState {
 const LOG_CAP = 300;
 export const initialJobState = (jobId: string | null): JobStreamState => ({ jobId, connected: false, lastSeq: -1, stages: [], log: [], gates: [], costUsd: 0, ended: null });
 
-type Action = { type: "event"; ev: JobEvent } | { type: "connected"; v: boolean } | { type: "reset"; jobId: string | null };
+type Action = { type: "event"; ev: JobEvent } | { type: "connected"; v: boolean } | { type: "reset"; jobId: string | null } | { type: "stream-error"; message: string };
 
 const keyOf = (stage: string, lang: string | null) => (lang ? `${stage}.${lang}` : stage);
 
@@ -36,6 +36,11 @@ function upsertStage(s: StageProgress[], key: string, patch: Partial<StageProgre
 export function jobReducer(st: JobStreamState, a: Action): JobStreamState {
   if (a.type === "reset") return initialJobState(a.jobId);
   if (a.type === "connected") return { ...st, connected: a.v };
+  if (a.type === "stream-error") {
+    // the server relay failed (not a job event: no seq); the job may still be running — reload to reconnect
+    const line = { seq: st.lastSeq, at: new Date().toISOString(), level: "error" as const, text: `event stream failed: ${a.message} — reload the page to reconnect` };
+    return { ...st, connected: false, log: [...st.log, line].slice(-LOG_CAP) };
+  }
   const ev = a.ev;
   if (ev.seq <= st.lastSeq) return st;
   const base = { ...st, lastSeq: ev.seq };
@@ -116,6 +121,16 @@ export function useJobStream(jobId: string | null, onEnd?: (status: JobStatus) =
       }
     };
     for (const t of TYPES) es.addEventListener(t, handler as EventListener);
+    es.addEventListener("stream-error", ((m: MessageEvent<string>) => {
+      let message = "relay error";
+      try {
+        message = String((JSON.parse(m.data) as { message?: unknown }).message ?? message);
+      } catch {
+        /* keep the default */
+      }
+      es.close();
+      dispatch({ type: "stream-error", message });
+    }) as EventListener);
     es.onopen = () => dispatch({ type: "connected", v: true });
     es.onerror = () => dispatch({ type: "connected", v: false });
     return () => es.close();
