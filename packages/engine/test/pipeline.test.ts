@@ -115,7 +115,8 @@ describe("pipeline on a fixture project", () => {
     const timeline = async () => store.readJson(P.timeline("en"), Timeline);
     expect(await mixMatches({ store, project }, "en", await timeline())).toBe(true);
     // `docmaker layout` + `docmaker direct` on one chapter, no mix: the mix still holds the whole programme
-    for (const stage of ["layout", "direct"] as const) expect((await runToEnd(e, stageReq(slug, stage, { options: { onlyChapters: ["CH1"] } }))).status).toBe("succeeded");
+    const one = await runToEnd(e, pipelineReq(slug, "layout", "direct", { options: { onlyChapters: ["CH1"] } }));
+    expect(one.status, JSON.stringify(one.events.filter((x) => x.type === "error"))).toBe("succeeded");
     expect(await mixMatches({ store, project }, "en", await timeline())).toBe(false);
     const r = await runToEnd(e, stageReq(slug, "render", { preset: "draft" }));
     expect(r.status).toBe("failed");
