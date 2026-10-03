@@ -2,7 +2,7 @@
 // src/lib/motion.ts (MIT, makevoid); the rest cover the Timeline-level fx/ modules and transforms.
 import { describe, expect, it } from "vitest";
 import type { CameraMove, FxCue } from "@docmaker/core";
-import { coverIntensity, coverPhase, dipPhases } from "../src/compute/covers";
+import { coverAmount, coverCutOffset, coverIntensity, coverPhase, dipPhases, dotFullRadius, dotPos, dotRadius, filmBurnWhite, irisRadius, PAPER_EDGE_JAG, PAPER_TEAR_JAG, paperRipState, whipWash } from "../src/compute/covers";
 import { cameraMatrix, cameraStateAt, lightStateAt, type CameraQuery } from "../src/fx/cameraState";
 import { env, pulseScale } from "../src/fx/envelope";
 import { clipCameraAt } from "../src/lib/camera";
@@ -320,5 +320,91 @@ describe("cover intensities", () => {
     expect(coverIntensity(w, d - 1)).toBeLessThan(0.3);
     expect(coverPhase(w, ph.cutOffset)).toBeGreaterThan(0);
     expect(coverPhase(w, 0)).toBe(-1);
+  });
+});
+
+describe("M3 cover geometry (the A→B switch is never visible)", () => {
+  /** A window as CoverLayer passes it: from 0, cut at the presentation's offset. */
+  const win = (presentation: string, d: number) => ({ presentation, from: 0, dur: d, cut: coverCutOffset(presentation, d), peak: 1 });
+
+  it("coverAmount is 1 on the frame before the cut and on the cut frame, rises/falls monotonically, 0 outside", () => {
+    for (const d of [10, 12, 13, 15]) {
+      const w = win("iris", d);
+      expect(coverAmount(w, w.cut - 1)).toBe(1);
+      expect(coverAmount(w, w.cut)).toBe(1);
+      expect(coverAmount(w, -1)).toBe(0);
+      expect(coverAmount(w, d)).toBe(0);
+      for (let f = 1; f < w.cut; f++) expect(coverAmount(w, f)).toBeGreaterThan(coverAmount(w, f - 1));
+      for (let f = w.cut + 1; f < d; f++) expect(coverAmount(w, f)).toBeLessThan(coverAmount(w, f - 1));
+      expect(coverAmount(w, 0)).toBeLessThan(0.5);
+      expect(coverAmount(w, d - 1)).toBeLessThan(0.5);
+    }
+  });
+
+  it("iris: fully closed around the cut, (almost) fully open at the window edges", () => {
+    const w = win("iris", 12);
+    const R = Math.hypot(960, 540);
+    expect(irisRadius(coverAmount(w, w.cut - 1))).toBe(0);
+    expect(irisRadius(coverAmount(w, w.cut))).toBe(0);
+    expect(irisRadius(0)).toBeGreaterThan(R);
+    expect(irisRadius(coverAmount(w, 0))).toBeGreaterThan(R); // no black corners on the edge frames
+    expect(irisRadius(coverAmount(w, 11))).toBeGreaterThan(R);
+    for (let f = 1; f < w.cut; f++) expect(irisRadius(coverAmount(w, f))).toBeLessThan(irisRadius(coverAmount(w, f - 1)));
+  });
+
+  it("dot wipe: every dot covers its 80 px cell around the cut; the wave leads in the motion direction", () => {
+    const w = win("dotWipe", 13);
+    const cols = 24;
+    const rows = 14;
+    for (const dir of ["left", "right", "up", "down"]) {
+      for (const f of [w.cut - 1, w.cut]) {
+        for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) expect(dotRadius(coverAmount(w, f), dotPos(i, j, cols, rows, dir), f < w.cut)).toBeGreaterThanOrEqual(dotFullRadius() - 1e-9);
+      }
+    }
+    expect(dotFullRadius()).toBeGreaterThan(40 * Math.SQRT2); // a full dot reaches the cell corners
+    // "left": the right edge fills first while closing and empties first while opening
+    const closing = coverAmount(w, 2);
+    expect(dotRadius(closing, dotPos(cols - 1, 0, cols, rows, "left"), true)).toBeGreaterThan(dotRadius(closing, dotPos(0, 0, cols, rows, "left"), true));
+    const opening = coverAmount(w, 10);
+    expect(dotRadius(opening, dotPos(cols - 1, 0, cols, rows, "left"), false)).toBeLessThan(dotRadius(opening, dotPos(0, 0, cols, rows, "left"), false));
+    expect(dotPos(0, 0, cols, rows, "up")).toBe(1);
+    expect(dotPos(0, rows - 1, cols, rows, "up")).toBe(0);
+  });
+
+  it("paper rip: the sheet covers the whole frame before the cut and is torn but closed on the cut frame; both halves leave", () => {
+    for (const d of [10, 12, 15]) {
+      const w = win("paperRip", d);
+      const before = paperRipState(w, w.cut - 1)!;
+      expect(before.phase).toBe("in");
+      expect(before.lead + PAPER_EDGE_JAG).toBeLessThanOrEqual(0); // the torn leading edge is past the far side
+      const atCut = paperRipState(w, w.cut)!;
+      expect(atCut.phase).toBe("out");
+      expect(atCut.open).toBeLessThan(0.002);
+      const last = paperRipState(w, d - 1)!;
+      expect(0.5 + PAPER_TEAR_JAG - last.open).toBeLessThan(0); // near half off the frame
+      expect(0.5 - PAPER_TEAR_JAG + last.open).toBeGreaterThan(1); // far half off the frame
+      expect(paperRipState(w, d)).toBeNull();
+      expect(paperRipState(w, 0)!.lead).toBeGreaterThan(before.lead);
+      for (let f = 1; f < w.cut; f++) expect(paperRipState(w, f)!.lead).toBeLessThan(paperRipState(w, f - 1)!.lead);
+      for (let f = w.cut + 1; f < d; f++) expect(paperRipState(w, f)!.open).toBeGreaterThan(paperRipState(w, f - 1)!.open);
+    }
+  });
+
+  it("film burn over-exposes the frames around the cut and nothing at the window edges", () => {
+    for (const d of [15, 20, 24, 30]) {
+      const w = win("filmBurn", d);
+      expect(filmBurnWhite(coverIntensity(w, w.cut - 1, d))).toBeGreaterThan(0.95);
+      expect(filmBurnWhite(coverIntensity(w, w.cut, d))).toBeGreaterThan(0.95);
+      expect(filmBurnWhite(coverIntensity(w, 0, d))).toBe(0);
+      expect(filmBurnWhite(coverIntensity(w, d - 1, d))).toBe(0);
+    }
+  });
+
+  it("whip streaks smear peaks on the two frames around the cut", () => {
+    const w = win("whipStreaks", 8);
+    expect(whipWash(w, w.cut - 1)).toBeGreaterThan(0.85);
+    expect(whipWash(w, w.cut)).toBeCloseTo(whipWash(w, w.cut - 1), 10);
+    expect(whipWash(w, 0)).toBe(0);
+    expect(whipWash(w, 8)).toBe(0);
   });
 });

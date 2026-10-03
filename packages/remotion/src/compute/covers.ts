@@ -1,7 +1,7 @@
 // Cover transitions (class 2, §10.5): an overlay centred on the cut — no timeline shortening, no dual render.
 // Window timing + per-frame intensity are pure so the CoverLayer, the QA sheets and the tests agree.
 import { DEFERRED_TRANSITIONS, type CoverPresentation, type FxCue, type TransitionKey, type VisualClip } from "@docmaker/core";
-import { clamp01, smoothstep } from "../lib/easing";
+import { clamp01, inCubic, inOutCubic, outCubic, smoothstep } from "../lib/easing";
 import { seedOf } from "../lib/random";
 import type { CoverWindow } from "./types";
 
@@ -107,4 +107,77 @@ export function derivedCoverFx(w: CoverWindow): FxCue[] {
     { ...base, id: `fx:${w.clipId}:cover-glitch`, fx: "glitch", amt: 20 },
     { ...base, id: `fx:${w.clipId}:cover-rgb`, fx: "rgb", amt: 8 + 12 * clamp01(w.peak) },
   ];
+}
+
+// ---- M3 cover geometry (pure: the cover components draw exactly these numbers, the unit tests check them)
+
+/**
+ * Occlusion of the hard-switch covers (dotWipe, iris): rises to 1 on the frame before the cut, stays 1 on the cut frame,
+ * then falls back; 0 outside the window. Both frames around the A→B switch are fully covered, so the cut never shows.
+ */
+export function coverAmount(w: Pick<CoverWindow, "cut" | "from" | "dur">, f: number): number {
+  if (f < w.from || f >= w.from + w.dur) return 0;
+  const before = Math.max(1, w.cut - w.from);
+  const after = Math.max(1, w.from + w.dur - w.cut);
+  return f < w.cut ? clamp01((f - w.from + 1) / before) : clamp01(1 - (f - w.cut) / after);
+}
+
+/**
+ * Iris radius (px, centred) for an occlusion amount: the half diagonal (fully open) → 0 (closed), inOutCubic. The
+ * first ~12 % of the amount is a dead zone so the window's edge frames never show black corners (no pop at the ends).
+ */
+export function irisRadius(amount: number, width = 1920, height = 1080): number {
+  const R = Math.hypot(width / 2, height / 2) + 2;
+  return R * (1 - inOutCubic(clamp01((amount - 0.12) / 0.88)));
+}
+
+export const DOT_GRID_PX = 80;
+const DOT_STAGGER = 0.6;
+/** Radius at which one dot covers its whole grid cell (half the cell diagonal + 1 px). */
+export const dotFullRadius = (grid = DOT_GRID_PX): number => (grid * Math.SQRT2) / 2 + 1;
+/**
+ * Dot-wipe dot radius. `pos` = position along the motion (0 = leading edge … 1 = trailing edge). Closing (before the
+ * cut) the leading dots fill first; opening (after it) the leading dots empty first, so the wave keeps its direction.
+ * amount = 1 → every dot ≥ dotFullRadius (the frame is fully covered).
+ */
+export function dotRadius(amount: number, pos: number, closing: boolean, grid = DOT_GRID_PX): number {
+  const q = clamp01(closing ? pos : 1 - pos);
+  const local = clamp01(clamp01(amount) * (1 + DOT_STAGGER) - q * DOT_STAGGER);
+  return dotFullRadius(grid) * smoothstep(local);
+}
+/** Position of grid cell (i, j) along the motion of a cover direction (0 = leading edge). */
+export function dotPos(i: number, j: number, cols: number, rows: number, direction: string): number {
+  const along = direction === "up" || direction === "down" ? j / Math.max(1, rows - 1) : i / Math.max(1, cols - 1);
+  // "left" = motion goes left: the right edge leads
+  return direction === "left" || direction === "up" ? 1 - along : along;
+}
+
+/** Paper rip state: `lead` = the sheet's torn leading edge in motion units (1 = entry side, ≤ PAPER_LEAD_COVER covers
+ *  the frame) before the cut; after it the sheet tears along the middle and the halves pull apart by `open` each. */
+export interface PaperRipState { phase: "in" | "out"; lead: number; open: number; rotDeg: number }
+export const PAPER_EDGE_JAG = 0.035; // max |jag| of a torn edge (motion units)
+export const PAPER_TEAR_JAG = 0.05;
+const PAPER_LEAD_START = 1 + PAPER_EDGE_JAG + 0.015;
+const PAPER_LEAD_END = -(PAPER_EDGE_JAG + 0.045);
+const PAPER_OPEN = 0.8;
+export function paperRipState(w: Pick<CoverWindow, "cut" | "from" | "dur">, f: number): PaperRipState | null {
+  if (f < w.from || f >= w.from + w.dur) return null;
+  const before = Math.max(1, w.cut - w.from);
+  const after = Math.max(1, w.from + w.dur - w.cut);
+  if (f < w.cut) {
+    const p = clamp01((f - w.from + 0.5) / before);
+    return { phase: "in", lead: PAPER_LEAD_START + (PAPER_LEAD_END - PAPER_LEAD_START) * outCubic(p), open: 0, rotDeg: 0 };
+  }
+  const q = clamp01((f - w.cut + 0.5) / after);
+  const e = inCubic(q);
+  return { phase: "out", lead: PAPER_LEAD_END, open: PAPER_OPEN * e, rotDeg: 5 * e };
+}
+
+/** Film burn over-exposure (0..1): a near-white flash where the burn peaks, so the splice itself is never visible. */
+export const filmBurnWhite = (intensity: number): number => smoothstep((intensity - 0.8) / 0.2);
+
+/** Whip-streak smear wash (0..1): peaks on the two frames around the cut. */
+export function whipWash(w: Pick<CoverWindow, "cut" | "from" | "dur">, f: number): number {
+  if (f < w.from || f >= w.from + w.dur) return 0;
+  return smoothstep(1 - Math.abs(f - (w.cut - 0.5)) / 2.5);
 }

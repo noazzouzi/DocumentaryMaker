@@ -4,5 +4,8 @@ export type { ComputedChapter, ComputedTimeline, CoverWindow, SeriesSeq, SeriesT
 export { computeTimeline, fillerClip, partIndexAt, pictureParts } from "./computeTimeline";
 export { planChunks } from "./planChunks";
 export { SLICE_HASH_VERSION, sliceHash } from "./sliceHash";
-export { IMPLEMENTED_COVERS, coverCutOffset, coverIntensity, coverPhase, coverWindow, derivedCoverFx, dipPhases, resolveCover } from "./covers";
+export {
+  DOT_GRID_PX, IMPLEMENTED_COVERS, PAPER_EDGE_JAG, PAPER_TEAR_JAG, coverAmount, coverCutOffset, coverIntensity, coverPhase, coverWindow, derivedCoverFx,
+  dipPhases, dotFullRadius, dotPos, dotRadius, filmBurnWhite, irisRadius, paperRipState, resolveCover, whipWash, type PaperRipState,
+} from "./covers";
 export { IMPLEMENTED_VELOCITY, PUSH_CUT_FLASH_COLOR, velocityPair } from "./velocity";
