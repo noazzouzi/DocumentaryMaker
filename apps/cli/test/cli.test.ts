@@ -113,6 +113,34 @@ describe("parsing and exit codes", () => {
   });
 });
 
+describe("chapter selection of stages downstream of layout", () => {
+  const withLayout = (only: string[] | null) => mockEngine([{ status: "succeeded", events: [] }], {
+    getProject: (async () => ({ languages: ["en"], render: {} })) as unknown as EngineExt["getProject"],
+    readDoc: (async (_slug: string, rel: string) => {
+      if (rel !== "layout/en.json") throw new Error("missing");
+      return { value: { onlyChapters: only }, etag: "x" };
+    }) as unknown as EngineExt["readDoc"],
+  });
+  it("direct/mix/render without --chapters reuse the layout's selection; layout itself defaults to all chapters", async () => {
+    for (const cmd of ["direct", "mix", "render"]) {
+      const m = withLayout(["CH1", "CH2"]);
+      const io = memIo();
+      expect(await runCli(argv(cmd, "p"), { io, factory: m.factory })).toBe(0);
+      expect(m.submitted[0]!.options.onlyChapters, cmd).toEqual(["CH1", "CH2"]);
+      expect(io.stderr).toMatch(/chapters CH1,CH2 as laid out/);
+    }
+    const lay = withLayout(["CH1", "CH2"]);
+    expect(await runCli(argv("layout", "p"), { io: memIo(), factory: lay.factory })).toBe(0);
+    expect(lay.submitted[0]!.options.onlyChapters).toBeUndefined();
+    const all = withLayout(null);
+    expect(await runCli(argv("direct", "p"), { io: memIo(), factory: all.factory })).toBe(0);
+    expect(all.submitted[0]!.options.onlyChapters).toBeUndefined();
+    const explicit = withLayout(["CH1", "CH2"]);
+    expect(await runCli(argv("direct", "p", "--chapters", "CH3"), { io: memIo(), factory: explicit.factory })).toBe(0);
+    expect(explicit.submitted[0]!.options.onlyChapters).toEqual(["CH3"]);
+  });
+});
+
 describe("--yes and --max-cost", () => {
   it("--yes approves a cost gate (by flag) and resumes", async () => {
     const m = mockEngine([{ status: "waiting-approval", events: [estimate(2), need("cost")] }, { status: "succeeded", events: [] }]);
