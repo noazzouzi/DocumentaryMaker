@@ -304,6 +304,10 @@ class EngineImpl implements Engine {
   }
   /** Additive: resolves when the job ends (CLI, demo, tests). */
   async waitForJob(jobId: string): Promise<JobRecord> {
+    if (!this.worker) {
+      const live = this.jobs.liveIds().includes(jobId);
+      if (live) return this.jobs.wait(jobId);
+    }
     for await (const ev of this.events(jobId)) if (ev.type === "job-end") break;
     for (let i = 0; i < 40; i++) {
       const r = await this.getJob(jobId);

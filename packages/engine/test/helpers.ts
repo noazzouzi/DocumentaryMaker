@@ -9,6 +9,7 @@ import type { LlmClient } from "@docmaker/llm";
 import { createEngineImpl, type EngineExt } from "../src/engine";
 import type { EngineDeps } from "../src/deps";
 import { FakeRenderClient, skeletonDeps } from "./fakes";
+import { silentLogger } from "../src/util";
 
 export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
@@ -27,7 +28,7 @@ export async function testEngine(t: TestEnv, o: { deps?: EngineDeps; renderClien
   const fake = o.renderClient === undefined ? new FakeRenderClient(config) : null;
   const e = await createEngineImpl({
     cwd: REPO_ROOT, env: t.env, renderClient: o.renderClient === undefined ? fake : o.renderClient, deps: o.deps ?? skeletonDeps(),
-    llmOverride: o.llmOverride, skipReconcile: o.skipReconcile,
+    llmOverride: o.llmOverride, skipReconcile: o.skipReconcile, logger: silentLogger,
   });
   return Object.assign(e, { fakeRender: fake });
 }

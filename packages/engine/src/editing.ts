@@ -28,6 +28,22 @@ export function factIssues(items: readonly FactCheckItem[]): LintIssue[] {
   }));
 }
 
+const normText = (s: string) => s.toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, " ").trim();
+
+/** The current text at a fact-check location: segment displayText, beat text + on-screen text, or the publish fields. */
+async function textAt(store: ProjectStore, lang: Lang, where: string): Promise<string | null> {
+  if (/^CH\d+-S\d+$/.test(where)) {
+    const s = await docs.script(store, lang);
+    return s?.chapters.flatMap((c) => c.segments).find((x) => x.id === where)?.displayText ?? null;
+  }
+  if (/^CH\d+-B\d+/.test(where)) {
+    const sl = await docs.slices(store, lang);
+    const t = sl?.texts.find((x) => x.beatId === where);
+    return t ? `${t.text} ${t.onScreenText} ${JSON.stringify(t.motionData)}` : null;
+  }
+  return null;
+}
+
 /** User script edit: userEdited per changed chapter, ttsText rebuilt for changed narration (unless ttsTextEdited). */
 export function prepareScriptEdit(rt: Runtime, project: Project, next: Script, prev: Script | null): Script {
   const prevCh = new Map((prev?.chapters ?? []).map((c) => [c.chapterId, c]));
@@ -158,6 +174,12 @@ export async function writeUserDoc<S extends z.ZodType>(
           throw new DocmakerError("VALIDATION", `${it.id}: only resolution and note can be edited`);
         }
         if (it.resolution === old.resolution && it.note === old.note) continue;
+        if (it.resolution === "rewritten" && old.resolution !== "rewritten") {
+          const where = await textAt(store, next.lang, it.where);
+          if (where !== null && normText(where).includes(normText(it.sentence)) && normText(it.sentence).length > 0) {
+            throw new DocmakerError("VALIDATION", `${it.id}: the flagged text is still in ${it.where} — rewrite it first`);
+          }
+        }
         if ((it.resolution === "acknowledged" || it.resolution === "dismissed") && fixOnly(it)) {
           throw new DocmakerError("VALIDATION", `${it.id} (${it.verdict}) can only be fixed: rewrite the text, then re-run the fact-check`);
         }

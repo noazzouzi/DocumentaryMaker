@@ -291,7 +291,8 @@ export class JobManager {
     const ix = await this.readIndex(store);
     const dead: JobRecord[] = [];
     for (const j of ix.jobs) {
-      if (isTerminal(j.status) || this.live.has(j.id)) continue;
+      // coalesced records follow their target (updated with it, below)
+      if (isTerminal(j.status) || this.live.has(j.id) || j.coalescedInto) continue;
       let owner: { pid?: number; engineId?: string } | null = null;
       try {
         owner = JSON.parse(await readFile(store.abs(ownerRel(j.id)), "utf8")) as { pid?: number; engineId?: string };
@@ -456,9 +457,9 @@ export class JobManager {
         this.rt.logger.error("job failed", { jobId: job.record.id, code: info.code, message: info.message });
       }
     }
-    emit({ type: "job-end", status });
     await job.chain;
     await releaseLock();
+    // the index says terminal BEFORE job-end is emitted: a follower that saw job-end reads a terminal record
     job.record = { ...job.record, status, endedAt: nowIso(), error };
     const ended = job.record;
     await this.mutateIndex(store, (jobs) => {
@@ -466,6 +467,8 @@ export class JobManager {
       if (!out.some((j) => j.id === ended.id)) out.push(ended);
       return out;
     }).catch((e: unknown) => this.rt.logger.error("cannot update jobs/index.json", { err: String(e) }));
+    emit({ type: "job-end", status });
+    await job.chain;
     await rm(store.abs(ownerRel(job.record.id)), { force: true }).catch(() => undefined);
     this.live.delete(job.record.id);
     for (const l of job.listeners) l();
