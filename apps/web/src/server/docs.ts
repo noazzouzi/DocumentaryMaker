@@ -1,7 +1,7 @@
 // Document allowlist for /api/projects/[slug]/docs/[...rel] and history (SPEC §14.3): the DOC_REGISTRY entries that are
 // userEditable, minus project.json (patched through PATCH /api/projects/[slug], which enforces LOCKED_AFTER_START).
 import "server-only";
-import { DOC_REGISTRY, type DocRegistryEntry } from "@docmaker/core";
+import { DOC_REGISTRY, P, type DocRegistryEntry } from "@docmaker/core";
 import { HttpError } from "./http";
 
 export const WEB_DOC_ENTRIES: readonly DocRegistryEntry[] = DOC_REGISTRY.filter((e) => e.userEditable && e.kind !== "project");
@@ -25,10 +25,18 @@ export function editableDoc(segments: readonly string[]): { rel: string; entry: 
   return { rel, entry };
 }
 
-/** History entries are plain file names inside .history/<rel>/ (no separators). */
-export function historyFileParam(v: unknown): string {
-  if (typeof v !== "string" || !/^[A-Za-z0-9._:-]{1,200}$/.test(v) || v.includes("..")) {
+const HISTORY_NAME = /^[A-Za-z0-9._:-]{1,200}$/;
+
+/**
+ * A history entry of `rel`, as listed by GET /history (`.history/<rel>/<name>.json`, the form ProjectStore.history()
+ * returns and revert() expects) or as its bare file name. Returns the project-relative `.history/<rel>/<name>` path;
+ * anything else (another document's history, separators or traversal in the name) is a 400.
+ */
+export function historyFileParam(v: unknown, rel: string): string {
+  const dir = P.history(rel);
+  const name = typeof v === "string" ? (v.startsWith(dir) ? v.slice(dir.length) : v) : null;
+  if (name === null || !HISTORY_NAME.test(name) || name.includes("..") || !name.endsWith(".json")) {
     throw new HttpError(400, "VALIDATION", "invalid history file");
   }
-  return v;
+  return dir + name;
 }

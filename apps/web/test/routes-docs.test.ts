@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { DocmakerError, hashJson, type LintIssue } from "@docmaker/core";
-import { fakeEngine, params, req } from "./support/fake-engine";
+import { DocmakerError, Script, hashJson, type LintIssue } from "@docmaker/core";
+import { ProjectStore } from "@docmaker/core/node";
+import { makeProject, makeScript } from "@docmaker/core/testing";
+import { fakeEngine, params, req, tempProjects } from "./support/fake-engine";
 import { setEngineForTests } from "../src/server/runtime";
 import * as docsRoute from "../src/app/api/projects/[slug]/docs/[...rel]/route";
 import * as historyRoute from "../src/app/api/projects/[slug]/history/[...rel]/route";
@@ -10,6 +12,7 @@ afterEach(() => setEngineForTests(null));
 function docsEngine(initial: Record<string, unknown>) {
   const store = new Map<string, unknown>(Object.entries(initial));
   const writes: { rel: string; etag: string | null }[] = [];
+  const reverted: string[] = [];
   const etagOf = (v: unknown) => hashJson(v).slice(0, 16);
   fakeEngine({
     async readDoc(_slug, rel, schema) {
@@ -26,13 +29,14 @@ function docsEngine(initial: Record<string, unknown>) {
       return { etag: etagOf(value), issues };
     },
     async history() {
-      return [{ file: "2026-10-03T10-00-00Z-abcd1234.json", at: "2026-10-03T10:00:00Z", etag: "abcd1234" }];
+      return [{ file: ".history/outline/outline.json/2026-10-03T10-00-00Z-abcd1234.json", at: "2026-10-03T10:00:00Z", etag: "abcd1234" }];
     },
     async revert(_s, _rel, file) {
+      reverted.push(file);
       return { etag: `rev-${file.length}` };
     },
   });
-  return { store, writes, etagOf };
+  return { store, writes, etagOf, reverted };
 }
 
 const overrides = { schemaVersion: 1, lang: "en", overrides: [] };
@@ -127,13 +131,58 @@ describe("documents: ETag / If-Match", () => {
     expect(r.status).toBe(404);
   });
 
-  it("history lists versions and reverts by file name only", async () => {
-    docsEngine({});
+  it("history lists versions and reverts by the listed path (or bare name), never another document's history", async () => {
+    const { reverted } = docsEngine({});
     const h = await historyRoute.GET(req("/x"), ctx("outline/outline.json"));
-    expect((await h.json())[0].file).toMatch(/\.json$/);
-    const ok = await historyRoute.POST(req("/x", { method: "POST", body: JSON.stringify({ file: "2026-10-03T10-00-00Z-abcd1234.json" }) }), ctx("outline/outline.json"));
+    const listed = (await h.json())[0].file as string;
+    expect(listed).toBe(".history/outline/outline.json/2026-10-03T10-00-00Z-abcd1234.json");
+    const ok = await historyRoute.POST(req("/x", { method: "POST", body: JSON.stringify({ file: listed }) }), ctx("outline/outline.json"));
     expect(ok.status).toBe(200);
-    const bad = await historyRoute.POST(req("/x", { method: "POST", body: JSON.stringify({ file: "../../project.json" }) }), ctx("outline/outline.json"));
-    expect(bad.status).toBe(400);
+    const bare = await historyRoute.POST(req("/x", { method: "POST", body: JSON.stringify({ file: "2026-10-03T10-00-00Z-abcd1234.json" }) }), ctx("outline/outline.json"));
+    expect(bare.status).toBe(200);
+    expect(reverted).toEqual([listed, listed]);
+    for (const file of [
+      "../../project.json",
+      ".history/outline/outline.json/../../../project.json",
+      ".history/script/en.script.json/2026-10-03T10-00-00Z-abcd1234.json", // another document's history
+      ".history/outline/outline.json/sub/x.json",
+      ".history/outline/outline.json/x.txt",
+      42,
+    ]) {
+      const bad = await historyRoute.POST(req("/x", { method: "POST", body: JSON.stringify({ file }) }), ctx("outline/outline.json"));
+      expect(bad.status, String(file)).toBe(400);
+    }
+    expect(reverted).toHaveLength(2);
+  });
+});
+
+describe("history against a real ProjectStore", () => {
+  it("a version listed by GET reverts through POST (listed path or bare name)", async () => {
+    const root = await tempProjects();
+    const store = await ProjectStore.create(root, makeProject());
+    const slug = store.slug;
+    const rel = "script/en/script.json";
+    await store.writeJson(rel, Script, makeScript({ chapters: 1 }), { writer: "user" });
+    await store.writeJson(rel, Script, makeScript({ chapters: 2 }), { writer: "user" });
+    fakeEngine({
+      history: async (s, r) => (await ProjectStore.open(root, s)).history(r),
+      revert: async (s, r, file) => (await ProjectStore.open(root, s)).revert(r, file),
+    });
+    const c = params({ slug, rel: rel.split("/") });
+    const chapters = async () => (await store.readJson(rel, Script)).chapters.length;
+    const items = (await (await historyRoute.GET(req("/x"), c)).json()) as { file: string }[];
+    expect(items).toHaveLength(1);
+    expect(items[0]!.file.startsWith(".history/script/en/script.json/")).toBe(true);
+    const r = await historyRoute.POST(req("/x", { method: "POST", body: JSON.stringify({ file: items[0]!.file }) }), c);
+    expect(r.status).toBe(200);
+    expect(r.headers.get("etag")).toMatch(/^"[a-f0-9]+"$/);
+    expect(await chapters()).toBe(1);
+    const items2 = (await (await historyRoute.GET(req("/x"), c)).json()) as { file: string }[];
+    const newer = items2.find((i) => i.file !== items[0]!.file)!;
+    const r2 = await historyRoute.POST(req("/x", { method: "POST", body: JSON.stringify({ file: newer.file.split("/").pop() }) }), c);
+    expect(r2.status).toBe(200);
+    expect(await chapters()).toBe(2);
+    const unknown = await historyRoute.POST(req("/x", { method: "POST", body: JSON.stringify({ file: "2020-01-01T00-00-00.000Z-00000000.json" }) }), c);
+    expect(unknown.status).toBe(400);
   });
 });
