@@ -88,6 +88,14 @@ describe("synthesizeTrack — synthetic scratch take (M1)", () => {
     }
   }, 60_000);
 
+  it("never reuses segments of a take made with another voice: they are re-synthesised", async () => {
+    const target = first.segments[0]!.segmentId;
+    const t = await synthesizeTrack(input(script, projectDir, { kind: "final", styleCps: 12, segments: [target], previous: first }), ctx);
+    expect(t.settingsHash).not.toBe(first.settingsHash);
+    for (const s of t.segments) expect(s.cacheKey).not.toBe(first.segments.find((x) => x.segmentId === s.segmentId)!.cacheKey);
+    expect(t.notes.join(" ")).toMatch(/used another voice: all segments re-synthesised/);
+  }, 60_000);
+
   it("a scratch take is always synthetic, even when the project voice is ElevenLabs", async () => {
     const el = VoiceSettings.parse({ provider: "elevenlabs", voiceId: "auto" });
     const t = await synthesizeTrack(input(script, projectDir, { voice: el }), ctx);
@@ -159,6 +167,11 @@ describe("ids, hashes, licences, costs", () => {
       segments: segs.slice(0, 2).map((s) => ({ segmentId: s.id, ttsTextHash: hashJson(s.ttsText) })),
     } as unknown as VoiceTrack;
     expect(estimateTtsCost({ script, voice: el, segments: null, previous: prev })[0]!.quantity).toBe([...segs[2]!.ttsText].length);
+    // voiceId "auto": the previous take stores the concrete id it resolved to
+    const auto = VoiceSettings.parse({ provider: "elevenlabs", voiceId: "auto" });
+    const prevAuto = { ...prev, voiceId: "abc" } as unknown as VoiceTrack;
+    expect(estimateTtsCost({ script, voice: auto, segments: null, previous: prevAuto })[0]!.quantity).toBe([...segs[2]!.ttsText].length);
+    expect(estimateTtsCost({ script, voice: auto, segments: null, previous: { ...prevAuto, voiceId: "other" } as VoiceTrack })[0]!.quantity).toBe(chars);
   });
 });
 

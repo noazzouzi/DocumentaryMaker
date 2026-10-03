@@ -6,9 +6,10 @@ import path from "node:path";
 import type {
   Aligner, CostLine, Lang, Script, SegmentTake, TimingSource, TtsCapabilities, TtsProvider, TtsRequest, VoiceInfo, VoiceSettings, VoiceTrack, WordTiming,
 } from "@docmaker/core";
-import { DocmakerError, P, VoiceTrack as VoiceTrackSchema, fnv1a32, hashJson } from "@docmaker/core";
+import { DocmakerError, P, VoiceTrack as VoiceTrackSchema, fnv1a32, hashJson, isDocmakerError } from "@docmaker/core";
 import { readWav, sha256File, writeWav } from "@docmaker/core/node";
 import { EstimatedAligner } from "./align/estimated";
+import { transcribeMany } from "./align/faster-whisper";
 import { shiftTimings, toTimedWords } from "./align/map";
 import { alignScriptToTranscript, wordErrorRate } from "./align/nw";
 import { segmentCacheKey, takeIdFor, voiceSettingsHash } from "./hash";
@@ -170,13 +171,128 @@ export async function synthesizeTrack(i: SynthesizeTrackInput, ctx: VoiceCtx): P
   await mkdir(tmpRoot, { recursive: true });
   const tmp = await mkdtemp(path.join(tmpRoot, "synth-"));
   const notes: string[] = [];
-  const asr = i.asr !== undefined ? i.asr : provider.id === "synthetic" ? null : await firstAsrAligner(ctx).catch(() => null);
-  const fallbackAligner: Aligner = asr ?? new EstimatedAligner(ctx.config);
+  // ASR QA is optional: auto-detection only accepts an ASR whose model is already on disk (never downloads mid-synthesis)
+  let asr: Aligner | null = i.asr !== undefined ? i.asr : provider.id === "synthetic" ? null : await firstAsrAligner(ctx, "auto", { localFilesOnly: true }).catch(() => null);
+  const estimated = new EstimatedAligner(ctx.config);
   const built = new Map<string, Built>();
   let charsBilled = 0;
   const stitching = caps.stitching;
   const modelId = voice.modelId ?? (voice.provider === "elevenlabs" ? ELEVEN_DEFAULT_MODEL : null);
   const qaFailed: string[] = [];
+  // segments not asked for are reused only from a take made with the very same voice (never mix voices in one take)
+  const prevSameVoice = i.previous !== null && i.previous.provider === voice.provider && i.previous.voiceId === voice.voiceId && i.previous.settingsHash === settingsHash;
+  if (targets && i.previous && !prevSameVoice) notes.push(`previous take ${i.previous.id} used another voice: all segments re-synthesised`);
+  // QA per chapter in one ASR run (one model load); per segment when a stitching provider may re-synthesise a bad one,
+  // so the next segment stitches to the rendition that is kept
+  const qaBatched = !(stitching && i.retryBad);
+
+  interface QaEntry { meta: SegMeta; ttsWords: string[] }
+  /** Round-trip ASR on cached WAVs without a WER yet: QA for every provider, timings for estimated ones. A failure disables QA for the run. */
+  const runQa = async (entries: QaEntry[]): Promise<void> => {
+    const need = entries.filter((e) => e.meta.asrWer === null);
+    if (!asr || provider.id === "synthetic" || need.length === 0) return;
+    let heard: WordTiming[][];
+    try {
+      heard = await transcribeMany(asr, need.map((e) => path.join(cacheDir, `${e.meta.cacheKey}.wav`)), lang, "", ctx.signal);
+    } catch (e) {
+      if (ctx.signal.aborted || (isDocmakerError(e) && e.code === "CANCELED")) throw e;
+      const reason = isDocmakerError(e) ? `${e.code}: ${e.message}` : e instanceof Error ? e.message : String(e);
+      notes.push(`ASR QA skipped: ${reason}`);
+      ctx.logger.warn("voice: ASR QA skipped for the rest of the run", { aligner: asr.id, reason });
+      asr = null;
+      return;
+    }
+    for (const [n, e] of need.entries()) {
+      const h = heard[n] ?? [];
+      const m: SegMeta = { ...e.meta, asrWer: Math.round(wordErrorRate(e.ttsWords, h.map((w) => w.text)) * 1e4) / 1e4 };
+      if (m.timingSource === "estimated") {
+        m.words = alignScriptToTranscript(e.ttsWords, h).map(({ matched: _m, ...w }) => w);
+        m.timingSource = "aligned";
+      }
+      e.meta = m;
+      await writeAtomic(path.join(cacheDir, `${m.cacheKey}.json`), JSON.stringify(m));
+    }
+  };
+
+  interface Slot extends QaEntry { it: VoicedItem; k: number; variant: number; stitchIds: string[]; fresh: boolean; chItems: VoicedItem[] }
+
+  /** One rendition (cache-aware): provider call(s), post chain, provider or estimated word timings; QA comes later. */
+  const synthOnce = async (it: VoicedItem, k: number, chItems: VoicedItem[], variant: number, retry: number, stitchIds: string[]): Promise<{ meta: SegMeta; fresh: boolean }> => {
+    const id = it.seg.id;
+    const ctxKey = [variant ? `v${variant}` : "", retry ? `r${retry}` : ""].filter(Boolean).join(",");
+    const cacheKey = segmentCacheKey({ provider: voice.provider, voiceId: voice.voiceId, modelId, settingsHash, ttsTextHash: hashJson(it.ttsText), contextKey: ctxKey });
+    const wavPath = path.join(cacheDir, `${cacheKey}.wav`);
+    const metaPath = path.join(cacheDir, `${cacheKey}.json`);
+    const cached = await readMeta(metaPath);
+    if (cached && existsSync(wavPath) && (await sha256File(wavPath)) === cached.sha256) return { meta: cached, fresh: false };
+    const req: TtsRequest = {
+      segmentId: id, text: it.ttsText, ttsWords: it.ttsWords, lang, voice,
+      previousText: k > 0 ? chItems[k - 1]!.ttsText : undefined,
+      nextText: k + 1 < chItems.length ? chItems[k + 1]!.ttsText : undefined,
+      previousRequestIds: stitching ? stitchIds.slice(-3) : undefined,
+      seed: fnv1a32(`${voice.voiceId}|${id}|${variant}|${retry}`),
+    };
+    const raw = await synthesizeRaw(provider, caps, req, tmp, ctx);
+    const outTmp = path.join(tmp, `${id}.post.wav`);
+    const post = await runPostChain(raw.path, outTmp, { kind: "tts", rawFormat: null }, ctx);
+    let words: WordTiming[];
+    let source = raw.source;
+    if (raw.words && raw.source !== "estimated") {
+      words = shiftTimings(raw.words, post.leadTrimMs, post.durationMs);
+    } else {
+      words = await estimated.align(outTmp, it.ttsWords, lang, ctx.signal);
+      source = "estimated";
+    }
+    const sha = await sha256File(outTmp);
+    await rename(outTmp, wavPath);
+    const meta: SegMeta = {
+      v: META_VERSION, cacheKey, ttsText: it.ttsText, durationMs: post.durationMs, leadTrimMs: post.leadTrimMs, sha256: sha, words,
+      timingSource: source, providerRequestId: raw.requestIds[raw.requestIds.length - 1] ?? null, requestAt: raw.requestIds.length ? new Date().toISOString() : null,
+      charsBilled: raw.charsBilled, asrWer: null,
+    };
+    await writeAtomic(metaPath, JSON.stringify(meta));
+    if (raw.charsBilled > 0 && caps.costPer1kCharsUsd > 0) {
+      const costUsd = Math.round(((raw.charsBilled / 1000) * caps.costPer1kCharsUsd) * 1e6) / 1e6;
+      await ctx.costs.record({
+        fingerprint: cacheKey, provider: voice.provider, endpoint: "text-to-speech/with-timestamps", model: modelId, stage: "voice", lang,
+        usage: { characters: raw.charsBilled }, costUsd, outputRef: path.relative(projectDir, wavPath).split(path.sep).join("/"),
+      });
+      ctx.costs.assertWithinBudget("voice", lang);
+    }
+    return { meta, fresh: true };
+  };
+
+  /** QA a group of renditions, re-synthesise the bad ones once (--retry-bad), and record the kept takes. */
+  const settle = async (group: Slot[]): Promise<void> => {
+    await runQa(group);
+    if (i.retryBad) {
+      const seconds: (QaEntry & { slot: Slot })[] = [];
+      for (const s of group) {
+        if (s.meta.asrWer === null || s.meta.asrWer <= QA_MAX_WER[lang]) continue;
+        if (ctx.signal.aborted) throw new DocmakerError("CANCELED", "voice synthesis canceled");
+        const r = await synthOnce(s.it, s.k, s.chItems, s.variant, 1, s.stitchIds);
+        if (r.fresh) charsBilled += r.meta.charsBilled;
+        seconds.push({ meta: r.meta, ttsWords: s.ttsWords, slot: s });
+      }
+      await runQa(seconds);
+      for (const x of seconds) {
+        if ((x.meta.asrWer ?? 1) < x.slot.meta.asrWer!) x.slot.meta = x.meta;
+        x.slot.fresh = true;
+      }
+    }
+    for (const s of group) {
+      const { meta, it } = s;
+      const id = it.seg.id;
+      if (meta.asrWer !== null && meta.asrWer > QA_MAX_WER[lang]) qaFailed.push(`${id} (WER ${meta.asrWer.toFixed(2)})`);
+      const take: Omit<SegmentTake, "file"> = {
+        segmentId: id, mode: it.mode, sha256: meta.sha256, durationMs: meta.durationMs, ttsText: it.ttsText, ttsTextHash: hashJson(it.ttsText),
+        cacheKey: meta.cacheKey, leadTrimMs: meta.leadTrimMs,
+        words: toTimedWords({ segmentId: id, display: it.display, displayToTts: it.displayToTts, tts: meta.words, source: meta.timingSource, durationMs: meta.durationMs }),
+        providerRequestId: meta.providerRequestId, asrWer: meta.asrWer, pickup: false,
+      };
+      built.set(id, { take, src: path.join(cacheDir, `${meta.cacheKey}.wav`), requestId: meta.providerRequestId, requestAt: meta.requestAt });
+    }
+  };
 
   try {
     const byChapter = new Map<string, VoicedItem[]>();
@@ -184,102 +300,39 @@ export async function synthesizeTrack(i: SynthesizeTrackInput, ctx: VoiceCtx): P
     let done = 0;
     for (const [, chItems] of byChapter) {
       const chainIds: { id: string; at: string | null }[] = [];
+      const pending: Slot[] = [];
       for (const [k, it] of chItems.entries()) {
         if (ctx.signal.aborted) throw new DocmakerError("CANCELED", "voice synthesis canceled");
         const id = it.seg.id;
         const prev = prevById.get(id);
-        // reuse segments that were not asked for
-        if (targets && !targets.has(id) && prev && existsSync(path.join(projectDir, prev.file))) {
+        // reuse segments that were not asked for (same voice only)
+        if (targets && !targets.has(id) && prevSameVoice && prev && existsSync(path.join(projectDir, prev.file))) {
           built.set(id, { take: { ...prev, pickup: prev.pickup ?? false }, src: path.join(projectDir, prev.file), requestId: prev.providerRequestId, requestAt: null });
           if (prev.providerRequestId) chainIds.push({ id: prev.providerRequestId, at: null });
           done++;
           continue;
         }
-        const ttsTextHash = hashJson(it.ttsText);
-        const keyFor = (ctxKey: string) => segmentCacheKey({ provider: voice.provider, voiceId: voice.voiceId, modelId, settingsHash, ttsTextHash, contextKey: ctxKey });
         // an explicit re-synthesis of an unchanged segment gets the next variant (a new rendition)
         let variant = 0;
         if (targets?.has(id) && prev) {
-          for (let v = 0; v < 16; v++) if (keyFor(v ? `v${v}` : "") === prev.cacheKey) { variant = v + 1; break; }
+          const ttsTextHash = hashJson(it.ttsText);
+          for (let v = 0; v < 16; v++) {
+            const key = segmentCacheKey({ provider: voice.provider, voiceId: voice.voiceId, modelId, settingsHash, ttsTextHash, contextKey: v ? `v${v}` : "" });
+            if (key === prev.cacheKey) { variant = v + 1; break; }
+          }
         }
-        const synthOnce = async (retry: number): Promise<{ meta: SegMeta; fresh: boolean }> => {
-          const ctxKey = [variant ? `v${variant}` : "", retry ? `r${retry}` : ""].filter(Boolean).join(",");
-          const cacheKey = keyFor(ctxKey);
-          const wavPath = path.join(cacheDir, `${cacheKey}.wav`);
-          const metaPath = path.join(cacheDir, `${cacheKey}.json`);
-          const cached = await readMeta(metaPath);
-          if (cached && existsSync(wavPath) && (await sha256File(wavPath)) === cached.sha256) return { meta: cached, fresh: false };
-          const now = Date.now();
-          const freshIds = chainIds.filter((x) => x.at !== null && now - Date.parse(x.at) < STITCH_MAX_AGE_MS).map((x) => x.id);
-          const req: TtsRequest = {
-            segmentId: id, text: it.ttsText, ttsWords: it.ttsWords, lang, voice,
-            previousText: k > 0 ? chItems[k - 1]!.ttsText : undefined,
-            nextText: k + 1 < chItems.length ? chItems[k + 1]!.ttsText : undefined,
-            previousRequestIds: stitching ? freshIds.slice(-3) : undefined,
-            seed: fnv1a32(`${voice.voiceId}|${id}|${variant}|${retry}`),
-          };
-          const raw = await synthesizeRaw(provider, caps, req, tmp, ctx);
-          const outTmp = path.join(tmp, `${id}.post.wav`);
-          const post = await runPostChain(raw.path, outTmp, { kind: "tts", rawFormat: null }, ctx);
-          let words: WordTiming[];
-          let source = raw.source;
-          let asrWer: number | null = null;
-          if (asr && provider.id !== "synthetic") {
-            // round-trip ASR: QA for every provider, word timings for providers without native timestamps
-            const heard = await asr.transcribe(outTmp, lang, "", ctx.signal);
-            asrWer = wordErrorRate(it.ttsWords, heard.map((w) => w.text));
-            if (!raw.words || raw.source === "estimated") {
-              words = alignScriptToTranscript(it.ttsWords, heard).map(({ matched: _m, ...w }) => w);
-              source = "aligned";
-            } else {
-              words = shiftTimings(raw.words, post.leadTrimMs, post.durationMs);
-            }
-          } else if (raw.words) {
-            words = shiftTimings(raw.words, post.leadTrimMs, post.durationMs);
-          } else {
-            words = await fallbackAligner.align(outTmp, it.ttsWords, lang, ctx.signal);
-            source = fallbackAligner.id === "estimated" ? "estimated" : "aligned";
-          }
-          const sha = await sha256File(outTmp);
-          await rename(outTmp, wavPath);
-          const meta: SegMeta = {
-            v: META_VERSION, cacheKey, ttsText: it.ttsText, durationMs: post.durationMs, leadTrimMs: post.leadTrimMs, sha256: sha, words,
-            timingSource: source, providerRequestId: raw.requestIds[raw.requestIds.length - 1] ?? null, requestAt: raw.requestIds.length ? new Date().toISOString() : null,
-            charsBilled: raw.charsBilled, asrWer,
-          };
-          await writeAtomic(metaPath, JSON.stringify(meta));
-          if (raw.charsBilled > 0 && caps.costPer1kCharsUsd > 0) {
-            const costUsd = Math.round(((raw.charsBilled / 1000) * caps.costPer1kCharsUsd) * 1e6) / 1e6;
-            await ctx.costs.record({
-              fingerprint: cacheKey, provider: voice.provider, endpoint: "text-to-speech/with-timestamps", model: modelId, stage: "voice", lang,
-              usage: { characters: raw.charsBilled }, costUsd, outputRef: path.relative(projectDir, wavPath).split(path.sep).join("/"),
-            });
-            ctx.costs.assertWithinBudget("voice", lang);
-          }
-          return { meta, fresh: true };
-        };
-        let { meta, fresh } = await synthOnce(0);
-        if (fresh) charsBilled += meta.charsBilled;
-        if (meta.asrWer !== null && meta.asrWer > QA_MAX_WER[lang]) {
-          if (i.retryBad) {
-            const second = await synthOnce(1);
-            if (second.fresh) charsBilled += second.meta.charsBilled;
-            if ((second.meta.asrWer ?? 1) < meta.asrWer) meta = second.meta;
-            fresh = true;
-          }
-          if ((meta.asrWer ?? 0) > QA_MAX_WER[lang]) qaFailed.push(`${id} (WER ${meta.asrWer!.toFixed(2)})`);
-        }
-        const take: Omit<SegmentTake, "file"> = {
-          segmentId: id, mode: it.mode, sha256: meta.sha256, durationMs: meta.durationMs, ttsText: it.ttsText, ttsTextHash,
-          cacheKey: meta.cacheKey, leadTrimMs: meta.leadTrimMs,
-          words: toTimedWords({ segmentId: id, display: it.display, displayToTts: it.displayToTts, tts: meta.words, source: meta.timingSource, durationMs: meta.durationMs }),
-          providerRequestId: meta.providerRequestId, asrWer: meta.asrWer, pickup: false,
-        };
-        built.set(id, { take, src: path.join(cacheDir, `${meta.cacheKey}.wav`), requestId: meta.providerRequestId, requestAt: meta.requestAt });
-        if (meta.providerRequestId) chainIds.push({ id: meta.providerRequestId, at: meta.requestAt });
+        const now = Date.now();
+        const stitchIds = chainIds.filter((x) => x.at !== null && now - Date.parse(x.at) < STITCH_MAX_AGE_MS).map((x) => x.id);
+        const r = await synthOnce(it, k, chItems, variant, 0, stitchIds);
+        if (r.fresh) charsBilled += r.meta.charsBilled;
+        const slot: Slot = { it, k, chItems, variant, stitchIds, meta: r.meta, fresh: r.fresh, ttsWords: it.ttsWords };
+        if (qaBatched) pending.push(slot);
+        else await settle([slot]);
+        if (slot.meta.providerRequestId) chainIds.push({ id: slot.meta.providerRequestId, at: slot.meta.requestAt });
         done++;
-        ctx.progress(done / Math.max(1, items.length), `voice ${lang}: ${id}`, { segmentId: id, cached: !fresh });
+        ctx.progress(done / Math.max(1, items.length), `voice ${lang}: ${id}`, { segmentId: id, cached: !r.fresh });
       }
+      if (pending.length) await settle(pending);
     }
   } finally {
     await rm(tmp, { recursive: true, force: true });
@@ -325,7 +378,9 @@ export function estimateTtsCost(i: { script: Script; voice: VoiceSettings; segme
   const model = i.voice.modelId ?? ELEVEN_DEFAULT_MODEL;
   const price = ELEVEN_MODELS[model]?.costPer1k ?? 0.08;
   const targets = i.segments ? new Set(i.segments) : null;
-  const sameVoice = i.previous && i.previous.provider === i.voice.provider && i.previous.settingsHash === voiceSettingsHash({ ...i.voice, modelId: model });
+  // the take stores the hash of the resolved voice: "auto" resolved to a concrete id → compare with that id
+  const voiceId = i.voice.voiceId === "auto" && i.previous?.provider === "elevenlabs" ? i.previous.voiceId : i.voice.voiceId;
+  const sameVoice = i.previous && i.previous.provider === i.voice.provider && i.previous.settingsHash === voiceSettingsHash({ ...i.voice, voiceId, modelId: model });
   const prev = new Map((i.previous?.segments ?? []).map((s) => [s.segmentId, s]));
   const items = voicedItems(i.script, { lang: i.script.lang, clipNarrated: [], textOptions: { lexicon: i.voice.lexicon ?? [], expandNumbers: false, stripTags: true } });
   let chars = 0;

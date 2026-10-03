@@ -1,15 +1,16 @@
 // Sherpa providers (mocked native module + gated real models), the Python sidecar dispatcher, faster-whisper
 // and whisper.cpp adapters, calibration and the teleprompter.
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { VoiceSettings } from "@docmaker/core";
+import { DocmakerError, VoiceSettings } from "@docmaker/core";
 import { readWav, readWavHeader, runSidecar } from "@docmaker/core/node";
 import { makeScript } from "@docmaker/core/testing";
 import { FasterWhisperAligner, SherpaProvider, calibrateVoice, createTtsProvider, synthesizeTrack, teleprompterHtml } from "../src/index";
-import { mergeAsrWords, sidecarError } from "../src/align/faster-whisper";
+import { fasterWhisperModelPresent, mergeAsrWords, sidecarError } from "../src/align/faster-whisper";
+import { firstAsrAligner } from "../src/providers/registry";
 import { tokensToWords } from "../src/align/whisper-cpp";
 import { speechOnlyMs } from "../src/calibrate";
 import type { SherpaModule } from "../src/providers/sherpa";
@@ -144,6 +145,11 @@ describe("Python sidecar dispatcher (system python, no ML packages)", () => {
     await expect(runSidecar("nope" as "asr", {}, { config: ctx.config, signal: ctx.signal }).catch((e) => { throw sidecarError(e); }))
       .rejects.toMatchObject({ code: "VALIDATION", message: expect.stringContaining("unknown command") });
     const fw = new FasterWhisperAligner(ctx.config);
+    // offline and no model on disk: the venv alone is not enough
+    expect(await fw.isAvailable()).toMatchObject({ ok: false, hint: expect.stringContaining("not downloaded") });
+    const snap = path.join(ctx.config.paths.models, "whisper", "fw", "models--mobiuslabsgmbh--faster-whisper-large-v3-turbo", "snapshots", "abc123");
+    mkdirSync(snap, { recursive: true });
+    writeFileSync(path.join(snap, "model.bin"), "x");
     expect((await fw.isAvailable()).ok).toBe(true);
     const wav = path.join(DATA, "fr.txt"); // any existing file: the faster_whisper import fails first
     await expect(fw.transcribe(wav, "fr", "", ctx.signal)).rejects.toMatchObject({ code: "TOOL_MISSING", hint: expect.stringContaining("setup --python") });
@@ -235,8 +241,8 @@ describe("synthesizeTrack with a local provider + ASR QA", () => {
       const log = { configs: [] as unknown[], texts: [] as string[] };
       const provider = new SherpaProvider("kokoro", { config: ctx.config, logger: silentLogger, loader: () => fakeSherpa(log) });
       const good = (k: number) => segs[k]!.ttsText.split(" ");
-      // calls in order: S01 (garbled first rendition), [S01 retry], S02
-      const queue = [good(0).map(() => "zzz"), ...(retryBad ? [good(0)] : []), good(1)];
+      // QA is batched per chapter: S01 (garbled first rendition), S02, then [S01 retry]
+      const queue = [good(0).map(() => "zzz"), good(1), ...(retryBad ? [good(0)] : [])];
       const asr = {
         id: "faster-whisper" as const,
         async isAvailable() { return { ok: true, hint: null }; },
@@ -262,6 +268,97 @@ describe("synthesizeTrack with a local provider + ASR QA", () => {
     expect(fixed.notes.join(" ")).not.toMatch(/QA failed/);
     expect(fixed.segments[0]!.cacheKey).not.toBe(bad.segments[0]!.cacheKey);
   }, 60_000);
+});
+
+describe("synthesizeTrack — ASR QA is optional and degrades", () => {
+  const script = makeScript({ lang: "en", chapters: 2, segmentsPerChapter: 2 });
+  const voice = VoiceSettings.parse({ provider: "kokoro", voiceId: "16" });
+  const setup = () => {
+    const ctx = makeCtx();
+    withModels(ctx);
+    const log = { configs: [] as unknown[], texts: [] as string[] };
+    const provider = new SherpaProvider("kokoro", { config: ctx.config, logger: silentLogger, loader: () => fakeSherpa(log) });
+    return { ctx, log, provider };
+  };
+  const echo = (file: string) => {
+    // the segment cache file name is the cache key; map it back to the script text through the meta
+    const meta = JSON.parse(readFileSync(file.replace(/\.wav$/, ".json"), "utf8")) as { ttsText: string };
+    return meta.ttsText.split(" ").map((text, i) => ({ text, startMs: 40 + i * 90, endMs: 120 + i * 90, confidence: 0.9 }));
+  };
+
+  it("a failing ASR (model missing) keeps estimated timings, notes the skip and is not called again", async () => {
+    const { ctx, provider } = setup();
+    const projectDir = tmpDir("qa-proj-");
+    let calls = 0;
+    const broken = {
+      id: "faster-whisper" as const,
+      async isAvailable() { return { ok: true, hint: null }; },
+      async transcribe(): Promise<never> { calls++; throw new DocmakerError("MODEL_MISSING", "cannot load model (offline)"); },
+      async align(): Promise<never> { throw new Error("unused"); },
+    };
+    const t = await synthesizeTrack({ lang: "en", script, voice, kind: "final", clipNarrated: [], segments: null, previous: null, projectDir, styleCps: 16.5, retryBad: true, provider, asr: broken }, ctx);
+    expect(calls).toBe(1);
+    expect(t.segments).toHaveLength(4);
+    expect(t.segments.every((s) => s.asrWer === null)).toBe(true);
+    expect(t.timing.source).toBe("estimated");
+    expect(t.notes.filter((n) => n.startsWith("ASR QA skipped: MODEL_MISSING"))).toHaveLength(1);
+    // a later run with a working ASR QA's the cached renditions without re-synthesising them
+    const { ctx: ctx2, log: log2, provider: p2 } = setup();
+    let batches = 0;
+    const ok = {
+      id: "faster-whisper" as const,
+      async isAvailable() { return { ok: true, hint: null }; },
+      async transcribe(): Promise<never> { throw new Error("batch expected"); },
+      async transcribeBatch(files: string[]) { batches++; return files.map(echo); },
+      async align(): Promise<never> { throw new Error("unused"); },
+    };
+    const again = await synthesizeTrack({ lang: "en", script, voice, kind: "final", clipNarrated: [], segments: null, previous: null, projectDir, styleCps: 16.5, retryBad: false, provider: p2, asr: ok }, ctx2);
+    expect(log2.texts).toEqual([]);
+    expect(batches).toBe(2); // one ASR run (one model load) per chapter
+    expect(again.id).toBe(t.id);
+    expect(again.segments.every((s) => s.asrWer === 0)).toBe(true);
+    expect(again.timing.source).toBe("aligned");
+    expect(again.notes.join(" ")).not.toMatch(/QA skipped/);
+  }, 60_000);
+
+  it("cancellation inside the ASR still aborts the run", async () => {
+    const { ctx, provider } = setup();
+    const asr = {
+      id: "faster-whisper" as const,
+      async isAvailable() { return { ok: true, hint: null }; },
+      async transcribe(): Promise<never> { throw new DocmakerError("CANCELED", "canceled"); },
+      async align(): Promise<never> { throw new Error("unused"); },
+    };
+    await expect(synthesizeTrack({ lang: "en", script, voice, kind: "final", clipNarrated: [], segments: null, previous: null, projectDir: tmpDir("qa-proj-"), styleCps: 16.5, retryBad: false, provider, asr }, ctx))
+      .rejects.toMatchObject({ code: "CANCELED" });
+  }, 60_000);
+
+  it("auto-detection never picks faster-whisper when its model is not on disk", async () => {
+    const ctx = makeCtx();
+    mkdirSync(path.join(ctx.config.paths.pyVenv, "bin"), { recursive: true });
+    writeFileSync(path.join(ctx.config.paths.pyVenv, "bin", "python"), "");
+    expect(await firstAsrAligner(ctx, "auto", { localFilesOnly: true })).toBeNull();
+    expect(fasterWhisperModelPresent(path.join(ctx.config.paths.models, "whisper", "fw"), "large-v3-turbo")).toBe(false);
+    const local = path.join(ctx.config.paths.models, "whisper", "fw", "large-v3-turbo");
+    mkdirSync(local, { recursive: true });
+    writeFileSync(path.join(local, "model.bin"), "x");
+    expect((await firstAsrAligner(ctx, "auto", { localFilesOnly: true }))?.id).toBe("faster-whisper");
+  });
+
+  it("the sidecar input asks for local files only and batches several files", async () => {
+    const ctx = makeCtx();
+    const inputs: Record<string, unknown>[] = [];
+    const runner = (async (_cmd: string, input: Record<string, unknown>) => {
+      inputs.push(input);
+      const one = { words: [{ text: " Hi", startMs: 0, endMs: 100, p: 0.9 }], durationSec: 1, rtf: 0.1 };
+      return Array.isArray(input.audios) ? { results: (input.audios as string[]).map(() => one) } : one;
+    }) as unknown as ConstructorParameters<typeof FasterWhisperAligner>[1];
+    const fw = new FasterWhisperAligner(ctx.config, runner, undefined, { localFilesOnly: true });
+    const out = await fw.transcribeBatch(["a.wav", "b.wav"], "en", "", ctx.signal);
+    expect(out).toEqual([[{ text: "Hi", startMs: 0, endMs: 100, confidence: 0.9 }], [{ text: "Hi", startMs: 0, endMs: 100, confidence: 0.9 }]]);
+    expect(inputs[0]).toMatchObject({ localFilesOnly: true, audios: [path.resolve("a.wav"), path.resolve("b.wav")] });
+    expect(inputs[0]).not.toHaveProperty("audio");
+  });
 });
 
 describe("whisper.cpp aligner (gated: DOCMAKER_TEST_WHISPER_CPP + DOCMAKER_TEST_SPEECH_WAV)", () => {

@@ -63,6 +63,7 @@ export async function calibrateVoice(i: { lang: Lang; voice: VoiceSettings; proj
         fingerprint: voiceSettingsHash(voice), provider: voice.provider, endpoint: "text-to-speech/calibration", model: voice.modelId, stage: "voice", lang: i.lang,
         usage: { characters: r.charsBilled }, costUsd: Math.round((r.charsBilled / 1000) * caps.costPer1kCharsUsd * 1e6) / 1e6, outputRef: null,
       });
+      ctx.costs.assertWithinBudget("voice", i.lang);
     }
     await decodeTo48kMono(r.audioPath, wav, null, ctx);
     const w = await readWav(wav);
