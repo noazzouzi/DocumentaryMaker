@@ -13,7 +13,7 @@ import {
   ytBaseFlags, ytFetchTranscript, ytProbe, ytSearch,
 } from "../src/index";
 import { orderHits, rebaseWords } from "../src/youtube/clips";
-import { ytRun } from "../src/youtube/ytdlp";
+import { dropYtSource, ytCachePath, ytDownload, YT_ID_RE, ytRun } from "../src/youtube/ytdlp";
 import { cleanup, DATA, makeConfig, makeCtx, tmpDir } from "./helpers";
 
 const read = (f: string) => readFileSync(path.join(DATA, f), "utf8");
@@ -111,6 +111,9 @@ describe("yt-dlp flags, errors, search parsing", () => {
     expect(mapYtError("ERROR: [youtube] abc: Video unavailable")).toBe("YT_UNAVAILABLE");
     expect(mapYtError("ERROR: [youtube] abc: Private video. Sign in if you've been granted access")).toBe("YT_UNAVAILABLE");
     expect(mapYtError("ERROR: something else")).toBeNull();
+    // Age gates also say "Sign in to confirm…" but concern one video, not this machine.
+    expect(mapYtError("ERROR: [youtube] abc: Sign in to confirm your age. This video may be inappropriate for some users.")).toBe("YT_UNAVAILABLE");
+    expect(mapYtError("ERROR: [youtube] abc: This video is age-restricted")).toBe("YT_UNAVAILABLE");
   });
   it("always passes -t sleep; node JS runtime without deno; PO-token and cookies only when configured", () => {
     const base = ytBaseFlags({ PATH: "/nonexistent" });
@@ -139,6 +142,37 @@ describe("yt-dlp flags, errors, search parsing", () => {
     expect(parseYoutubeId("https://vimeo.com/123")).toBeNull();
     expect(parseYoutubeId("jNQXAC9IVRw")).toBe("jNQXAC9IVRw");
   });
+  it("never returns an id that could leave <home>/cache/yt (path traversal through v=)", () => {
+    // yt-dlp reads the first 11 characters; so do we — the rest never reaches a file path.
+    expect(parseYoutubeId("https://www.youtube.com/watch?v=dQw4w9WgXcQ/../../../../Videos/my-footage")).toBe("dQw4w9WgXcQ");
+    expect(parseYoutubeId("https://www.youtube.com/watch?v=dQw4w9WgXcQ%2F..%2F..%2F..%2F..%2Ftmp%2Fvictim")).toBe("dQw4w9WgXcQ");
+    expect(parseYoutubeId("https://youtu.be/dQw4w9WgXcQ%2F..%2Fx")).toBe("dQw4w9WgXcQ");
+    expect(parseYoutubeId("https://www.youtube.com/watch?v=../../../../etc/passwd")).toBeNull();
+    expect(parseYoutubeId("https://www.youtube.com/watch?v=short")).toBeNull();
+    expect(parseYoutubeId("https://www.youtube.com/watch?v=dQw4w9WgXcQx")).toBeNull(); // 12 id characters: not an id
+    expect(parseYoutubeId("https://www.youtube.com/shorts/..%2F..%2Fabcdefghijk")).toBeNull();
+    expect(parseYoutubeId("https://www.youtube.com/embed/abcdefghijk?x=1")).toBe("abcdefghijk");
+    for (const u of ["https://www.youtube.com/watch?v=dQw4w9WgXcQ/../../x", "https://youtu.be/abcdefghijk/../../y", "https://youtube.com/live/a/../../b"]) {
+      const id = parseYoutubeId(u);
+      expect(id === null || YT_ID_RE.test(id)).toBe(true);
+    }
+  });
+  it("the cache path and the source drop refuse ids outside YT_ID_RE", async () => {
+    const config = makeConfig({ offline: false });
+    try {
+      expect(ytCachePath(config, "dQw4w9WgXcQ")).toBe(path.join(path.resolve(config.paths.cache), "yt", "dQw4w9WgXcQ.mp4"));
+      expect(() => ytCachePath(config, "dQw4w9WgXcQ/../../../victim")).toThrow(/invalid YouTube video id/);
+      const victim = path.join(config.paths.home, "victim.mp4");
+      writeFileSync(victim, "precious");
+      const rel = path.relative(path.join(config.paths.cache, "yt"), victim).replace(/\.mp4$/, "");
+      await expect(dropYtSource(config, rel)).rejects.toMatchObject({ code: "VALIDATION" });
+      expect(readFileSync(victim, "utf8")).toBe("precious");
+      await expect(ytDownload(rel, { sectionMs: null, outDir: config.paths.home }, { config, signal: new AbortController().signal })).rejects.toMatchObject({ code: "VALIDATION" });
+      expect(readFileSync(victim, "utf8")).toBe("precious");
+    } finally {
+      cleanup(config.paths.home);
+    }
+  });
   it("rebases transcript words on the conformed file", () => {
     expect(rebaseWords([W("a", 900, 1100), W("b", 2000, 2200), W("c", 9000, 9100)], 1000, 5000, 1000)).toEqual([W("a", 0, 100), W("b", 1000, 1200)]);
   });
@@ -156,6 +190,7 @@ const mode = JSON.parse(fs.readFileSync(path.join(dir, "yt-mode.json"), "utf8"))
 const fail = (msg) => { process.stderr.write(msg + "\\n"); process.exit(1); };
 if (mode.error) fail(mode.error);
 const url = args[args.length - 1]; const id = (/v=([\\w-]+)/.exec(url) || [])[1];
+if (id && mode.errorFor && mode.errorFor[id]) fail(mode.errorFor[id]);
 const out = (i => i >= 0 ? args[i + 1] : null)(args.indexOf("-o"));
 if (args.some(a => a.startsWith("ytsearch"))) { process.stdout.write(JSON.stringify({ entries: mode.search })); process.exit(0); }
 if (args.includes("--write-subs")) {
@@ -344,6 +379,42 @@ describe("yt-dlp wrapper and clip resolution (fake binary)", () => {
     expect(r.clips[0]!.youtube).toMatchObject({ videoId: "AAAAAAAAAAA", matchScore: 1 });
     expect(fake.calls().slice(n0).filter((a) => a.includes("--write-subs"))).toHaveLength(1);
   });
+
+  it("an unreadable hit (age gate, members-only, premiere) is skipped; machine-wide failures still end the search", async () => {
+    const three = ["AAAAAAAAAAA", "BBBBBBBBBBB", "CCCCCCCCCCC"].map((id, k) => ({ ...search[0], id, view_count: 100 - k }));
+    const project: Project = makeProject();
+    project.assets = { ...project.assets, offline: false, licensePolicy: { ...project.assets.licensePolicy, allowYoutubeFairUse: true } };
+    const args = { project, script: makeScript({ chapters: 1, segmentsPerChapter: 2, withClip: true }), facts: makeFactSheet(), skipSegments: new Set<string>(), projectDir };
+    fake.setMode({ search: three, json3: transcript, duration: 12, errorFor: {
+      AAAAAAAAAAA: "ERROR: [youtube] AAAAAAAAAAA: Sign in to confirm your age. This video may be inappropriate for some users.",
+      BBBBBBBBBBB: "ERROR: [youtube] BBBBBBBBBBB: This live event will begin in 3 hours.",
+    } });
+    const r = await resolveClips(args, ctx);
+    expect(r.clips[0]!.youtube).toMatchObject({ videoId: "CCCCCCCCCCC", matchScore: 1 });
+    // A bot check concerns every hit: the search stops at the first one.
+    fake.setMode({ search: three, json3: transcript, duration: 12, errorFor: { AAAAAAAAAAA: "ERROR: [youtube] AAAAAAAAAAA: Sign in to confirm you’re not a bot" } });
+    const n0 = fake.calls().length;
+    const b = await resolveClips(args, ctx);
+    expect(b.clips[0]).toMatchObject({ status: "failed" });
+    expect(b.clips[0]!.reason).toMatch(/^YT_BOT_CHECK/);
+    expect(fake.calls().slice(n0).filter((a) => a.includes("-J") && !a.some((x) => x.startsWith("ytsearch")))).toHaveLength(1);
+  });
+
+  it("a manual URL whose v= carries a path never touches files outside the yt cache", async () => {
+    fake.setMode({ search, json3: transcript, duration: 12 });
+    const project: Project = makeProject();
+    project.assets = { ...project.assets, offline: false, keepSourceDownloads: false, licensePolicy: { ...project.assets.licensePolicy, allowYoutubeFairUse: true } };
+    project.editorial = { ...project.editorial, fairUseAcknowledged: true };
+    await mkdir(projectDir, { recursive: true });
+    await writeFile(path.join(projectDir, P.project), JSON.stringify(project));
+    const victim = path.join(config.paths.home, "victim.mp4");
+    writeFileSync(victim, "precious");
+    const rel = path.relative(path.join(config.paths.cache, "yt"), victim).replace(/\.mp4$/, "");
+    const r = await resolveManualClip({ projectDir, segmentId: "CH1-S02", quoteId: "Q1", startMs: 4000, endMs: 6500, channel: "", title: "", fps: 30, url: `https://www.youtube.com/watch?v=AAAAAAAAAAA/${rel}`, file: null }, ctx);
+    expect(r.clip.youtube).toMatchObject({ videoId: "AAAAAAAAAAA", url: "https://www.youtube.com/watch?v=AAAAAAAAAAA" });
+    expect(readFileSync(victim, "utf8")).toBe("precious");
+    expect(fake.calls().flat().some((a) => a.includes(".."))).toBe(false);
+  }, 120_000);
 
   it("local ASR runs at most once per quote", async () => {
     const three = ["AAAAAAAAAAA", "BBBBBBBBBBB", "CCCCCCCCCCC"].map((id, k) => ({ ...search[0], id, view_count: 100 - k }));

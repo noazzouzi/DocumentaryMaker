@@ -13,6 +13,8 @@ import { findPassage, PASSAGE_ACCEPT } from "./passage";
 import { dropYtSource, parseYoutubeId, ytDownload, ytFetchTranscript, ytSearch, ytUrl, type YtSearchHit } from "./ytdlp";
 
 const MAX_HITS = 5;
+/** yt-dlp failures that would repeat on every hit: they end the clip search instead of skipping one hit. */
+const MACHINE_WIDE: ReadonlySet<string> = new Set(["CANCELED", "YT_RATE_LIMIT", "YT_BOT_CHECK", "YT_FORBIDDEN", "TOOL_MISSING", "OFFLINE"]);
 const MAX_VIDEO_SEC = 30 * 60;
 /** Once a match scores at least this, no further transcripts are fetched (a tie within 0.05 is then unlikely to matter). */
 export const TIE_CHECK_BELOW = 0.85;
@@ -109,9 +111,18 @@ async function resolveOne(segmentId: string, quote: Quote, i: { project: Project
   for (const hit of hits) {
     const bestSoFar = found.reduce((m, f) => Math.max(m, f.p.score), 0);
     if (found.length > 0 && bestSoFar >= TIE_CHECK_BELOW) break;
-    const t = await ytFetchTranscript(hit.id, quote.language || "en", { config: ctx.config, signal: ctx.signal, logger: ctx.logger }, {
-      allowLocalAsr: found.length === 0 && !localAsrUsed, onLocalAsr: () => { localAsrUsed = true; },
-    });
+    let t: Awaited<ReturnType<typeof ytFetchTranscript>>;
+    try {
+      t = await ytFetchTranscript(hit.id, quote.language || "en", { config: ctx.config, signal: ctx.signal, logger: ctx.logger }, {
+        allowLocalAsr: found.length === 0 && !localAsrUsed, onLocalAsr: () => { localAsrUsed = true; },
+      });
+    } catch (e) {
+      // One unreadable hit (members-only, private, age-gated, an upcoming premiere…) never ends the search; failures that
+      // concern this machine rather than the video (rate limit, bot check, 403, missing tool, offline) apply to every hit.
+      if (isDocmakerError(e) && MACHINE_WIDE.has(e.code)) throw e;
+      ctx.logger.warn("search hit unreadable; trying the next one", { segmentId, videoId: hit.id, code: isDocmakerError(e) ? e.code : "INTERNAL", error: errMsg(e) });
+      continue;
+    }
     if (t.words.length === 0) continue;
     const p = findPassage(quote.verbatim, t.words, { maxClipMs });
     if (p && p.score >= PASSAGE_ACCEPT) found.push({ hit, words: t.words, kind: t.kind, lang: t.lang, p });

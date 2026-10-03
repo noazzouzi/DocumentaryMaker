@@ -13,11 +13,17 @@ export type YtErrorCode = "YT_RATE_LIMIT" | "YT_BOT_CHECK" | "YT_FORBIDDEN" | "Y
 /** stderr → typed error code (null when unrecognised). */
 export function mapYtError(stderr: string): YtErrorCode | null {
   if (/HTTP Error 429|Too Many Requests/i.test(stderr)) return "YT_RATE_LIMIT";
+  // Age gates also say "Sign in to confirm…": they concern one video, not this machine (checked before the bot-check pattern).
+  if (AGE_GATE_RE.test(stderr)) return "YT_UNAVAILABLE";
   if (/Sign in to confirm|confirm you.re not a bot|--cookies-from-browser/i.test(stderr)) return "YT_BOT_CHECK";
   if (/HTTP Error 403|403: Forbidden/i.test(stderr)) return "YT_FORBIDDEN";
   if (/Video unavailable|Private video|This video (is|has been) (private|removed|unavailable)|members-only|account associated with this video has been terminated/i.test(stderr)) return "YT_UNAVAILABLE";
   return null;
 }
+
+/** yt-dlp's age-gate messages ("Sign in to confirm your age. This video may be inappropriate for some users."). */
+export const AGE_GATE_RE = /confirm your age|age[- ]restricted|inappropriate for some users/i;
+const AGE_HINT = "the video is age-restricted; pick another source or import the clip manually (--file)";
 
 const HINTS: Record<YtErrorCode, string> = {
   YT_RATE_LIMIT: "YouTube rate-limited this machine; wait a few minutes or import the clip manually",
@@ -86,7 +92,7 @@ export async function ytRun(args: string[], ctx: YtCtx, o?: { retryDelayMs?: num
       continue;
     }
     const tail = r.stderr.split("\n").filter((l) => l.trim()).slice(-4).join("\n");
-    if (code) throw new DocmakerError(code, `yt-dlp: ${tail || code}`, { hint: HINTS[code] });
+    if (code) throw new DocmakerError(code, `yt-dlp: ${tail || code}`, { hint: AGE_GATE_RE.test(r.stderr) ? AGE_HINT : HINTS[code] });
     throw new DocmakerError("PROVIDER_ERROR", `yt-dlp failed (code ${r.code}): ${tail}`);
   }
 }
@@ -114,6 +120,13 @@ export function parseYtSearch(stdout: string): YtSearchHit[] {
 export async function ytSearch(q: string, ctx: YtCtx): Promise<YtSearchHit[]> {
   const out = await ytRun([`ytsearch10:${q}`, "--flat-playlist", "-J"], ctx);
   return parseYtSearch(out);
+}
+
+/** A YouTube video id: exactly 11 characters of [A-Za-z0-9_-]. Anything else never reaches a URL or a file path. */
+export const YT_ID_RE = /^[A-Za-z0-9_-]{11}$/;
+export function assertYtId(videoId: string): string {
+  if (!YT_ID_RE.test(videoId)) throw new DocmakerError("VALIDATION", "invalid YouTube video id");
+  return videoId;
 }
 
 export const ytUrl = (videoId: string) => `https://www.youtube.com/watch?v=${videoId}`;
@@ -185,6 +198,7 @@ export function mergeAsrPieces(pieces: readonly { text: string; startMs: number;
 
 /** bestaudio (yt-dlp) → 16 kHz mono WAV → sidecar `asr` (faster-whisper, word timestamps). */
 export async function ytLocalAsr(videoId: string, lang: string, ctx: YtCtx): Promise<WordTiming[]> {
+  assertYtId(videoId);
   const tmp = await makeTmpDir("ytasr");
   try {
     await ytRun(["-f", "ba/b", "--progress-template", "download:%(progress._percent_str)s", "-o", path.join(tmp, "%(id)s.%(ext)s"), ytUrl(videoId)], ctx);
@@ -208,11 +222,12 @@ const FORMAT = "bv*[height<=1080][vcodec^=avc1]+ba[ext=m4a]/bv*[height<=1080]+ba
 
 /** M3. ≤ 15 min (or sectionMs null) → whole video, cached by id under <home>/cache/yt; else a section with handles already applied. */
 export async function ytDownload(videoId: string, o: { sectionMs: [number, number] | null; outDir: string; durationSec?: number | null }, ctx: YtCtx): Promise<string> {
+  assertYtId(videoId);
   const cacheDir = path.join(ctx.config.paths.cache, "yt");
   const whole = o.sectionMs === null || (o.durationSec ?? Infinity) <= WHOLE_VIDEO_MAX_SEC;
   await mkdir(whole ? cacheDir : o.outDir, { recursive: true });
   if (whole) {
-    const cached = path.join(cacheDir, `${videoId}.mp4`);
+    const cached = ytCachePath(ctx.config, videoId);
     try {
       if ((await stat(cached)).size > 0) return cached;
     } catch { /* not cached */ }
@@ -242,7 +257,15 @@ export async function ytDownload(videoId: string, o: { sectionMs: [number, numbe
 
 /** Deletes a cached full-source download (keepSourceDownloads:false). */
 export async function dropYtSource(config: RuntimeConfig, videoId: string): Promise<void> {
-  await rm(path.join(config.paths.cache, "yt", `${videoId}.mp4`), { force: true });
+  await rm(ytCachePath(config, videoId), { force: true });
+}
+
+/** <home>/cache/yt/<id>.mp4 — the id is validated and the result must stay inside the cache directory. */
+export function ytCachePath(config: RuntimeConfig, videoId: string): string {
+  const dir = path.resolve(config.paths.cache, "yt");
+  const file = path.resolve(dir, `${assertYtId(videoId)}.mp4`);
+  if (path.dirname(file) !== dir) throw new DocmakerError("VALIDATION", "invalid YouTube video id");
+  return file;
 }
 
 /** A long-lived public video used by `doctor`. */
@@ -276,18 +299,26 @@ export async function ytProbe(ctx: YtCtx): Promise<"ok" | "bot-check" | "403" | 
   }
 }
 
-/** YouTube video id from a URL (watch?v=, youtu.be/, shorts/, embed/). */
+/** The 11-character id at the start of `s` (as yt-dlp matches it), null when `s` does not start with a well-formed id. */
+function leadingId(s: string | null | undefined): string | null {
+  const m = /^([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])/.exec(s ?? "");
+  return m ? m[1]! : null;
+}
+
+/** YouTube video id from a URL (watch?v=, youtu.be/, shorts/, embed/, live/, v/). Only ids matching YT_ID_RE are returned: the
+ *  id becomes a file name in <home>/cache/yt, so a decoded `v=abc…/../../x` must never pass through. */
 export function parseYoutubeId(url: string): string | null {
   try {
     const u = new URL(url);
-    const h = u.hostname.replace(/^www\.|^m\./, "");
-    if (h === "youtu.be") return u.pathname.slice(1).split("/")[0] || null;
+    const h = u.hostname.toLowerCase().replace(/^www\.|^m\./, "");
+    if (h === "youtu.be") return leadingId(u.pathname.slice(1));
     if (h === "youtube.com" || h === "music.youtube.com") {
       const v = u.searchParams.get("v");
-      if (v) return v;
-      const m = /^\/(shorts|embed|live|v)\/([\w-]{6,})/.exec(u.pathname);
-      return m ? m[2]! : null;
+      if (v !== null) return leadingId(v);
+      const m = /^\/(?:shorts|embed|live|v)\/(.*)$/.exec(u.pathname);
+      return m ? leadingId(m[1]) : null;
     }
+    return null;
   } catch { /* not a URL */ }
-  return /^[\w-]{11}$/.test(url) ? url : null;
+  return YT_ID_RE.test(url) ? url : null;
 }
