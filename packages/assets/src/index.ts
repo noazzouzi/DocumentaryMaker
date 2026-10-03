@@ -53,7 +53,7 @@ export { pickAssets } from "./pick";
 
 // ---- the assets stage (minus SFX pack and music, which the engine prepares through @docmaker/audio)
 export type { AssetsStageInput, AssetsStageOutput } from "./stage";
-export { resolveAssets, videoVerifiedQuotes } from "./stage";
+export { resolveAssets, videoVerifiedQuotes, activeProviders } from "./stage";
 
 // ---- interactive (web scene board / CLI)
 export { liveSearch } from "./live";

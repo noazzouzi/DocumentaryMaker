@@ -121,6 +121,15 @@ describe("retries, caps, cache, timeouts", () => {
     expect(n).toBe(1);
   });
 
+  it("uses x-ratelimit-reset on a 429 without Retry-After", async () => {
+    const config = makeConfig({ offline: false });
+    let n = 0;
+    const f = fakeFetch(() => (++n === 1 ? new Response("", { status: 429, headers: { "x-ratelimit-reset": "120" } }) : new Response("{}")));
+    const http = createHttpClient({ config, logger: quietLogger(), fetchImpl: f.impl, lookup: publicLookup, retryBaseMs: 1 });
+    await expect(http.getJson("https://x.example.com/d", { signal: new AbortController().signal })).rejects.toMatchObject({ code: "PROVIDER_RATE_LIMIT", details: { retryAfterMs: 120_000 } });
+    expect(n).toBe(1); // 120 s > the 60 s cap: give up at once, the stage moves on
+  });
+
   it("enforces size caps (content-length and streamed)", async () => {
     const config = makeConfig({ offline: false });
     const big = new Uint8Array(4096);

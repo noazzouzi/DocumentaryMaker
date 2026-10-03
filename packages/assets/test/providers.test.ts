@@ -267,3 +267,18 @@ describe("resolveEntity (wbsearchentities)", () => {
     expect(await resolveEntity("  ", "en", { http: offline, signal: new AbortController().signal })).toBeNull();
   });
 });
+
+describe("stage provider selection", () => {
+  it("offline → local + procedural; unconfigured keyed providers dropped; paid skipped when allowPaid is false", async () => {
+    const { activeProviders, createLocalProvider, createProceduralProvider } = await import("../src/index");
+    const { makeProject } = await import("@docmaker/core/testing");
+    const o = { local: createLocalProvider(null), procedural: createProceduralProvider() };
+    const project = makeProject();
+    const online = { config: makeConfig({ offline: false }), secrets: { fal: "K", brave: "B", pexels: "P" } };
+    const all = [...activeProviders(project, online, o).keys()];
+    expect(all).toEqual(["wikimedia", "openverse", "internet-archive", "nasa", "loc", "pexels", "brave", "fal", "procedural"]);
+    expect([...activeProviders(project, online, { ...o, allowPaid: false }).keys()]).not.toContain("fal");
+    expect([...activeProviders(project, { ...online, config: makeConfig({ offline: true }) }, o).keys()]).toEqual(["procedural"]); // the local provider needs an index
+    expect([...activeProviders({ ...project, assets: { ...project.assets, offline: true } }, online, o).keys()]).toEqual(["procedural"]); // the local provider needs an index
+  });
+});

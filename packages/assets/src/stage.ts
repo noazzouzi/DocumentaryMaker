@@ -33,6 +33,9 @@ export interface AssetsStageInput {
   project: Project; plans: BeatPlansDoc; facts: FactSheet; entities: EntitiesDoc; style: StyleData; primaryScript: Script;
   userPicks: UserPicksDoc; previous: { picks: PicksDocT | null; frozen: FrozenDoc | null; ledger: Ledger | null };
   projectDir: string; reranker: Reranker | null; personAcks: readonly string[];
+  /** JobOptions.allowPaid (hashed option key of the stage). false → paid providers (Brave, fal) are skipped; the engine passes
+   *  `reranker: null` for the same reason. Undefined → the engine's cost gate already approved paid work. */
+  allowPaid?: boolean;
 }
 export interface AssetsStageOutput { picks: PicksDocT; frozen: FrozenDoc; ledger: Ledger; candidates: CandidatesDoc[]; clipWords: ClipWordsDoc[] }
 
@@ -62,7 +65,7 @@ export function isOffline(project: Project, ctx: Pick<AssetsCtx, "config">): boo
 }
 
 /** Enabled + configured providers (offline → local + procedural only). Procedural is always last and always present. */
-export function activeProviders(project: Project, ctx: Pick<AssetsCtx, "config" | "secrets">, o: { local: AssetProvider; procedural: AssetProvider }): Map<AssetProviderId, AssetProvider> {
+export function activeProviders(project: Project, ctx: Pick<AssetsCtx, "config" | "secrets">, o: { local: AssetProvider; procedural: AssetProvider; allowPaid?: boolean }): Map<AssetProviderId, AssetProvider> {
   const offline = isOffline(project, ctx);
   const registry = new Map<AssetProviderId, AssetProvider>(allProviders().map((p) => [p.id, p]));
   registry.set("local", o.local);
@@ -72,6 +75,7 @@ export function activeProviders(project: Project, ctx: Pick<AssetsCtx, "config" 
     const p = registry.get(id);
     if (!p || id === "youtube") continue; // YouTube clips go through resolveClips
     if (offline && !OFFLINE_PROVIDERS.includes(id)) continue;
+    if (p.paid && o.allowPaid === false) continue;
     if (!p.isConfigured(ctx.secrets, ctx.config) && id !== "procedural") continue;
     out.set(id, p);
   }
@@ -104,7 +108,7 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
   const procedural = createProceduralProvider({ palette });
   const localIndex = await readJson(path.join(i.projectDir, P.localIndex), LocalIndexDoc);
   const local = createLocalProvider(localIndex);
-  const providers = activeProviders(project, ctx, { local, procedural });
+  const providers = activeProviders(project, ctx, { local, procedural, allowPaid: i.allowPaid });
   const quota = new QuotaBuckets(ctx.config);
   const gate = new ConcurrencyGate();
   const pctx = providerContext(ctx);

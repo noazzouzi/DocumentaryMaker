@@ -209,7 +209,9 @@ export function createHttpClient(o: { config: RuntimeConfig; logger: Logger } & 
         continue;
       }
       if (res.status < 200 || res.status >= 300) {
-        const retryAfterMs = parseRetryAfter(res.headers.get("retry-after"));
+        // Retry-After, else (429 only) the RateLimit reset hint some APIs send instead (Wikimedia: x-ratelimit-reset, seconds).
+        const retryAfterMs = parseRetryAfter(res.headers.get("retry-after"))
+          ?? (res.status === 429 ? parseRetryAfter(res.headers.get("x-ratelimit-reset") ?? res.headers.get("ratelimit-reset")) : null);
         let snippet = "";
         try {
           snippet = (await res.text()).slice(0, 300);
