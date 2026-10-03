@@ -6,6 +6,7 @@ import { AbsoluteFill } from "remotion";
 import { familyOf, fontStack, useEnv } from "../data/env";
 import { rgba } from "../lib/color";
 import { clamp01, expoOut } from "../lib/easing";
+import { headlineLineHeight } from "../lib/legibility";
 import { upper } from "../lib/text";
 import { fitFontSize } from "./fit";
 import { impactShake, useItemClock, type ComponentProps } from "./shared";
@@ -28,7 +29,7 @@ export const KeywordSlam: React.FC<ComponentProps<"KeywordSlam">> = ({ item }) =
       <AbsoluteFill style={{ alignItems: "center", justifyContent: "center" }}>
         <div
           style={{
-            fontFamily: fontStack(env.tokens, "headline"), fontSize: size, lineHeight: 1, color: p.color, whiteSpace: "nowrap",
+            fontFamily: fontStack(env.tokens, "headline"), fontSize: size, lineHeight: headlineLineHeight(text, 1), color: p.color, whiteSpace: "nowrap",
             transform: `translate(${shake.x.toFixed(2)}px, ${shake.y.toFixed(2)}px) scale(${scale.toFixed(5)})`, opacity: clamp01(c.f / 2 + 0.4),
             textShadow: p.background === "transparent" ? `0 10px 50px ${rgba("#000000", 0.7)}` : undefined,
           }}

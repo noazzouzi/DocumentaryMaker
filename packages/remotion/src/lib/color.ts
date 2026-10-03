@@ -39,3 +39,25 @@ export function unitRgb(hex: string): [number, number, number] {
   const c = parseHex(hex);
   return [c.r / 255, c.g / 255, c.b / 255];
 }
+/** WCAG contrast ratio between two opaque colours, in [1, 21]. */
+export function contrastRatio(a: string, b: string): number {
+  const la = luminance(a);
+  const lb = luminance(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+/**
+ * `fg` itself when it reaches `min` contrast against every colour in `bgs`; otherwise `fg` mixed towards black or
+ * white (whichever side the backgrounds leave more room on) by the smallest 5 % step that does — hue is kept as long
+ * as possible, and the pure end (black/white) is the fallback.
+ */
+export function readableOn(fg: string, bgs: readonly string[], min = 4.5): string {
+  const worst = (c: string) => Math.min(...bgs.map((b) => contrastRatio(c, b)));
+  if (bgs.length === 0 || worst(fg) >= min) return fg;
+  const meanLum = bgs.reduce((s, b) => s + luminance(b), 0) / bgs.length;
+  const target = meanLum > 0.18 ? "#000000" : "#FFFFFF";
+  for (let t = 0.05; t < 1; t += 0.05) {
+    const c = mixHex(fg, target, t);
+    if (worst(c) >= min) return c;
+  }
+  return target;
+}

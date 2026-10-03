@@ -6,6 +6,7 @@ import { AbsoluteFill } from "remotion";
 import { accentOf, familyOf, fontStack, useEnv } from "../data/env";
 import { rgba } from "../lib/color";
 import { clamp01, expoOut } from "../lib/easing";
+import { headlineColors, headlineLineHeight } from "../lib/legibility";
 import { seedOf } from "../lib/random";
 import { upper, wrapText } from "../lib/text";
 import { LetterboxBars } from "../looks/Letterbox";
@@ -26,10 +27,11 @@ export const ChapterCard: React.FC<ComponentProps<"ChapterCard">> = ({ item }) =
   const env = useEnv();
   const c = useItemClock(item);
   const p = item.props;
-  const pal = env.tokens.tokens.palette;
   const ramp = env.tokens.tokens.typeRamp;
   const accent = accentOf(env.tokens);
   const { lines, size } = titleLines(p.title, familyOf(env.tokens, "headline"), ramp.chapterTitle, 1500, env.locale);
+  const ink = headlineColors(p.backdrop, env.tokens, accent);
+  const lineHeight = headlineLineHeight(lines, 1.02);
   const slam = expoOut(clamp01(c.f / 3));
   const titleScale = 1.25 - 0.25 * slam;
   const kickerReveal = expoOut(clamp01((c.f - 1) / 8));
@@ -44,12 +46,12 @@ export const ChapterCard: React.FC<ComponentProps<"ChapterCard">> = ({ item }) =
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 22, maxWidth: 1600 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 18, clipPath: `inset(0 ${(100 - kickerReveal * 100).toFixed(2)}% 0 0)` }}>
             <div style={{ width: 56, height: 4, backgroundColor: accent }} />
-            <div style={{ fontFamily: fontStack(env.tokens, "mono"), fontWeight: 700, fontSize: ramp.chapterKicker, letterSpacing: "0.35em", color: accent }}>{upper(p.kicker, env.locale)}</div>
+            <div style={{ fontFamily: fontStack(env.tokens, "mono"), fontWeight: 700, fontSize: ramp.chapterKicker, letterSpacing: "0.35em", color: ink.light ? ink.kicker : accent }}>{upper(p.kicker, env.locale)}</div>
             <div style={{ width: 56, height: 4, backgroundColor: accent }} />
           </div>
           <div style={{ transform: `scale(${titleScale.toFixed(5)})`, opacity: clamp01(c.f / 2 + 0.2), textAlign: "center" }}>
             {lines.map((l, i) => (
-              <div key={i} style={{ fontFamily: fontStack(env.tokens, "headline"), fontSize: size, lineHeight: 1.02, color: pal.text, textShadow: `0 10px 40px ${rgba("#000000", 0.55)}`, whiteSpace: "nowrap" }}>
+              <div key={i} style={{ fontFamily: fontStack(env.tokens, "headline"), fontSize: size, lineHeight, color: ink.title, textShadow: ink.light ? ink.shadow : `0 10px 40px ${rgba("#000000", 0.55)}`, whiteSpace: "nowrap" }}>
                 {l}
               </div>
             ))}
@@ -57,7 +59,7 @@ export const ChapterCard: React.FC<ComponentProps<"ChapterCard">> = ({ item }) =
           {p.total > 1 ? (
             <div style={{ display: "flex", gap: 12, marginTop: 6, opacity: kickerReveal }}>
               {Array.from({ length: total }, (_, i) => (
-                <div key={i} style={{ width: i + 1 === p.index ? 34 : 12, height: 6, borderRadius: 3, backgroundColor: i + 1 === p.index ? accent : rgba(pal.text, i + 1 < p.index ? 0.7 : 0.28) }} />
+                <div key={i} style={{ width: i + 1 === p.index ? 34 : 12, height: 6, borderRadius: 3, backgroundColor: i + 1 === p.index ? (ink.light ? ink.kicker : accent) : rgba(ink.title, i + 1 < p.index ? 0.7 : 0.28) }} />
               ))}
             </div>
           ) : null}

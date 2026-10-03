@@ -6,6 +6,7 @@ import { AbsoluteFill, useCurrentFrame } from "remotion";
 import type { StyleRenderTokens } from "@docmaker/core";
 import { fontStack, useEnv } from "../data/env";
 import { darken, mixHex, rgba } from "../lib/color";
+import { headlineLineHeight } from "../lib/legibility";
 import { hash01 } from "../lib/random";
 import { upper } from "../lib/text";
 import { NoiseCanvas } from "./NoiseCanvas";
@@ -120,7 +121,7 @@ export const GeneratedBackdrop: React.FC<GeneratedBackdropProps> = ({ recipe, se
         <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", padding: "0 120px" }}>
           <div
             style={{
-              fontFamily: fontStack(env.tokens, "headline"), fontSize, lineHeight: 1.0, color: env.tokens.tokens.palette.text, textAlign: "center",
+              fontFamily: fontStack(env.tokens, "headline"), fontSize, lineHeight: headlineLineHeight(kw, 1.0), color: env.tokens.tokens.palette.text, textAlign: "center",
               letterSpacing: "0.01em", textShadow: `0 8px 40px ${rgba("#000000", 0.6)}`, transform: `scale(${(1 + 0.004 * tSec).toFixed(5)})`,
             }}
           >

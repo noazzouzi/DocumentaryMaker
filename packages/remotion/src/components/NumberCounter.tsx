@@ -1,6 +1,7 @@
 // NumberCounter (M1): 45–90 f expo.out roll; Intl.NumberFormat(locale, currency incl. NLG → ƒ); odometer digits; the
 // font grows with the value; background blur 0→3 px (a derived picture fx, see computeTimeline overlayFx); a slight
-// jitter while digits change; label below.
+// jitter while digits change; label below. A soft dark plate sits behind digits + label so they hold contrast even when
+// the counter outlives its beat and lands on a bright card (the full-frame scrim alone is too weak there).
 import type React from "react";
 import { AbsoluteFill } from "remotion";
 import { familyOf, fontStack, useEnv } from "../data/env";
@@ -11,6 +12,15 @@ import { hashSigned } from "../lib/random";
 import { upper } from "../lib/text";
 import { textWidth } from "./fit";
 import { useItemClock, useZone, zoneFor, type ComponentProps } from "./shared";
+
+/**
+ * Backing plate behind digits + label: a dark radial ellipse overshooting the content box (inset), with a plateau of at
+ * least `edge` alpha over the text and `core` at the centre, on top of the full-frame `scrim`. On a pure-white card this
+ * keeps the white label ≥ 4.5:1 and the money-green digits ≥ 3:1 (large text).
+ */
+export const COUNTER_PLATE = { scrim: 0.32, core: 0.5, edge: 0.45, plateau: 0.6, inset: "-50% -34%" } as const;
+// plateau, then a feathered (eased) fall-off so the plate reads as a vignette, not a disc
+const plateBackground = `radial-gradient(closest-side, ${rgba("#000000", COUNTER_PLATE.core)} 0%, ${rgba("#000000", COUNTER_PLATE.edge)} ${COUNTER_PLATE.plateau * 100}%, ${rgba("#000000", COUNTER_PLATE.edge * 0.55)} 78%, ${rgba("#000000", COUNTER_PLATE.edge * 0.18)} 91%, ${rgba("#000000", 0)} 100%)`;
 
 const DIGITS = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
 
@@ -33,36 +43,39 @@ export const NumberCounter: React.FC<ComponentProps<"NumberCounter">> = ({ item 
   const enterY = 30 * (1 - c.inP);
   return (
     <AbsoluteFill style={{ pointerEvents: "none" }}>
-      <AbsoluteFill style={{ backgroundColor: rgba("#000000", 0.32 * c.inP * (1 - c.outP)) }} />
+      <AbsoluteFill style={{ backgroundColor: rgba("#000000", COUNTER_PLATE.scrim * c.inP * (1 - c.outP)) }} />
       <div
         style={{
           position: "absolute", left: z.left, top: z.top, width: z.width, height: z.height, display: "flex", flexDirection: "column",
-          alignItems: "center", justifyContent: "center", gap: 10, opacity: c.inP * (1 - c.outP),
+          alignItems: "center", justifyContent: "center", opacity: c.inP * (1 - c.outP),
           transform: `translateY(${(enterY + jitter).toFixed(2)}px) scale(${(1 + 0.03 * c.hold).toFixed(5)})`,
         }}
       >
-        <div style={{ display: "flex", alignItems: "baseline", fontFamily: fontStack(env.tokens, "headline"), fontSize: size, lineHeight: 1, color: p.color, filter: `drop-shadow(0 8px 26px ${rgba("#000000", 0.6)})`, whiteSpace: "nowrap" }}>
-          {cells.map((cell, i) =>
-            cell.kind === "digit" ? (
-              <span key={i} style={{ display: "inline-block", position: "relative", width: `${(digitW * cell.visible).toFixed(4)}em`, height: "1em", overflow: "hidden", opacity: cell.visible, verticalAlign: "bottom" }}>
-                <span style={{ position: "absolute", left: 0, right: 0, top: 0, display: "flex", flexDirection: "column", alignItems: "center", transform: `translateY(${(-cell.pos).toFixed(4)}em)` }}>
-                  {DIGITS.map((d, j) => (
-                    <span key={j} style={{ height: "1em", lineHeight: 1 }}>{d}</span>
-                  ))}
+        <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+          <div style={{ position: "absolute", inset: COUNTER_PLATE.inset, background: plateBackground, pointerEvents: "none" }} />
+          <div style={{ position: "relative", display: "flex", alignItems: "baseline", fontFamily: fontStack(env.tokens, "headline"), fontSize: size, lineHeight: 1, color: p.color, filter: `drop-shadow(0 8px 26px ${rgba("#000000", 0.6)})`, whiteSpace: "nowrap" }}>
+            {cells.map((cell, i) =>
+              cell.kind === "digit" ? (
+                <span key={i} style={{ display: "inline-block", position: "relative", width: `${(digitW * cell.visible).toFixed(4)}em`, height: "1em", overflow: "hidden", opacity: cell.visible, verticalAlign: "bottom" }}>
+                  <span style={{ position: "absolute", left: 0, right: 0, top: 0, display: "flex", flexDirection: "column", alignItems: "center", transform: `translateY(${(-cell.pos).toFixed(4)}em)` }}>
+                    {DIGITS.map((d, j) => (
+                      <span key={j} style={{ height: "1em", lineHeight: 1 }}>{d}</span>
+                    ))}
+                  </span>
                 </span>
-              </span>
-            ) : (
-              <span key={i} style={{ display: "inline-block", opacity: cell.visible, maxWidth: cell.visible < 1 ? `${cell.visible}em` : undefined, overflow: cell.visible < 1 ? "hidden" : "visible", whiteSpace: "pre", verticalAlign: "bottom", lineHeight: 1 }}>
-                {cell.text}
-              </span>
-            ),
-          )}
-        </div>
-        {p.label ? (
-          <div style={{ fontFamily: fontStack(env.tokens, "body"), fontWeight: 800, fontSize: Math.round(ramp.cardBody * 0.9), letterSpacing: "0.12em", color: rgba(pal.text, 0.9), textShadow: `0 4px 18px ${rgba("#000000", 0.6)}` }}>
-            {upper(p.label, env.locale)}
+              ) : (
+                <span key={i} style={{ display: "inline-block", opacity: cell.visible, maxWidth: cell.visible < 1 ? `${cell.visible}em` : undefined, overflow: cell.visible < 1 ? "hidden" : "visible", whiteSpace: "pre", verticalAlign: "bottom", lineHeight: 1 }}>
+                  {cell.text}
+                </span>
+              ),
+            )}
           </div>
-        ) : null}
+          {p.label ? (
+            <div style={{ fontFamily: fontStack(env.tokens, "body"), fontWeight: 800, fontSize: Math.round(ramp.cardBody * 0.9), letterSpacing: "0.12em", position: "relative", color: rgba(pal.text, 0.96), textShadow: `0 4px 18px ${rgba("#000000", 0.6)}` }}>
+              {upper(p.label, env.locale)}
+            </div>
+          ) : null}
+        </div>
       </div>
     </AbsoluteFill>
   );

@@ -1,10 +1,11 @@
 // TitleSting (M1): the video title — slam (1.4→1.0 over 8 f expo.out) or typewriter (2 f/char); kicker; accent bar;
-// drifting backdrop; 90–120 f; 10 f exit.
+// drifting backdrop; 90–120 f; 10 f exit. Title/kicker colours follow the backdrop (ink + readable accent on light
+// paper, near-white on dark) and the line height opens up for accented capitals (headlineColors/headlineLineHeight).
 import type React from "react";
 import { AbsoluteFill } from "remotion";
 import { accentOf, familyOf, fontStack, useEnv } from "../data/env";
-import { rgba } from "../lib/color";
 import { clamp01, expoOut } from "../lib/easing";
+import { headlineColors, headlineLineHeight } from "../lib/legibility";
 import { seedOf } from "../lib/random";
 import { upper } from "../lib/text";
 import { GeneratedBackdrop } from "../media/GeneratedBackdrop";
@@ -15,10 +16,11 @@ export const TitleSting: React.FC<ComponentProps<"TitleSting">> = ({ item }) => 
   const env = useEnv();
   const c = useItemClock(item);
   const p = item.props;
-  const pal = env.tokens.tokens.palette;
   const accent = accentOf(env.tokens);
   const { lines, size } = titleLines(p.title, familyOf(env.tokens, "headline"), 150, 1640, env.locale);
   const full = lines.join("\n");
+  const ink = headlineColors(p.backdrop, env.tokens, accent);
+  const lineHeight = headlineLineHeight(lines, 1.0);
   let shown = full;
   let scale = 1;
   let opacity = 1;
@@ -41,13 +43,13 @@ export const TitleSting: React.FC<ComponentProps<"TitleSting">> = ({ item }) => 
       <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", transform: `scale(${(push * (1 + 0.05 * c.outP)).toFixed(5)})` }}>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 26 }}>
           {p.kicker ? (
-            <div style={{ fontFamily: fontStack(env.tokens, "mono"), fontWeight: 700, fontSize: 30, letterSpacing: "0.3em", color: rgba(pal.text, 0.85), opacity: kickerP, transform: `translateY(${(14 * (1 - kickerP)).toFixed(2)}px)` }}>
+            <div style={{ fontFamily: fontStack(env.tokens, "mono"), fontWeight: 700, fontSize: 30, letterSpacing: "0.3em", color: ink.kicker, opacity: kickerP, transform: `translateY(${(14 * (1 - kickerP)).toFixed(2)}px)` }}>
               {upper(p.kicker, env.locale)}
             </div>
           ) : null}
           <div style={{ transform: `scale(${scale.toFixed(5)})`, opacity, textAlign: "center" }}>
             {shown.split("\n").map((l, i, arr) => (
-              <div key={i} style={{ fontFamily: fontStack(env.tokens, "headline"), fontSize: size, lineHeight: 1.0, color: pal.text, whiteSpace: "pre", textShadow: `0 12px 50px ${rgba("#000000", 0.6)}` }}>
+              <div key={i} style={{ fontFamily: fontStack(env.tokens, "headline"), fontSize: size, lineHeight, color: ink.title, whiteSpace: "pre", textShadow: ink.shadow }}>
                 {l}
                 {typing && i === arr.length - 1 ? (
                   <span style={{ display: "inline-block", width: "0.4em", height: "0.78em", marginLeft: "0.06em", backgroundColor: accent, opacity: caretOn ? 1 : 0 }} />
