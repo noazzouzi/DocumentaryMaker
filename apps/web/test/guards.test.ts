@@ -86,18 +86,22 @@ describe("proxy()", () => {
 });
 
 describe("anti-framing headers (clickjacking)", () => {
-  it("next.config sends X-Frame-Options DENY and CSP frame-ancestors 'none' on every path, upload route included", async () => {
+  it("next.config: X-Frame-Options DENY on every path; CSP frame-ancestors 'none' on pages but never over an API route's own CSP", async () => {
     // non-literal specifier: a static import would pull next's global types (readonly NODE_ENV) into this typecheck
     const configPath = "../next.config";
     type Rule = { source: string; headers: { key: string; value: string }[]; has?: unknown[]; missing?: unknown[] };
     const nextConfig = ((await import(/* @vite-ignore */ configPath)) as { default: { headers?: () => Promise<Rule[]> } }).default;
     const rules = await nextConfig.headers!();
-    const all = rules.find((r) => r.source === "/:path*");
-    expect(all).toBeDefined();
-    const h = Object.fromEntries(all!.headers.map((x) => [x.key.toLowerCase(), x.value]));
-    expect(h["x-frame-options"]).toBe("DENY");
-    expect(h["content-security-policy"]).toBe("frame-ancestors 'none'");
-    expect(all!.missing ?? []).toEqual([]);
-    expect(all!.has ?? []).toEqual([]);
+    const valueOf = (r: Rule, k: string) => r.headers.find((x) => x.key.toLowerCase() === k)?.value;
+    const all = rules.find((r) => r.source === "/:path*")!;
+    expect(valueOf(all, "x-frame-options")).toBe("DENY");
+    expect(valueOf(all, "content-security-policy")).toBeUndefined();
+    expect(all.has ?? []).toEqual([]);
+    expect(all.missing ?? []).toEqual([]);
+    const csp = rules.find((r) => valueOf(r, "content-security-policy"))!;
+    expect(valueOf(csp, "content-security-policy")).toBe("frame-ancestors 'none'");
+    const matches = (p: string) => new RegExp(`^${csp.source}$`).test(p);
+    for (const p of ["/", "/settings", "/p/my-film/preview/en", "/apiary"]) expect(matches(p), p).toBe(true);
+    for (const p of ["/api", "/api/projects/my-film/media/media/x.svg", "/api/projects/my-film/teleprompter/en"]) expect(matches(p), p).toBe(false);
   });
 });
