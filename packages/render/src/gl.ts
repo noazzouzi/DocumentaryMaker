@@ -61,7 +61,8 @@ async function probeOne(gl: GlMode, o: { serveUrl: string; exe: string; config: 
   const common = commonRemotionOptions(o.exe, gl, o.config, GL_PROBE_TIMEOUT_MS);
   const attempt = (async () => {
     browser = await openChrome(o.exe, gl, { cpuRaster: false });
-    const composition = await selectComposition({ ...common, serveUrl: o.serveUrl, id: COMPOSITIONS.gl, inputProps: {}, puppeteerInstance: browser });
+    // collect (never print) the probe's console lines: without onBrowserLog Remotion echoes them to the terminal
+    const composition = await selectComposition({ ...common, serveUrl: o.serveUrl, id: COMPOSITIONS.gl, inputProps: {}, puppeteerInstance: browser, onBrowserLog: (l) => lines.push(l.text) });
     await renderStill({
       ...common, composition, serveUrl: o.serveUrl, inputProps: {}, frame: 0, output: null, imageFormat: "png", puppeteerInstance: browser,
       onBrowserLog: (l) => lines.push(l.text),
