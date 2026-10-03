@@ -1,17 +1,4 @@
-// Walking-skeleton fakes (§16.5): implement the §4.19 signatures of packages whose M1 is still being built, with minimal
-// valid outputs. The skeleton e2e uses real styles, llm, voice and director; these fakes for assets, audio, export and the
-// render client (ffmpeg-written MP4, no Chrome).
-import { REAL_DEPS, type EngineDeps } from "../../src/deps";
-import { makeFakeAssets } from "./assets";
-import { makeFakeAudio } from "./audio";
-import { makeFakeExporter } from "./export";
-
-export { makeFakeAssets } from "./assets";
-export { makeFakeAudio } from "./audio";
-export { makeFakeExporter } from "./export";
+// Walking-skeleton fakes (§16.5). Every package's M1 has landed, so the assets/audio/export fakes are gone (P2): tests and
+// the skeleton e2e run the real packages. Only the render client stays fake (no Chrome in unit tests): it writes an MP4
+// with the timeline's exact frame count via ffmpeg.
 export { FakeRenderClient } from "./render";
-
-/** Real packages where they exist; fakes for assets, audio and export. */
-export function skeletonDeps(base: EngineDeps = REAL_DEPS): EngineDeps {
-  return { ...base, assets: makeFakeAssets(), audio: makeFakeAudio(), exporter: makeFakeExporter() };
-}

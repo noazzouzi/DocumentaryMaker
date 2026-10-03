@@ -274,13 +274,13 @@ describe("factcheck acknowledgements", () => {
 describe("factcheck on a real engine (gate-test)", () => {
   // the gate-test fixture through the factcheck stage, with its fix-only quote fixed: ackable blocking items remain
   async function setup(root: string) {
-    const { createEngineImpl } = await import("@docmaker/engine");
+    const { createEngineImpl, REAL_DEPS } = await import("@docmaker/engine");
     const { loadRuntime } = await import("@docmaker/core/node");
     const core = await import("@docmaker/core");
     const fakes = await import("../../../packages/engine/test/fakes/index");
     const repo = path.resolve(__dirname, "..", "..", "..");
     const env = { ...process.env, DOCMAKER_HOME: path.join(root, "home"), DOCMAKER_PROJECTS: path.join(root, "projects"), DOCMAKER_OFFLINE: "1", DOCMAKER_REPO_ROOT: repo, DOCMAKER_LOG_LEVEL: "error" };
-    const factory: EngineFactory = async ({ env: e, logger }) => createEngineImpl({ cwd: repo, env: e, logger, deps: fakes.skeletonDeps(), renderClient: new fakes.FakeRenderClient(loadRuntime({ cwd: repo, env: e }).config) });
+    const factory: EngineFactory = async ({ env: e, logger }) => createEngineImpl({ cwd: repo, env: e, logger, deps: REAL_DEPS, renderClient: new fakes.FakeRenderClient(loadRuntime({ cwd: repo, env: e }).config) });
     const e = await factory({ env, cwd: repo, logger: silent });
     try {
       const fx = (await e.rt.fixture("gate-test"))!;
@@ -398,12 +398,12 @@ describe("demo on the walking-skeleton fakes", () => {
   it("runs the whole pipeline and prints the outputs", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "docmaker-cli-demo-"));
     try {
-      const { createEngineImpl } = await import("@docmaker/engine");
+      const { createEngineImpl, REAL_DEPS } = await import("@docmaker/engine");
       const { loadRuntime } = await import("@docmaker/core/node");
       const fakes = await import("../../../packages/engine/test/fakes/index");
       const repo = path.resolve(__dirname, "..", "..", "..");
       const env = { ...process.env, DOCMAKER_HOME: path.join(root, "home"), DOCMAKER_PROJECTS: path.join(root, "projects"), DOCMAKER_OFFLINE: "1", DOCMAKER_REPO_ROOT: repo, DOCMAKER_LOG_LEVEL: "error" };
-      const factory: EngineFactory = async ({ env: e, logger }) => createEngineImpl({ cwd: repo, env: e, logger, deps: fakes.skeletonDeps(), renderClient: new fakes.FakeRenderClient(loadRuntime({ cwd: repo, env: e }).config) });
+      const factory: EngineFactory = async ({ env: e, logger }) => createEngineImpl({ cwd: repo, env: e, logger, deps: REAL_DEPS, renderClient: new fakes.FakeRenderClient(loadRuntime({ cwd: repo, env: e }).config) });
       const io = memIo(false);
       const code = await runCli(argv("demo", "--only-chapters", "CH1", "--slug", "cli-demo", "--tts", "synthetic"), { io, factory, baseEnv: env, cwd: repo });
       expect(io.stderr).toBe("");

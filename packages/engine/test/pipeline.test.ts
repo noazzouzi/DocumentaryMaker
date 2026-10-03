@@ -1,5 +1,5 @@
 // Stage hashing, staleness, option keys, variants, ownership, writeDoc issues, render snapshot lock release, new-take
-// cascade — on the tulip-mania fixture with the real llm/voice/director/styles and fakes for assets/audio/export/render.
+// cascade — on the tulip-mania fixture with every real package and a fake render client (no Chrome).
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";

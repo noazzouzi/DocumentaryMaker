@@ -36,7 +36,7 @@ export function runJobWorker(o: { renderClient: RenderClient; cwd: string }): Pr
 export { createEngineImpl, memoStore, secretNameOf } from "./engine";
 export type { EngineExt, SetupComponent } from "./engine";
 export type { EngineDeps, StylesApi, LlmApi, AssetsApi, VoiceApi, AudioApi, DirectorApi, ExportApi } from "./deps";
-export { REAL_DEPS, withStubFallback, isNotImplemented } from "./deps";
+export { REAL_DEPS } from "./deps";
 export { JobManager, requestKey, isTerminal } from "./jobs";
 export { planInvocations, pipelineEstimate, stageRange, NEEDS_TAKE } from "./pipeline";
 export { WorkerHost, workerEnv, workerForkOptions } from "./worker";

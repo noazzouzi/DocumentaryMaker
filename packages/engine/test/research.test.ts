@@ -6,7 +6,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DocmakerError, P, ResearchDossier, type JobEvent } from "@docmaker/core";
 import { REAL_DEPS, type LlmApi } from "../src/deps";
 import type { EngineExt } from "../src/engine";
-import { skeletonDeps } from "./fakes";
 import { collect, deferred, fixtureProject, stageReq, testEngine, testEnv, type TestEnv } from "./helpers";
 
 type Turn = { stop_reason: string; content: { type: "text"; text: string }[] };
@@ -65,7 +64,7 @@ describe("research resume", () => {
 
   beforeAll(async () => {
     t = testEnv("research");
-    const base = skeletonDeps();
+    const base = REAL_DEPS;
     fake = recordingResearch(REAL_DEPS.llm);
     e = await testEngine(t, { deps: { ...base, llm: { ...base.llm, runResearch: fake.runResearch } } });
     slug = (await fixtureProject(e, "tulip-mania", "rs")).slug;

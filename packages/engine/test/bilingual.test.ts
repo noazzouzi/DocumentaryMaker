@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ApprovalsDoc, P, Script, Timeline, hashJson, validateLangParity } from "@docmaker/core";
 import { fixtureProject, pipelineReq, runToEnd, testEngine, testEnv, type TestEnv } from "./helpers";
-import { skeletonDeps } from "./fakes";
+import { REAL_DEPS } from "../src/deps";
 import type { EngineExt } from "../src/engine";
 
 describe("bilingual project", () => {
@@ -18,7 +18,7 @@ describe("bilingual project", () => {
 
   beforeAll(async () => {
     t = testEnv("bilingual");
-    const base = skeletonDeps();
+    const base = REAL_DEPS;
     e = await testEngine(t, {
       deps: {
         ...base,

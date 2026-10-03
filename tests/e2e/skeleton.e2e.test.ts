@@ -1,18 +1,18 @@
-// Walking skeleton (§16.5): the engine runs every stage of the offline demo with the REAL styles, llm (fixture), voice
-// (synthetic) and director packages, and fakes for assets, audio, export and the render client (ffmpeg-written MP4).
-// Equals the demo e2e minus the real rendering/mixing/export (§16.4 assertions adapted).
+// Walking skeleton (§16.5): the engine runs every stage of the offline demo on the REAL packages (styles, llm fixture,
+// assets offline, voice synthetic, audio, director, export); only the render client is fake (ffmpeg-written MP4 with the
+// timeline's frame count, no Chrome). Equals the demo e2e minus the Remotion rendering (§16.4 assertions adapted).
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { P, QaReport, Timeline, TimelineLintDoc, type JobEvent } from "@docmaker/core";
 import { ffprobeJson, loadRuntime, sha256File } from "@docmaker/core/node";
-import { createEngineImpl } from "@docmaker/engine";
-import { FakeRenderClient, skeletonDeps } from "../../packages/engine/test/fakes/index";
+import { createEngineImpl, REAL_DEPS } from "@docmaker/engine";
+import { FakeRenderClient } from "../../packages/engine/test/fakes/index";
 import { offlineEnv, REPO_ROOT, type OfflineEnv } from "./helpers";
 
 type E = Awaited<ReturnType<typeof createEngineImpl>>;
 
-describe("walking skeleton (fakes for assets, audio, export, render)", () => {
+describe("walking skeleton (real packages, fake render client)", () => {
   let env: OfflineEnv;
   let engine: E;
   let render: FakeRenderClient;
@@ -24,7 +24,7 @@ describe("walking skeleton (fakes for assets, audio, export, render)", () => {
     env = await offlineEnv("skeleton");
     const { config } = loadRuntime({ cwd: REPO_ROOT, env: process.env });
     render = new FakeRenderClient(config);
-    engine = await createEngineImpl({ cwd: REPO_ROOT, env: process.env, renderClient: render, deps: skeletonDeps() });
+    engine = await createEngineImpl({ cwd: REPO_ROOT, env: process.env, renderClient: render, deps: REAL_DEPS });
     result = await engine.runDemo({ fixture: "tulip-mania", langs: ["en"], offline: true, tts: "synthetic", preset: "draft", onlyChapters: ["CH1", "CH2"], slug: "skeleton-demo" });
     projectDir = path.join(env.projects, result.slug);
     for await (const ev of engine.events(result.jobId)) events.push(ev);

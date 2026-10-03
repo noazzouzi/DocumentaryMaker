@@ -4,8 +4,8 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { JobEvent } from "@docmaker/core";
 import { createEngineImpl, type EngineExt } from "../src/engine";
+import { REAL_DEPS } from "../src/deps";
 import { silentLogger } from "../src/util";
-import { skeletonDeps } from "./fakes";
 import { REPO_ROOT, collect, fixtureProject, pipelineReq, testEnv, type TestEnv } from "./helpers";
 
 const WORKER = "packages/engine/test/fixtures/fake-worker.ts";
@@ -18,7 +18,7 @@ describe("forked job worker", () => {
   beforeAll(async () => {
     t = testEnv("worker");
     t.env.DOCMAKER_TEST_RENDER_DELAY_MS = "4000";
-    host = await createEngineImpl({ cwd: REPO_ROOT, env: t.env, renderClient: null, runner: { kind: "worker", workerPath: WORKER }, deps: skeletonDeps(), logger: silentLogger });
+    host = await createEngineImpl({ cwd: REPO_ROOT, env: t.env, renderClient: null, runner: { kind: "worker", workerPath: WORKER }, deps: REAL_DEPS, logger: silentLogger });
     slug = (await fixtureProject(host, "tulip-mania", "wk")).slug;
   });
   afterAll(async () => {

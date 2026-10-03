@@ -1,4 +1,4 @@
-// Engine test harness: isolated home/projects (env object, process.env untouched), offline, real packages + fakes.
+// Engine test harness: isolated home/projects (env object, process.env untouched), offline, real packages + a fake render client.
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -7,8 +7,8 @@ import { ENV_KEYS, type JobEvent, type JobRequest, type RenderClient } from "@do
 import { loadRuntime } from "@docmaker/core/node";
 import type { LlmClient } from "@docmaker/llm";
 import { createEngineImpl, type EngineExt } from "../src/engine";
-import type { EngineDeps } from "../src/deps";
-import { FakeRenderClient, skeletonDeps } from "./fakes";
+import { REAL_DEPS, type EngineDeps } from "../src/deps";
+import { FakeRenderClient } from "./fakes";
 import { silentLogger } from "../src/util";
 
 export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -27,7 +27,7 @@ export async function testEngine(t: TestEnv, o: { deps?: EngineDeps; renderClien
   const { config } = loadRuntime({ cwd: REPO_ROOT, env: t.env });
   const fake = o.renderClient === undefined ? new FakeRenderClient(config) : null;
   const e = await createEngineImpl({
-    cwd: REPO_ROOT, env: t.env, renderClient: o.renderClient === undefined ? fake : o.renderClient, deps: o.deps ?? skeletonDeps(),
+    cwd: REPO_ROOT, env: t.env, renderClient: o.renderClient === undefined ? fake : o.renderClient, deps: o.deps ?? REAL_DEPS,
     llmOverride: o.llmOverride, skipReconcile: o.skipReconcile, logger: silentLogger,
   });
   return Object.assign(e, { fakeRender: fake });
