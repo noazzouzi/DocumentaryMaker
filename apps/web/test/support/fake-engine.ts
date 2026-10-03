@@ -37,7 +37,7 @@ export async function writeProjectFile(projectsDir: string, slug: string, rel: s
 
 const HOST = "127.0.0.1:3210";
 /** A same-origin browser-like request (Host + Origin + Sec-Fetch-Site). */
-export function req(pathAndQuery: string, init: RequestInit & { headers?: Record<string, string> } = {}): Request {
+export function req(pathAndQuery: string, init: Omit<RequestInit, "headers"> & { headers?: Record<string, string> } = {}): Request {
   const method = (init.method ?? "GET").toUpperCase();
   const headers: Record<string, string> = { host: HOST, "sec-fetch-site": "same-origin", ...(method !== "GET" && method !== "HEAD" ? { origin: `http://${HOST}` } : {}), ...init.headers };
   return new Request(`http://${HOST}${pathAndQuery}`, { ...init, method, headers });

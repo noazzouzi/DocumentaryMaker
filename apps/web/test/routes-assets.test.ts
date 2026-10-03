@@ -56,7 +56,7 @@ describe("live search", () => {
   });
 });
 
-function multipart(parts: { name: string; filename?: string; type?: string; data: string | Uint8Array }[], boundary = "----docmakerTestBoundary7MA4YWxk"): { body: Uint8Array; type: string } {
+function multipart(parts: { name: string; filename?: string; type?: string; data: string | Uint8Array }[], boundary = "----docmakerTestBoundary7MA4YWxk"): { body: Uint8Array<ArrayBuffer>; type: string } {
   const enc = new TextEncoder();
   const chunks: Uint8Array[] = [];
   for (const p of parts) {
