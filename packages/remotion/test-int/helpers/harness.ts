@@ -149,12 +149,17 @@ export function decodeRgba(file: string): { width: number; height: number; data:
   return { width: w, height: h, data: r.stdout };
 }
 
-/** Stats of a rectangle of an RGBA image: opaque-pixel share and luma standard deviation. */
-export function regionStats(img: { width: number; height: number; data: Buffer }, rect: { x: number; y: number; w: number; h: number }): { opaqueShare: number; lumaStd: number; meanLuma: number } {
+export interface RegionStats { opaqueShare: number; lumaStd: number; meanLuma: number; maxLuma: number; meanChroma: number; meanRgb: [number, number, number] }
+
+/** Stats of a rectangle of an RGBA image (every 2nd pixel): opaque share, luma mean/std/max, chroma, mean colour. */
+export function regionStats(img: { width: number; height: number; data: Buffer }, rect: { x: number; y: number; w: number; h: number }): RegionStats {
   let n = 0;
   let opaque = 0;
   let sum = 0;
   let sum2 = 0;
+  let max = 0;
+  let chroma = 0;
+  const rgb: [number, number, number] = [0, 0, 0];
   const x0 = Math.max(0, Math.floor(rect.x));
   const y0 = Math.max(0, Math.floor(rect.y));
   const x1 = Math.min(img.width, Math.ceil(rect.x + rect.w));
@@ -162,14 +167,75 @@ export function regionStats(img: { width: number; height: number; data: Buffer }
   for (let y = y0; y < y1; y += 2) {
     for (let x = x0; x < x1; x += 2) {
       const o = (y * img.width + x) * 4;
-      const a = img.data[o + 3]!;
+      const r = img.data[o]!;
+      const g = img.data[o + 1]!;
+      const b = img.data[o + 2]!;
       n++;
-      if (a > 16) opaque++;
-      const l = 0.2126 * img.data[o]! + 0.7152 * img.data[o + 1]! + 0.0722 * img.data[o + 2]!;
+      if (img.data[o + 3]! > 16) opaque++;
+      const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
       sum += l;
       sum2 += l * l;
+      if (l > max) max = l;
+      chroma += Math.max(r, g, b) - Math.min(r, g, b);
+      rgb[0] += r;
+      rgb[1] += g;
+      rgb[2] += b;
     }
   }
   const mean = n ? sum / n : 0;
-  return { opaqueShare: n ? opaque / n : 0, lumaStd: n ? Math.sqrt(Math.max(0, sum2 / n - mean * mean)) : 0, meanLuma: mean };
+  return {
+    opaqueShare: n ? opaque / n : 0,
+    lumaStd: n ? Math.sqrt(Math.max(0, sum2 / n - mean * mean)) : 0,
+    meanLuma: mean,
+    maxLuma: max,
+    meanChroma: n ? chroma / n : 0,
+    meanRgb: n ? [rgb[0] / n, rgb[1] / n, rgb[2] / n] : [0, 0, 0],
+  };
+}
+
+/** Luma of an RGBA image downsampled by `step` (box filter) — for frame differences and edge energy. */
+export function lumaGrid(img: { width: number; height: number; data: Buffer }, step = 8): { w: number; h: number; v: Float32Array } {
+  const w = Math.floor(img.width / step);
+  const h = Math.floor(img.height / step);
+  const v = new Float32Array(w * h);
+  for (let gy = 0; gy < h; gy++) {
+    for (let gx = 0; gx < w; gx++) {
+      let s = 0;
+      for (let y = gy * step; y < (gy + 1) * step; y++) {
+        for (let x = gx * step; x < (gx + 1) * step; x++) {
+          const o = (y * img.width + x) * 4;
+          s += 0.2126 * img.data[o]! + 0.7152 * img.data[o + 1]! + 0.0722 * img.data[o + 2]!;
+        }
+      }
+      v[gy * w + gx] = s / (step * step);
+    }
+  }
+  return { w, h, v };
+}
+
+/** Mean absolute luma difference between two images of the same size. */
+export function meanAbsDiff(a: { width: number; height: number; data: Buffer }, b: { width: number; height: number; data: Buffer }): number {
+  const ga = lumaGrid(a);
+  const gb = lumaGrid(b);
+  let s = 0;
+  for (let i = 0; i < ga.v.length; i++) s += Math.abs(ga.v[i]! - gb.v[i]!);
+  return s / ga.v.length;
+}
+
+/** Mean absolute horizontal + vertical luma gradient at full resolution (sharpness / edge energy). */
+export function edgeEnergy(img: { width: number; height: number; data: Buffer }): number {
+  const L = (x: number, y: number) => {
+    const o = (y * img.width + x) * 4;
+    return 0.2126 * img.data[o]! + 0.7152 * img.data[o + 1]! + 0.0722 * img.data[o + 2]!;
+  };
+  let s = 0;
+  let n = 0;
+  for (let y = 0; y < img.height - 1; y += 3) {
+    for (let x = 0; x < img.width - 1; x += 3) {
+      const l = L(x, y);
+      s += Math.abs(L(x + 1, y) - l) + Math.abs(L(x, y + 1) - l);
+      n++;
+    }
+  }
+  return n ? s / n : 0;
 }

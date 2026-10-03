@@ -262,6 +262,17 @@ describe("computeTimeline", () => {
     expect(performance.now() - t0).toBeLessThan(1500);
     expect(c.durationInFrames).toBe(long.durationInFrames);
   });
+
+  it("a 30-minute timeline is compact JSON (≤ 5 MB, what useTimeline fetches per render tab) and computes in time", () => {
+    const t30 = timeline({ seconds: 1800 });
+    const bytes = new TextEncoder().encode(JSON.stringify(t30)).length;
+    expect(bytes).toBeLessThanOrEqual(5 * 1024 * 1024);
+    const t0 = performance.now();
+    const c = computeTimeline(t30);
+    expect(performance.now() - t0).toBeLessThan(3000);
+    expect(c.durationInFrames).toBe(30 * 60 * t30.fps);
+    expect(c.warnings).toEqual([]);
+  }, 60_000);
 });
 
 describe("planChunks", () => {

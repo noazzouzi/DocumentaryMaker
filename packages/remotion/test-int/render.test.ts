@@ -1,15 +1,19 @@
 // Render integration tests (§16.2, W7 rows): bundle once, then FontSpecimen, GlProbe, one still per M1 component
-// (+ the card layout, FallbackCard, every M1 transition class) and render-twice determinism. Needs the shared Chrome
-// Headless Shell; holds the machine-wide render lock for the whole file; concurrency ≤ 2.
+// (+ the card layout, FallbackCard, every M1 transition class), every component via StyleSpecimen, the M2 layouts /
+// treatments / caption variants and the M3 covers and overlaps (240 s feature timeline), a chunk through renderMedia
+// (the render worker path) and render-twice determinism. Needs the shared Chrome Headless Shell; holds the machine-wide
+// render lock for the whole file; concurrency ≤ 2.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { COMPONENT_META, type Timeline } from "@docmaker/core";
+import { spawnSync } from "node:child_process";
 import { computeTimeline } from "../src/compute/computeTimeline";
-import { browserExecutable, bundleEntry, chromiumOptions, decodeRgba, enableDeterministicRaster, loadRemotion, makeTmp, regionStats, startAssetServer, writeJson, writeProjectMedia, type AssetServer } from "./helpers/harness";
+import { planChunks } from "../src/compute/planChunks";
+import { browserExecutable, bundleEntry, chromiumOptions, decodeRgba, edgeEnergy, enableDeterministicRaster, loadRemotion, makeTmp, meanAbsDiff, regionStats, startAssetServer, writeJson, writeProjectMedia, type AssetServer } from "./helpers/harness";
 import { acquireRenderLock } from "./helpers/lock";
-import { buildTimeline } from "./helpers/timelines";
+import { buildFeatureTimeline, buildTimeline, type FeatureTimeline } from "./helpers/timelines";
 
 type Renderer = Awaited<ReturnType<typeof loadRemotion>>["renderer"];
 type Browser = Awaited<ReturnType<Renderer["openBrowser"]>>;
@@ -27,11 +31,12 @@ let tmp: { dir: string; cleanup: () => Promise<void> };
 let t: Timeline;
 const exe = browserExecutable();
 
-async function still(frame: number, o: { id?: string; layers?: typeof LAYERS_ALL; format?: "png" | "jpeg"; timelineUrl?: boolean; name?: string; logs?: Log[] } = {}): Promise<string> {
+async function still(frame: number, o: { id?: string; layers?: typeof LAYERS_ALL; format?: "png" | "jpeg"; timelineUrl?: boolean; name?: string; logs?: Log[]; timeline?: Timeline; server?: AssetServer } = {}): Promise<string> {
   const id = o.id ?? "Documentary";
+  const srv = o.server ?? server;
   const inputProps = o.timelineUrl
-    ? { timeline: null, timelineUrl: `${server.url}/timeline.json`, assetBaseUrl: server.url, mode: "render", itemId: null, scratchBanner: false, layers: o.layers ?? LAYERS_ALL }
-    : { timeline: t, timelineUrl: null, assetBaseUrl: server.url, mode: "render", itemId: null, scratchBanner: false, layers: o.layers ?? LAYERS_ALL };
+    ? { timeline: null, timelineUrl: `${srv.url}/timeline.json`, assetBaseUrl: srv.url, mode: "render", itemId: null, scratchBanner: false, layers: o.layers ?? LAYERS_ALL }
+    : { timeline: o.timeline ?? t, timelineUrl: null, assetBaseUrl: srv.url, mode: "render", itemId: null, scratchBanner: false, layers: o.layers ?? LAYERS_ALL };
   const composition = await renderer.selectComposition({ serveUrl, id, inputProps, browserExecutable: exe, chromiumOptions, puppeteerInstance: browser, logLevel: "error" });
   const fmt = o.format ?? "png";
   const out = path.join(tmp.dir, "stills", `${o.name ?? id}-${frame}-${Math.random().toString(36).slice(2, 8)}.${fmt === "png" ? "png" : "jpg"}`);
@@ -171,6 +176,156 @@ describe("picture", () => {
     const dip = ct.covers.find((w) => w.presentation === "dipToBlack")!;
     const dipFile = await still(dip.cut, { layers: { ...LAYERS_ALL, graphics: false, captions: false, hud: false }, name: "dip" });
     expect(regionStats(decodeRgba(dipFile), { x: 0, y: 0, w: 1920, h: 1080 }).meanLuma).toBeLessThan(6);
+  });
+});
+
+describe("M2 layouts, treatments and caption variants; M3 covers and overlaps (240 s feature timeline)", () => {
+  let ft: FeatureTimeline;
+  let fserver: AssetServer;
+  const PICTURE_COVERS = { picture: true, graphics: false, captions: false, hud: false, covers: true, audio: false };
+  const CAPTIONS_ONLY = { picture: false, graphics: false, captions: true, hud: false, covers: false, audio: false };
+  const logs: Log[] = [];
+  const shot = async (frame: number, name: string, layers = PICTURE_COVERS) => decodeRgba(await still(frame, { timeline: ft.t, server: fserver, layers, logs, name }));
+  const FULL = { x: 0, y: 0, w: 1920, h: 1080 };
+
+  beforeAll(async () => {
+    ft = buildFeatureTimeline();
+    const proj = path.join(tmp.dir, "feature-project");
+    await writeProjectMedia(ft.t, proj);
+    fserver = await startAssetServer(proj);
+  });
+  afterAll(async () => {
+    await fserver?.close();
+  });
+
+  it("is a clean timeline for computeTimeline (no downgraded transitions)", () => {
+    const ct = computeTimeline(ft.t);
+    expect(ct.warnings).toEqual([]);
+    expect(ct.covers.filter((w) => ft.covers.some((c) => c.clipId === w.clipId)).map((w) => w.presentation).sort()).toEqual(ft.covers.map((c) => c.key).sort());
+    const trans = ct.chapters.flatMap((c) => c.series).filter((x) => x.type === "trans" && ft.overlaps.some((o) => o.clipId === x.clipId));
+    expect(trans.map((x) => (x.type === "trans" ? x.presentation : "")).sort()).toEqual(ft.overlaps.map((o) => o.key).sort());
+  });
+
+  it("dotWipe and iris are black on the frame before the cut and on the cut frame", async () => {
+    for (const key of ["dotWipe", "iris"]) {
+      const c = ft.covers.find((x) => x.key === key)!;
+      for (const f of [c.cut - 1, c.cut]) expect(regionStats(await shot(f, key), FULL).maxLuma, `${key} @${f}`).toBeLessThan(8);
+      expect(regionStats(await shot(c.cut - Math.floor(c.d / 2), `${key}-edge`), FULL).meanLuma, `${key} edge frame`).toBeGreaterThan(20);
+    }
+  });
+
+  it("paperRip covers the frame with paper before the cut and tears it open after", async () => {
+    const c = ft.covers.find((x) => x.key === "paperRip")!;
+    const covered = regionStats(await shot(c.cut - 1, "paperRip"), FULL);
+    expect(covered.meanLuma).toBeGreaterThan(170);
+    expect(covered.lumaStd).toBeLessThan(30);
+    expect(covered.meanChroma).toBeLessThan(40);
+    const torn = await shot(c.cut + 3, "paperRip-torn");
+    const middle = regionStats(torn, { x: 760, y: 0, w: 400, h: 1080 });
+    const sides = regionStats(torn, { x: 0, y: 0, w: 120, h: 1080 });
+    expect(Math.abs(middle.meanLuma - sides.meanLuma)).toBeGreaterThan(10); // B shows through the tear, paper on the sides
+  });
+
+  it("filmBurn over-exposes the splice; whipStreaks smears it", async () => {
+    const fb = ft.covers.find((x) => x.key === "filmBurn")!;
+    expect(regionStats(await shot(fb.cut, "filmBurn"), FULL).meanLuma).toBeGreaterThan(200);
+    const ws = ft.covers.find((x) => x.key === "whipStreaks")!;
+    const smear = regionStats(await shot(ws.cut, "whipStreaks"), FULL);
+    const plain = regionStats(await shot(ws.cut - Math.floor(ws.d / 2) - 1, "whipStreaks-before"), FULL);
+    expect(smear.meanLuma - plain.meanLuma).toBeGreaterThan(40);
+  });
+
+  it("push / wipe / blurDissolve: the cut frame is between A and B; blurDissolve softens it", async () => {
+    for (const o of ft.overlaps) {
+      const a = await shot(o.cut - o.d / 2 - 1, `${o.key}-a`);
+      const mid = await shot(o.cut, `${o.key}-mid`);
+      const b = await shot(o.cut + o.d / 2, `${o.key}-b`);
+      expect(meanAbsDiff(mid, a), `${o.key} mid vs A`).toBeGreaterThan(3);
+      expect(meanAbsDiff(mid, b), `${o.key} mid vs B`).toBeGreaterThan(3);
+      if (o.key === "blurDissolve") expect(edgeEnergy(mid)).toBeLessThan(0.8 * Math.min(edgeEnergy(a), edgeEnergy(b)));
+      if (o.key === "wipe") {
+        // wipe from the right: at the half-way frame the right half already shows B, the left half still A
+        expect(meanAbsDiff(mid, b)).toBeLessThan(meanAbsDiff(a, b));
+      }
+    }
+  });
+
+  it("pip: white 4 px stroke around a 76 %-wide frame over the backdrop, source chip inside", async () => {
+    const c = ft.layouts.find((x) => x.key === "pip")!;
+    const img = await shot(c.from + 30, "pip");
+    const width = 0.76 * 1920;
+    const left = (1920 - width) / 2;
+    const stroke = regionStats(img, { x: left - 4, y: 300, w: 4, h: 480 });
+    expect(stroke.maxLuma).toBeGreaterThan(230);
+    const backdrop = regionStats(img, { x: 20, y: 300, w: 150, h: 480 });
+    expect(backdrop.meanLuma).toBeLessThan(stroke.meanLuma - 40);
+  });
+
+  it("contain-blur: a sharp contained portrait over its dark blurred copy", async () => {
+    const c = ft.layouts.find((x) => x.key === "contain-blur")!;
+    const img = await shot(c.from + 20, "contain-blur");
+    const side = regionStats(img, { x: 40, y: 200, w: 360, h: 680 });
+    const centre = regionStats(img, { x: 700, y: 200, w: 520, h: 680 });
+    expect(side.meanLuma).toBeLessThan(0.75 * centre.meanLuma);
+    expect(side.meanLuma).toBeGreaterThan(3); // the blurred copy, not ink
+  });
+
+  it("split-left / split-right: the clip on its half, an accent divider in the middle", async () => {
+    for (const key of ["split-left", "split-right"]) {
+      const c = ft.layouts.find((x) => x.key === key)!;
+      const img = await shot(c.from + 20, key);
+      const [r, g, b] = regionStats(img, { x: 958, y: 100, w: 4, h: 880 }).meanRgb;
+      expect(r, key).toBeGreaterThan(190);
+      expect(g, key).toBeGreaterThan(150);
+      expect(b, key).toBeLessThan(110);
+    }
+  });
+
+  it("treatments: bw has no chroma (split-tone skipped), archival and duotone render", async () => {
+    const at = (key: string) => ft.layouts.find((x) => x.key === key)!;
+    const centre = { x: 300, y: 150, w: 1320, h: 780 };
+    const bw = regionStats(await shot(at("bw").from + 20, "bw"), centre);
+    const none = regionStats(await shot(at("none").from + 20, "none"), centre);
+    expect(bw.meanChroma).toBeLessThan(5);
+    expect(none.meanChroma).toBeGreaterThan(15);
+    for (const key of ["archival", "duotone"]) expect(regionStats(await shot(at(key).from + 20, key), centre).lumaStd, key).toBeGreaterThan(5);
+  });
+
+  it("karaoke / rail / clip / translation captions render in the caption band", async () => {
+    const band = ft.t.render.tokens.layout.zones.captionBand;
+    for (const c of ft.captions) {
+      const img = await shot(c.from + Math.min(c.dur - 1, 8), `cap-${c.variant}`, CAPTIONS_ONLY);
+      expect(regionStats(img, band).opaqueShare, c.variant).toBeGreaterThan(0.01);
+      expect(regionStats(img, { x: 0, y: 0, w: 1920, h: 600 }).opaqueShare, `${c.variant} stays in its band`).toBeLessThan(0.001);
+    }
+  });
+
+  it("logged no errors", () => {
+    expect(errorsOf(logs)).toEqual([]);
+  });
+});
+
+describe("render worker path", () => {
+  it("renders a chapter-aligned chunk through renderMedia (timelineUrl, h264-ts, muted, concurrency 2) to exactly its frames", async () => {
+    const chunks = planChunks(computeTimeline(t), 300);
+    const ch = chunks[1]!;
+    const range: [number, number] = [ch.from, Math.min(ch.to, ch.from + 89)];
+    const inputProps = { timeline: null, timelineUrl: `${server.url}/timeline.json`, assetBaseUrl: server.url, mode: "render", itemId: null, scratchBanner: false, layers: { ...LAYERS_ALL, audio: false } };
+    const composition = await renderer.selectComposition({ serveUrl, id: "Documentary", inputProps, browserExecutable: exe, chromiumOptions, puppeteerInstance: browser, logLevel: "error" });
+    const out = path.join(tmp.dir, "chunk.ts");
+    const t0 = performance.now();
+    let slowest: { frame: number; time: number }[] = [];
+    await renderer.renderMedia({
+      composition, serveUrl, inputProps, codec: "h264-ts", muted: true, frameRange: range, outputLocation: out, browserExecutable: exe, chromiumOptions,
+      puppeteerInstance: browser, concurrency: 2, logLevel: "error", onSlowestFrames: (s) => { slowest = s.map((x) => ({ frame: x.frame, time: Math.round(x.time) })); },
+    });
+    const n = range[1] - range[0] + 1;
+    const ms = performance.now() - t0;
+    console.log(`renderMedia ${n} frames in ${Math.round(ms)} ms (${(n / (ms / 1000)).toFixed(1)} fps); slowest`, slowest.slice(0, 4));
+    const probe = spawnSync("ffprobe", ["-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries", "stream=nb_read_frames,width,height", "-of", "csv=p=0", out], { encoding: "utf8" });
+    const [w, h, frames] = probe.stdout.trim().split(",").map((x) => parseInt(x, 10));
+    expect([w, h]).toEqual([1920, 1080]);
+    expect(frames).toBe(n);
   });
 });
 
