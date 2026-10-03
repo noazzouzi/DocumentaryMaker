@@ -70,9 +70,14 @@ def run(inp: dict) -> dict:
 
     progress(0.0, f"loading {model_name}")
     t0 = time.time()
+    # a converted CTranslate2 directory <modelsDir>/<model>/model.bin (what fasterWhisperModelPresent accepts) is loaded
+    # by path; otherwise the name resolves through the Hugging Face cache layout under download_root
+    model_ref = model_name
+    if models_dir and os.path.isfile(os.path.join(models_dir, model_name, "model.bin")):
+        model_ref = os.path.join(models_dir, model_name)
     try:
         model = WhisperModel(
-            model_name,
+            model_ref,
             device="cpu",
             compute_type=inp.get("computeType") or "int8",
             cpu_threads=int(inp.get("threads") or 4),
