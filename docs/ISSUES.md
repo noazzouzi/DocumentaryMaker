@@ -282,3 +282,28 @@ Notes from `apps/web`. No contract signature was changed; every item below is wo
 1. Turbopack prints "dynamic filesystem access causes tracing of the whole project" warnings for `packages/styles/src/load.ts`, `packages/engine/src/project.ts` and `packages/assets/src/conform.ts` (output-file tracing only; harmless for a local tool). Owners may add `/*turbopackIgnore: true*/` to those `path.join` calls.
 2. Approvals: the route always sets `by:"web"`; for editorial gates whose `planHash` the engine recomputes (style-confirm, person-ack, recheck, fair-use, factcheck-ack) a missing `planHash` defaults to 64 zeros; `outline-approval` and `cost` must send the reviewed hash (the outline page sends `docHash(outline)` as loaded).
 3. After a voice job or a take activation the web submits `pipeline layout→mix` (§5.3); after a pick change it submits `pipeline assets→direct` (coalesced by the engine).
+
+## 2026-10-03 engine + cli (W10) → core `JobRecord` (I), director (W6), render (W8), web (W11) — notes; additive API only
+
+Every §4.19 engine signature is unchanged; the items below are additive or behaviour notes.
+
+**Problem 1 — `JobRecord` has no owner pid.** Crash reconciliation (§5.6) needs the process that owns a queued/running job. The engine writes `jobs/<jobId>.owner.json` `{pid, engineId, at}` (deleted at job end); a job whose owner pid is dead — or is this process but an engine instance that no longer exists — is marked `failed` `INTERRUPTED` (error + job-end appended). Coalesced records follow their target.
+**Proposed diff.** `JobRecord.ownerPid: z.number().int().nullable()` (the sidecar file can then go).
+
+**Problem 2 — replaceSource policy rejections are warnings (W6).** §7.4/§16.6 ask for a `POLICY` lint *error* when `validateAsset` refuses a `replaceSource` override; the director reports `OVERRIDE_REJECTED` (warn) with the policy reason in `rejectedOverrides`. The safety e2e accepts either for now.
+
+**Problem 3 — no StyleSpecimen renderer in `@docmaker/render` (W8).** `docmaker style preview <id>` prints a hint to the web gallery. Proposed: `RenderService.renderStyleSpecimen(tokens: StyleRenderTokens, o: { outDir; lang }): Promise<string[]>`.
+
+**Problem 4 — a re-check must not stale the whole pipeline.** The fact sheet is hashed by style/outline/script/beats/…; refreshing every claim's `asOf` would re-outline the video. `recheckClaims` (engine, `factcheck --recheck`) writes the fact sheet only for claims whose status changed; unchanged claims get a dated `recheck` Approval (`by` cli|web, note "re-checked on <date>: status unchanged"). Recheck approvals are valid for 30 days (`pendingClaims` ignores older ones).
+
+**Problem 5 — setup as jobs (W11 problem 2).** Not a job yet; the engine exposes `setupComponent(what, arg, {signal, progress})` (sfx, tts, python/yt-dlp via `uv sync`, whisper) that the CLI uses and a web route could call directly.
+
+**Notes (no change required).**
+1. Additive engine API (`createEngineImpl()` returns `EngineExt`; `createEngine()` returns the same object typed `Engine`): `startDemo` (W11 problem 6), `waitForJob`, `listVoices`, `listTakes`, `secretStatus` (W11 problems 1, 5), `setupComponent`, `importLocalDir`, `calibrate`, `teleprompter`, `costReport`, `credits`, `recheckClaims`, `cacheGc`. `EngineOptions.deps` (package adapters; walking-skeleton fakes in `packages/engine/test/fakes/`), `EngineOptions.skipReconcile`, `DemoOptions.concurrency`, `StageCtx.releaseProjectLock`.
+2. Cost: a pipeline/demo job computes ONE pipeline estimate at start (non-up-to-date paid invocations; `planHash = hashJson(sorted stage planHashes)`) — `estimatePipeline` returns the same plan. A `cost` approval with that planHash approves the job; a stage's run-time estimate within 1.25 × + $0.25 of its pipeline amount is covered, otherwise a stage cost gate is raised. Estimates ≤ `budget.autoApproveUnderUsd` are recorded as `by:"auto-threshold"`.
+3. `factcheck-ack` is satisfied by an approval whose planHash matches, or when every blocking item is `rewritten` or listed in a `factcheck-ack` approval of the language (resolutions carry over by stable id when the fact-check re-runs, so a vanished item does not void the others). Setting `rewritten` through `writeDoc` requires the flagged sentence to be gone from its segment/beat. `factcheck --ack` is refused without a TTY (non-interactive use: `--ack-file`).
+4. `checkRefs` at stage boundaries fails a stage only on reference errors it introduced (before/after diff); `writeDoc` rejects edits that introduce errors. Assets frozen outside the stage (`assets/user-frozen/`) are usable by user picks and overrides before the next assets run.
+5. `status()` reports a stage stale only if its inputs hash matches neither the default options nor the options of one of the 30 latest jobs (a stage run with `onlyChapters` is not "stale").
+6. The engine never takes `config.renderLockFile` (RenderService does; W8 note 6). The render stage releases the project job lock after its snapshot and re-acquires it before the next stage of the same job.
+7. The assets stage resolves every chapter even when `onlyChapters` is set (it is not one of its option keys, §5.1).
+8. CLI: flags with no `JobOptions` field update project settings (`assets --offline/--providers/--no-youtube`, `render --gl/--concurrency/--chunk-seconds`, `export --formats/--export-root/--fcpxml-version`, `voice --provider/--voice/--model/--speed/--consent`). `approve <slug> cost` needs `--plan <planHash>`. `demo` without `--keep` deletes earlier `demo-<fixture>-<timestamp>` projects of the same fixture. The bin shebang adds `--disable-warning=UNDICI-EHPA` (Node 22 prints the experimental-proxy warning at start-up when `NODE_USE_ENV_PROXY=1` is inherited).
