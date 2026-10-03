@@ -69,17 +69,29 @@ export function exportReadme(i: { t: Timeline; formats: ExportFormat[]; exportRo
     : "- no reference render yet (render the project, then export again to include `reference.mp4`)");
   p("");
 
-  p("## DaVinci Resolve", "");
-  p("1. Create a **new project** at 1920×1080 and " + `${t.fps} fps (the frame rate locks once the Media Pool has media).`);
-  p(`2. File > Import > Timeline… > \`${f.fcpxml}\` (or \`${f.resolve}\`). In the Load XML dialog tick **"Use sizing information"** — without it every zoom and position is dropped.`);
-  p(`3. Import the markers: Media Pool > Timelines > Import > Timeline Markers from EDL… > \`${f.edl}\`.`);
-  p("4. Resolve (free) on Linux cannot decode H.264/AAC: transcode the `.mp4` files in `media/` to DNxHR or ProRes first, or use Resolve Studio.", "");
-  p("## Adobe Premiere Pro", "");
-  p(`- File > Import > \`${f.premiere}\` (Premiere 25.6.1+ recommended: earlier builds can drop Motion keyframes on XML import).`);
-  p(`- Or, on 25.6.1+, File > Import > \`${f.otio}\` (OpenTimelineIO with Premiere Motion/Opacity metadata).`, "");
-  p("## Final Cut Pro", "");
-  p(`- File > Import > XML… > \`${f.fcpxml}\`.`, "");
-
+  const fcp = has(formats, "fcpxml");
+  const rxml = has(formats, "xmeml-resolve");
+  const pxml = has(formats, "xmeml-premiere");
+  const otio = has(formats, "otio");
+  const edl = has(formats, "markers-edl");
+  if (fcp || rxml || otio) {
+    p("## DaVinci Resolve", "");
+    p("1. Create a **new project** at 1920×1080 and " + `${t.fps} fps (the frame rate locks once the Media Pool has media).`);
+    const xml = fcp ? f.fcpxml : rxml ? f.resolve : f.otio;
+    p(`2. File > Import > Timeline… > \`${xml}\`. In the Load XML dialog tick **"Use sizing information"** — without it every zoom and position is dropped.`);
+    if (edl) p(`3. Import the markers: Media Pool > Timelines > Import > Timeline Markers from EDL… > \`${f.edl}\`.`);
+    p("- Resolve (free) on Linux cannot decode H.264/AAC: transcode the `.mp4` files in `media/` to DNxHR or ProRes first, or use Resolve Studio.", "");
+  }
+  if (pxml || otio) {
+    p("## Adobe Premiere Pro", "");
+    if (pxml) p(`- File > Import > \`${f.premiere}\` (Premiere 25.6.1+ recommended: earlier builds can drop Motion keyframes on XML import).`);
+    if (otio) p(`- On 25.6.1+: File > Import > \`${f.otio}\` (OpenTimelineIO with Premiere Motion/Opacity metadata).`);
+    p("");
+  }
+  if (fcp) {
+    p("## Final Cut Pro", "");
+    p(`- File > Import > XML… > \`${f.fcpxml}\`.`, "");
+  }
   p("## Media paths and relinking", "");
   if (i.exportRoot) p(`Media paths were written for the editing machine under \`${i.exportRoot}\` (export root). Copy this folder there unchanged.`);
   else p("Media paths are the absolute paths of this machine. Editing elsewhere? Set the project's *export root* to the folder where this bundle will live on the editing machine and export again.");
@@ -100,9 +112,10 @@ export function exportReadme(i: { t: Timeline; formats: ExportFormat[]; exportRo
   p("- DocumentaryMaker renders with Remotion: users are responsible for their own Remotion licence (a company licence is required above Remotion's size thresholds).", "");
 
   p("---", "", "## Français — importer dans un logiciel de montage", "");
-  p(`- **DaVinci Resolve** : nouveau projet 1920×1080 à ${t.fps} i/s → Fichier > Importer > Timeline > \`${f.fcpxml}\` → cocher **« Use sizing information »** (sinon zooms et positions sont perdus) → puis Media Pool > Timelines > Import > Timeline Markers from EDL > \`${f.edl}\`. Resolve gratuit sous Linux ne lit pas le H.264/AAC : transcodez \`media/*.mp4\`.`);
-  p(`- **Premiere Pro** : Fichier > Importer > \`${f.premiere}\` (25.6.1 ou plus récent), ou \`${f.otio}\` à partir de 25.6.1.`);
-  p(`- **Final Cut Pro** : Fichier > Importer > XML > \`${f.fcpxml}\`.`);
+  if (fcp || rxml || otio) p(`- **DaVinci Resolve** : nouveau projet 1920×1080 à ${t.fps} i/s → Fichier > Importer > Timeline > \`${fcp ? f.fcpxml : rxml ? f.resolve : f.otio}\` → cocher **« Use sizing information »** (sinon zooms et positions sont perdus)${edl ? ` → puis Media Pool > Timelines > Import > Timeline Markers from EDL > \`${f.edl}\`` : ""}. Resolve gratuit sous Linux ne lit pas le H.264/AAC : transcodez \`media/*.mp4\`.`);
+  if (pxml) p(`- **Premiere Pro** : Fichier > Importer > \`${f.premiere}\` (25.6.1 ou plus récent).`);
+  if (otio) p(`- **Premiere Pro 25.6.1+ / Resolve 20** : \`${f.otio}\` (OpenTimelineIO).`);
+  if (fcp) p(`- **Final Cut Pro** : Fichier > Importer > XML > \`${f.fcpxml}\`.`);
   p("- **Chemins** : " + (i.exportRoot ? `écrits pour la machine de montage sous \`${i.exportRoot}\`.` : "chemins absolus de cette machine ; réglez la « racine d'export » du projet pour une autre machine.") + " Les noms de `media/` sont uniques : la reconnexion par dossier retrouve tout.");
   p("- **Natif** : coupes, fondus centrés, zooms et recadrages en images clés, volumes, marqueurs. **Non portable** : marqueurs « … not portable » (voir le rendu de référence). Pistes A5–A8 : stems du mixage final, désactivées.");
   p(`- **Avant publication** : crédits (\`credits.md\`), case « contenu altéré ou synthétique » si voix ou images synthétiques, statuts juridiques vérifiés au ${i.asOf} à revérifier. Licence Remotion à la charge de l'utilisateur.`);

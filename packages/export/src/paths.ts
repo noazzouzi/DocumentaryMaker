@@ -51,8 +51,7 @@ export function safeStem(s: string, fallback = "media"): string {
 
 /** 8 ASCII chars identifying an id (hex ids keep their prefix; others are hashed). */
 export function id8(id: string): string {
-  const clean = id.toLowerCase().replace(/[^a-z0-9]/g, "");
-  if (/^[0-9a-f]{8,}$/.test(clean)) return clean.slice(0, 8);
+  if (/^[0-9a-f]{8,}$/i.test(id)) return id.slice(0, 8).toLowerCase(); // content-hash asset ids keep their prefix
   // FNV-1a 32-bit → 8 hex chars (stable, no crypto needed)
   let h = 0x811c9dc5;
   for (let i = 0; i < id.length; i++) {

@@ -288,7 +288,7 @@ export async function conformForNle(t: Timeline, i: ConformInput, ctx: ExportCtx
   const jobs = planConform(t, i);
   const outPath = (j: Job, n: number) => j.fixedPath ?? path.join(mediaDir, conformName(n, j.label, j.idSrc, j.ext));
   const planned = jobs.map((j, n) => ({ j, out: outPath(j, n + 1) }));
-  const result: ConformMap = {};
+  const done = new Map<Job, ConformedMedia>();
   const next: Manifest = { version: MANIFEST_VERSION, entries: {} };
 
   await pool(planned, 2, async ({ j, out }) => {
@@ -307,22 +307,29 @@ export async function conformForNle(t: Timeline, i: ConformInput, ctx: ExportCtx
         meta = await metaOf(j, out, t.fps, ctx);
       }
       next.entries[path.relative(i.exportDir, out)] = { sig, meta };
-      const cm: ConformedMedia = { ...meta, localPath: out, name };
-      result[j.key] = cm;
-      for (const a of j.aliases) result[a] ??= cm;
+      done.set(j, { ...meta, localPath: out, name });
     } catch (e) {
       if ((e as DocmakerError).code === "CANCELED" || ctx.signal.aborted) throw e;
       ctx.logger.warn(`export: could not conform ${j.key}: ${(e as Error).message}`, { key: j.key });
     }
   });
 
+  // deterministic key order (job order), whatever the completion order of the pool
+  const result: ConformMap = {};
+  for (const j of jobs) {
+    const cm = done.get(j);
+    if (!cm) continue;
+    result[j.key] = cm;
+    for (const a of j.aliases) result[a] ??= cm;
+  }
   // drop stale conformed files from earlier exports (only names this module writes)
   const keep = new Set(planned.map((p) => path.basename(p.out)));
   for (const f of await readdir(mediaDir).catch(() => [] as string[])) {
     if (keep.has(f) || f === MANIFEST) continue;
     if (/^\d{3,}_[a-z0-9-]+_[0-9a-f]{8}\.[a-z0-9]+$/.test(f) || /\.tmp\.[a-z0-9]+$/.test(f)) await rm(path.join(mediaDir, f), { force: true });
   }
-  await writeFile(`${manifestPath}.tmp`, JSON.stringify(next, null, 1));
+  const sortedEntries = Object.fromEntries(Object.entries(next.entries).sort(([a], [b]) => a.localeCompare(b)));
+  await writeFile(`${manifestPath}.tmp`, JSON.stringify({ version: next.version, entries: sortedEntries }, null, 1));
   await rename(`${manifestPath}.tmp`, manifestPath);
   return result;
 }
