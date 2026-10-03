@@ -7,6 +7,7 @@ import { ensureSfxPackImpl, loadSfxEntriesImpl } from "./sfx/packs";
 import type { AudioCtx as Ctx } from "./util";
 import { assembleVoProgramImpl } from "./vo/assemble";
 import { generateMusicImpl } from "./music/generate";
+import { mixTimelineImpl } from "./mix/mixer";
 
 export type AudioCtx = Ctx;
 export type SfxRecipe = Recipe;
@@ -35,7 +36,7 @@ export function assembleVoProgram(i: { layout: Omit<ProgramLayout, "voProgram">;
 }
 /** Node mixer driven by core computeGainTables (preview parity) → mix.wav (s24 stereo 48 kHz) + 4 stems + loudness. */
 export function mixTimeline(t: Timeline, i: { projectDir: string; outMixRel: string; stemRels: Record<"vo" | "music" | "sfx" | "clip", string>; targetLufs: number; truePeakTarget: number }, ctx: AudioCtx): Promise<Omit<LoudnessDoc, "schemaVersion" | "lang">> {
-  throw notImplemented("audio.mixTimeline");
+  return mixTimelineImpl(t, i, ctx);
 }
 export function densityReport(t: Timeline): { sfxPerMin: number[]; impactsPerMin: number[]; silentCutShare: number; chapterRmsDb: Record<string, number> } {
   throw notImplemented("audio.densityReport");
@@ -53,3 +54,6 @@ export { MUSIC_TARGET_LUFS, beatGrid, musicHash } from "./music/generate";
 export { SYNTH_VERSION, renderScore } from "./music/instruments";
 export { CHORD_LOOPS, MOOD_BPM, instrumentsFor, loopForMood, tonicMidi } from "./music/moods";
 export type { Instrument } from "./music/moods";
+export { MIX_BLOCK } from "./mix/mixer";
+export { TruePeakLimiter } from "./mix/limiter";
+export { equalPowerPan, shouldMirror } from "./mix/pan";
