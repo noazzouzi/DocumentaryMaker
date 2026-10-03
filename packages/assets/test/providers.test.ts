@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { Candidate, DocmakerError } from "@docmaker/core";
 import type { AssetQuery, HttpClient, HttpGetOptions, ProviderContext, Secrets } from "@docmaker/core";
 import {
-  allProviders, commonsUrl, parseBraveImages, parseCommons, parseIaMetadata, parseIaSearch, parseLoc, parseNasa, parseOpenverse,
+  allProviders, commercialMediaHint, commonsUrl, parseBraveImages, parseCommons, parseIaMetadata, parseIaSearch, parseLoc, parseNasa, parseOpenverse,
   parsePexelsPhotos, parsePexelsVideos, parsePixabayImages, parsePixabayVideos, pickEntity, pickLocImage, pickNasaAsset, providerById,
   QuotaBuckets, resolveEntity,
 } from "../src/index";
@@ -148,6 +148,27 @@ describe("Internet Archive", () => {
     const r = parseIaMetadata({ metadata: { identifier: "x", title: "X" }, files: [{ name: "x.mp4", format: "h.264", height: "720" }] }, "video")!;
     expect(r.candidate.license.code).toBe("UNKNOWN");
     expect(r.candidate.license.restrictions).toContain("unknown-rights");
+  });
+  it("uploader-declared licences are only trusted in curated collections; franchise/episode uploads are dropped", () => {
+    const item = (md: Record<string, unknown>) => ({ metadata: { identifier: "x", title: "Harbour 1932", licenseurl: "http://creativecommons.org/publicdomain/zero/1.0/", ...md }, files: [{ name: "x.mp4", format: "h.264", height: "720" }] });
+    // The QA run: a Fox TV episode in opensource_movies labelled CC0 → never a candidate.
+    expect(parseIaMetadata(item({ identifier: "the-splendid-source", title: "The Splendid Source", collection: ["opensource_movies", "community"], subject: ["2010", "Family Guy"], description: "Peter, Quagmire and Joe…" }), "video")).toBeNull();
+    // Open uploads without franchise markers: the licence URL is not believed.
+    const open = parseIaMetadata(item({ collection: ["opensource_movies"] }), "video")!;
+    expect(open.candidate.license.code).toBe("UNKNOWN");
+    expect(open.candidate.license.restrictions).toContain("unknown-rights");
+    expect(parseIaMetadata(item({}), "video")!.candidate.license.code).toBe("UNKNOWN"); // no collection: unknown provenance
+    expect(parseIaMetadata(item({ collection: ["prelinger", "opensource_movies"] }), "video")!.candidate.license.code).toBe("UNKNOWN");
+    expect(parseIaMetadata(item({ collection: "prelinger" }), "video")!.candidate.license.code).toBe("CC0");
+    expect(parseIaMetadata(item({ collection: ["fedflix"], title: "Season 2, Episode 4 — The Show" }), "video")).toBeNull();
+  });
+  it("commercial film/TV markers", () => {
+    const c = (title: string, tags: string[] = [], description = "") => commercialMediaHint({ title, tags, description });
+    expect(c("The Splendid Source Part 1", ["Family Guy"])).toBe("family guy");
+    expect(c("Show.S03E07.720p.HDTV.x264")).not.toBeNull();
+    expect(c("Some Film (Full Movie)")).not.toBeNull();
+    expect(c("A Busy River Scene with Dutch Vessels")).toBeNull();
+    expect(c("Tulip field", ["flowers"], "we marvel at the colours of the office garden")).toBeNull();
   });
   it("searches then reads metadata per item", async () => {
     const http = stubHttp([[/advancedsearch/, j("ia-search.json")], [/\/metadata\//, j("ia-metadata.json")]]);

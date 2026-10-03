@@ -2,6 +2,7 @@
 import { DocmakerError } from "@docmaker/core";
 import type { AssetProvider, AssetQuery, Candidate } from "@docmaker/core";
 import { licenseInfo, parseCcLicense } from "../license";
+import { commercialMediaHint, iaLicenceTrusted } from "../provenance";
 import { nowIso, stripHtml } from "../util";
 import { downloadOriginal, qs, yearOf, type SearchResult } from "./common";
 
@@ -38,10 +39,13 @@ export function parseIaMetadata(json: unknown, kind: "image" | "video", doc?: Ia
       .sort((a, b) => Number(b.size ?? 0) - Number(a.size ?? 0))[0];
   }
   if (!best) return null;
-  const licUrl = String(md.licenseurl ?? doc?.licenseurl ?? "");
-  const lic = parseCcLicense(licUrl);
-  const license = lic ? licenseInfo(lic.code, { version: lic.version, url: licUrl || null }) : licenseInfo("UNKNOWN", { restrictions: ["unknown-rights"] });
   const asList = (v: unknown) => (Array.isArray(v) ? v.map(String) : typeof v === "string" ? v.split(/;\s*/) : []);
+  // Uploader-declared licences are only believed in curated collections: open-upload items ("opensource_movies",
+  // "community"…) routinely carry a false CC0/PD licence URL on TV episodes and films (§7.4).
+  const collections = asList(md.collection ?? doc?.collection);
+  const licUrl = String(md.licenseurl ?? doc?.licenseurl ?? "");
+  const lic = iaLicenceTrusted(collections) ? parseCcLicense(licUrl) : null;
+  const license = lic ? licenseInfo(lic.code, { version: lic.version, url: licUrl || null }) : licenseInfo("UNKNOWN", { restrictions: ["unknown-rights"] });
   const candidate: Candidate = {
     provider: "internet-archive", providerAssetId: `${id}/${best.name}`, kind, title: String(md.title ?? doc?.title ?? id),
     description: stripHtml(String(md.description ?? "")).slice(0, 500), tags: asList(md.subject).map((s) => s.trim()).filter(Boolean),
@@ -51,6 +55,8 @@ export function parseIaMetadata(json: unknown, kind: "image" | "video", doc?: Ia
     author: md.creator ? { name: String(Array.isArray(md.creator) ? md.creator[0] : md.creator), url: null } : null,
     sourcePageUrl: `${IA}/details/${encodeURIComponent(id)}`, retrievedAt: nowIso(), youtube: null,
   };
+  // Franchise / episode / rip material is never a candidate, whatever its claimed licence.
+  if (commercialMediaHint(candidate)) return null;
   return { candidate, raw: { year: yearOf(md.year ?? md.date ?? doc?.year ?? doc?.date), collection: md.collection ?? doc?.collection ?? null } };
 }
 

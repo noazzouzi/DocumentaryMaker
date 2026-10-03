@@ -14,6 +14,7 @@ import { QuotaBuckets } from "./quota";
 import { dedupeRecords, keyOf, rankCandidates } from "./rank";
 import type { AssetsCtx } from "./types";
 import { recordUserFrozen } from "./userfrozen";
+import { commercialMediaHint, needsProvenanceCheck } from "./provenance";
 import { peopleRuleBlocks } from "./validate";
 import { errMsg, writeFileAtomic } from "./util";
 
@@ -105,7 +106,8 @@ export async function liveSearch(i: { query: AssetQuery; providers: AssetProvide
   }
   const allowed = dedupeRecords(records).filter((r) => {
     const v = engine.evaluate(r.candidate.license, { personIds: plan.personIds, cueTypes: plan.cueTags.map((c) => c.type) });
-    return v.allowed && !peopleRuleBlocks(r.candidate.license, r.candidate, plan);
+    return v.allowed && !peopleRuleBlocks(r.candidate.license, r.candidate, plan)
+      && !(needsProvenanceCheck(r.candidate.provider) && commercialMediaHint(r.candidate));
   });
   const ranked = rankCandidates({ plan, records: allowed, reranked: null }).map((r) => r.record);
   const at = Date.now();

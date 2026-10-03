@@ -24,6 +24,7 @@ import { ConcurrencyGate, QuotaBuckets } from "./quota";
 import { dHash, dedupeRecords, hamming, keyOf, needsVisionRerank, rankCandidates } from "./rank";
 import type { AssetsCtx } from "./types";
 import { readUserFrozen } from "./userfrozen";
+import { commercialMediaHint, needsProvenanceCheck } from "./provenance";
 import { peopleRuleBlocks, validatePick } from "./validate";
 import { errMsg, makeTmpDir, nowIso, rmrf } from "./util";
 import { resolveClips, type PassagePicker } from "./youtube/clips";
@@ -303,7 +304,8 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
     let records = dedupeRecords(await search(plan, queries));
     records = records.filter((r) => {
       const v = policy.evaluate(r.candidate.license, { personIds: plan.personIds, cueTypes: plan.cueTags.map((c) => c.type) });
-      return v.allowed && !peopleRuleBlocks(r.candidate.license, r.candidate, plan);
+      return v.allowed && !peopleRuleBlocks(r.candidate.license, r.candidate, plan)
+        && !(needsProvenanceCheck(r.candidate.provider) && commercialMediaHint(r.candidate));
     });
     const real = records.filter((r) => r.candidate.provider !== "procedural");
     let ranked = rankCandidates({ plan, records: real, reranked: null, cardShare });

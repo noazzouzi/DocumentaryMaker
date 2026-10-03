@@ -30,6 +30,7 @@ export { createProceduralProvider, recipeFor } from "./providers/procedural";
 export { parseOpenverse } from "./providers/openverse";
 export { parseCommons, commonsUrl } from "./providers/wikimedia";
 export { parseIaMetadata, parseIaSearch, parseLoc, parseNasa, pickNasaAsset, pickLocImage } from "./providers/archives";
+export { commercialMediaHint, iaLicenceTrusted, IA_TRUSTED_COLLECTIONS, IA_COMMUNITY_COLLECTIONS } from "./provenance";
 export { parsePexelsPhotos, parsePexelsVideos, parsePixabayImages, parsePixabayVideos } from "./providers/stock";
 export { parseBraveImages, falCandidate, falRequest } from "./providers/paid";
 export { LicensePolicyEngine, licenseInfo, parseCcLicense, attributionText, declarationLicense, LICENSE_LABEL } from "./license";
