@@ -168,6 +168,10 @@ describe("FR typography", () => {
     expect(once).toBe("Il a dit « stop » ; puis : « non » ? À 12:30, voir https://example.org !");
     expect(applyFrTypography(once)).toBe(once);
     expect(applyFrTypography("aujourd'hui l'acteur")).toBe("aujourd’hui l’acteur");
+    // URLs and e-mail addresses keep their punctuation; the sentence around them is still fixed
+    const url = applyFrTypography("Voir https://x.fr/a?b=1;c!d:e et contact@x.fr ; fin !");
+    expect(url).toBe("Voir https://x.fr/a?b=1;c!d:e et contact@x.fr\u202F; fin\u202F!");
+    expect(applyFrTypography(url)).toBe(url);
   });
 });
 
