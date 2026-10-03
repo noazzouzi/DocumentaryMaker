@@ -1,6 +1,8 @@
 // §13.6 golden tests: the brief's 12 s scenario through every writer, compared with test/golden/* (whitespace
 // normalised), parity with the validated research prototypes (test/golden/reference/*), and DTD validation.
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { XMLParser } from "fast-xml-parser";
 import { describe, expect, it } from "vitest";
@@ -119,5 +121,32 @@ describe("contract", () => {
     const et = scenario();
     const a = writeFcpxml(et, { version: "1.10" });
     for (const v of ["1.11", "1.13"] as const) expect(writeFcpxml(et, { version: v })).toBe(a.replace('<fcpxml version="1.10">', `<fcpxml version="${v}">`));
+  });
+});
+
+// Optional round trip through the Python reference implementation (opentimelineio==0.18.1 + otio-fcp-adapter),
+// run only where it is installed (CI job); skipped otherwise.
+const HAS_OTIO = (() => {
+  try {
+    execFileSync("python3", ["-c", "import opentimelineio"], { stdio: "pipe" });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+describe.skipIf(!HAS_OTIO)("OTIO round trip (python opentimelineio)", () => {
+  it("reads the .otio back as 360 frames on 4 tracks with the dissolve centred at frame 180", () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "w9-otio-"));
+    const f = path.join(dir, "demo.otio");
+    writeFileSync(f, writeOtio(scenario(), { premiereMetadata: true }));
+    const py = [
+      "import sys, opentimelineio as otio",
+      "t = otio.adapters.read_from_file(sys.argv[1])",
+      "v1 = t.tracks[0]",
+      "tr = [c for c in v1 if isinstance(c, otio.schema.Transition)][0]",
+      "print(int(t.duration().value), len(t.tracks), int(tr.in_offset.value), int(tr.out_offset.value), int(v1[2].range_in_parent().start_time.value))",
+    ].join("\n");
+    const out = execFileSync("python3", ["-c", py, f]).toString().trim();
+    expect(out).toBe("360 4 15 15 180");
   });
 });
