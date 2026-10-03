@@ -5,8 +5,9 @@ import { attributionText, LICENSE_LABEL } from "./license";
 import { isPipelineGenerated, licenseOfAsset } from "./validate";
 import { nowIso } from "./util";
 
-const tc = (ms: number) => {
-  const s = Math.max(0, Math.round(ms / 1000));
+/** mm:ss (h:mm:ss above an hour); `round` = floor for range starts, ceil for range ends (the range always covers the clip). */
+const tc = (ms: number, round: (x: number) => number = Math.round) => {
+  const s = Math.max(0, round(ms / 1000));
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const ss = String(s % 60).padStart(2, "0");
@@ -19,7 +20,7 @@ export function transformationsOf(a: FrozenAsset): string[] {
   const r = a.conform.recipe;
   if (r === "image-v1" || r === "proc-image-v1") out.push("exif-rotate", `resize long edge ≤ 2880 (${a.width}×${a.height})`, a.ext === "png" ? "png" : "jpeg q90");
   if (r.startsWith("video") || r === "proc-video-v1" || r === "clip-v1") {
-    if (a.conform.sourceInMs !== null && a.conform.sourceOutMs !== null) out.push(`trim ${tc(a.conform.sourceInMs)}–${tc(a.conform.sourceOutMs)}`);
+    if (a.conform.sourceInMs !== null && a.conform.sourceOutMs !== null) out.push(`trim ${tc(a.conform.sourceInMs, Math.floor)}–${tc(a.conform.sourceOutMs, Math.ceil)}`);
     out.push(`transcode h264 cfr ${a.fps ?? "?"}`, a.hasAudio ? "aac 192k" : "muted");
   }
   if (r === "clip-v1" || r === "audio-norm-v1") out.push(`loudnorm ${a.lufs ?? -18} LUFS`);
@@ -106,7 +107,7 @@ export function buildCredits(i: { ledger: Ledger; usage: UsageDoc; lang: Lang; v
   const isClip = (e: Ledger["entries"][number]) => e.provider === "youtube" || e.youtube !== null || e.license.code === "YOUTUBE-FAIR-USE";
   add(t.clips, rest.filter(isClip).map((e) => {
     const y = e.youtube;
-    const span = y && y.startMs !== null && y.endMs !== null ? ` [${tc(y.startMs)}–${tc(y.endMs)}]` : "";
+    const span = y && y.startMs !== null && y.endMs !== null ? ` [${tc(y.startMs, Math.floor)}–${tc(y.endMs, Math.ceil)}]` : "";
     return `"${e.title}" — ${y?.channel ?? e.author ?? "unknown channel"} — ${y?.url ?? e.sourcePageUrl}${span}`;
   }));
   // Music: tracks used by this language's timeline.
