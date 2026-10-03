@@ -3,7 +3,7 @@
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { Outline, P } from "@docmaker/core";
+import { FactSheet, Outline, P, UserPicksDoc } from "@docmaker/core";
 import { fixtureProject, pipelineReq, runToEnd, testEngine, testEnv, type TestEnv } from "./helpers";
 import type { EngineExt } from "../src/engine";
 
@@ -115,6 +115,23 @@ describe("engine methods", () => {
     await expect(e.upload(slug, { tmpPath: wav, kind: "asset", lang: null, declaration: null, segmentId: null })).rejects.toMatchObject({ code: "VALIDATION" });
     const r = await e.upload(slug, { tmpPath: wav, kind: "recording", lang: "en", declaration: null, segmentId: "CH1-S01" });
     expect(r).toEqual({ rel: "voice/en/recordings/CH1-S01.wav", asset: null });
+  });
+
+  it("user-picks PUT: portraits are identity slots — an AI image never becomes a real person's portrait", async () => {
+    const { ffmpeg } = await import("@docmaker/core/node");
+    const jpg = (file: string, color: string) => ffmpeg(["-y", "-f", "lavfi", "-i", `color=c=${color}:s=800x1000`, "-frames:v", "1", file], { config: e.config, signal: new AbortController().signal });
+    const img = path.join(t.root, "portrait.jpg");
+    await jpg(img, "0x785a3c");
+    const ai = await e.upload(slug, { tmpPath: img, kind: "asset", lang: null, declaration: { kind: "ai-generated", license: null, author: "me", url: "", note: "" }, segmentId: null });
+    const img2 = path.join(t.root, "portrait2.jpg");
+    await jpg(img2, "0x3c5a78");
+    const own = await e.upload(slug, { tmpPath: img2, kind: "asset", lang: null, declaration: { kind: "own-work", license: null, author: "me", url: "", note: "" }, segmentId: null });
+    const facts = (await e.readDoc(slug, P.factsheet, FactSheet)).value;
+    const person = facts.people.find((p) => p.publicFigure && !p.isMinorOrPrivateVictim)!;
+    const cur = await e.readDoc(slug, P.userPicks, UserPicksDoc).catch(() => ({ value: { schemaVersion: 1 as const, picks: [], portraits: [], clips: [] }, etag: null }));
+    await expect(e.writeDoc(slug, P.userPicks, UserPicksDoc, { ...cur.value, portraits: [{ personId: person.id, assetId: ai.asset!.id }] }, cur.etag))
+      .rejects.toMatchObject({ code: "POLICY_DENIED" });
+    await e.writeDoc(slug, P.userPicks, UserPicksDoc, { ...cur.value, portraits: [{ personId: person.id, assetId: own.asset!.id }] }, cur.etag);
   });
 
   it("doctor reports and estimate returns zero for the fixture", async () => {
