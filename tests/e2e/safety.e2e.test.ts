@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
-  ApprovalsDoc, BeatPlansDoc, EntitiesDoc, FactCheck, FactSheet, OverridesDoc, P, Script, StyleSuggestion, Timeline, TimelineLintDoc, UserPicksDoc, type AssetPick,
+  ApprovalsDoc, BeatPlansDoc, EntitiesDoc, FactCheck, FactSheet, OverridesDoc, P, Project, Script, StyleSuggestion, Timeline, TimelineLintDoc, UserPicksDoc, type AssetPick,
 } from "@docmaker/core";
 import { loadRuntime, run, userAgentFor } from "@docmaker/core/node";
 import { REAL_DEPS, createEngineImpl, fixOnly, gatingItems, type EngineDeps, type EngineExt } from "@docmaker/engine";
@@ -187,6 +187,21 @@ describe("safety suite (gate-test)", () => {
     const t2 = read(P.timeline("en"), Timeline);
     expect(t2.video.some((c) => c.source.kind === "image" && c.source.assetId === up.asset!.id)).toBe(false);
   }, 300_000);
+
+  it("an accusatory title cannot be marked \"rewritten\" while it still reads the same; the render stays blocked", async () => {
+    const p = await engine.readDoc(SLUG, P.project, Project);
+    await engine.writeDoc(SLUG, P.project, Project, { ...p.value, publish: { ...p.value.publish, en: { title: "The banker who defrauded his clients", thumbnailText: "FRAUDSTER", description: "" } } }, p.etag);
+    { const rr = await cli("factcheck", SLUG); expect(rr.code, rr.err + rr.out.slice(-600)).toBe(0); }
+    const fc = await engine.readDoc(SLUG, P.factcheck("en"), FactCheck);
+    const surfaces = fc.value.items.filter((i) => (i.where === "title" || i.where === "thumbnail") && i.risk === "high");
+    expect(surfaces.map((i) => i.where).sort()).toEqual(["thumbnail", "title"]);
+    await expect(engine.writeDoc(SLUG, P.factcheck("en"), FactCheck, { ...fc.value, items: fc.value.items.map((i) => (surfaces.some((x) => x.id === i.id) ? { ...i, resolution: "rewritten" as const } : i)) }, fc.etag))
+      .rejects.toMatchObject({ code: "VALIDATION", message: expect.stringMatching(/rewrite it first/) });
+    const blocked = await cli("render", SLUG);
+    expect(blocked.code).toBe(3);
+    expect(blocked.err).toMatch(/factcheck-ack/);
+    for (const i of surfaces) expect(blocked.err).toContain(i.id);
+  }, 600_000);
 
   it("fal prompts naming a person (surname or alias) are refused", () => {
     const facts = read(P.factsheet, FactSheet);
