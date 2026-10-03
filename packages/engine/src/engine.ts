@@ -554,7 +554,9 @@ class EngineImpl implements Engine {
         details: { gate: "cost", stage: "script", lang, planHash: est.planHash, totalUsd: est.totalUsd },
       });
     }
-    if (est.totalUsd > 0 && !(await docs.approvals(store)).approvals.some((a) => a.gate === "cost" && a.planHash === est.planHash)) {
+    // record an auto-threshold approval only when the threshold is what approved it (not an existing approval, by planHash or items)
+    const covered = (await docs.approvals(store)).approvals.some((a) => a.gate === "cost" && (a.planHash === est.planHash || a.items.includes(est.planHash)));
+    if (est.totalUsd > 0 && est.totalUsd <= project.budget.autoApproveUnderUsd && !covered) {
       await persistApproval(this.rt, store, "cost", {
         stage: "script", lang, planHash: est.planHash, by: "auto-threshold", items: [est.planHash], itemNotes: {},
         note: `transcreate ${segmentId}: estimate $${est.totalUsd.toFixed(3)} ≤ auto-approve threshold $${project.budget.autoApproveUnderUsd.toFixed(2)}`,

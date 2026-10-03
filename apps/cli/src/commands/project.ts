@@ -256,15 +256,17 @@ export function registerProject(program: Command, ctx: CliContext): void {
         const engine = await ctx.engine();
         const g = ctx.globals();
         const maxCost = parseMaxCost(g.maxCost);
+        let flagged = 0; // --max-cost caps the TOTAL of the estimates this command approves, not each segment
         for (const id of splitList(str(o.transcreate)).map((x) => x.toUpperCase())) {
           // cost gate per segment (§6.2 6t): --yes / --max-cost approve it, like a job's cost gate
           const est = await engine.estimateTranscreate(slug, lang, id);
           if (est.totalUsd > 0) ctx.io.out(`[$$] transcreate ${id} (${lang}): $${est.totalUsd.toFixed(3)}\n`);
           if (!est.approved) {
-            if (!(g.yes === true || (maxCost !== null && est.totalUsd <= maxCost + 1e-9))) {
-              ctx.io.err(`\nwaiting for approval (exit 3):\n  cost: docmaker approve ${slug} cost --stage script --lang ${lang} --plan ${est.planHash}\n  or re-run with --yes / --max-cost <usd>${maxCost !== null ? ` (the estimate is above --max-cost $${maxCost.toFixed(2)})` : ""}\n`);
+            if (!(g.yes === true || (maxCost !== null && flagged + est.totalUsd <= maxCost + 1e-9))) {
+              ctx.io.err(`\nwaiting for approval (exit 3):\n  cost: docmaker approve ${slug} cost --stage script --lang ${lang} --plan ${est.planHash}\n  or re-run with --yes / --max-cost <usd>${maxCost !== null ? ` (the estimates total more than --max-cost $${maxCost.toFixed(2)})` : ""}\n`);
               return void (process.exitCode = EXIT.gate);
             }
+            flagged += est.totalUsd;
             await engine.approve(slug, "cost", { stage: "script", lang, planHash: est.planHash, by: "flag", note: g.yes ? "--yes" : `--max-cost ${maxCost}`, items: [est.planHash], itemNotes: {} });
           }
           const r = await engine.transcreate(slug, lang, id);
@@ -342,6 +344,10 @@ export function registerProject(program: Command, ctx: CliContext): void {
         const ids = new Set(splitList(str(o.dismiss)));
         const note = (str(o.note) ?? "").trim();
         if (note.length < 10) throw new UsageError("--dismiss needs --note with at least 10 characters");
+        const unknown = [...ids].filter((id) => !fc!.value.items.some((i) => i.id === id));
+        if (unknown.length) throw new UsageError(`unknown fact-check item(s): ${unknown.join(", ")}`);
+        const fixable = fc.value.items.filter((i) => ids.has(i.id) && fixOnly(i)).map((i) => i.id);
+        if (fixable.length) throw new UsageError(`${fixable.join(", ")}: can only be fixed (rewrite the sentence or fix the quote), not dismissed`);
         const next = { ...fc.value, items: fc.value.items.map((i) => (ids.has(i.id) ? { ...i, resolution: "dismissed" as const, note } : i)) };
         await engine.writeDoc(slug, P.factcheck(lang), FactCheck, next, fc.etag);
         fc = await engine.readDoc(slug, P.factcheck(lang), FactCheck);

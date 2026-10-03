@@ -318,6 +318,10 @@ describe("factcheck on a real engine (gate-test)", () => {
       expect(s.ackable.length).toBeGreaterThanOrEqual(3);
       const [d1, d2, ...rest] = s.ackable as [string, string, ...string[]];
       const run = (io: ReturnType<typeof memIo>, ...a: string[]) => runCli(argv(...a), { io, factory: s.factory, baseEnv: s.env, cwd: s.repo });
+      // unknown ids are refused (usage error), nothing is dismissed
+      const bad = memIo(false);
+      expect(await run(bad, "factcheck", s.slug, "--dismiss", `${d1},FC-00000000`, "--note", "Background only, never asserted.")).toBe(2);
+      expect(bad.stderr).toMatch(/unknown fact-check item\(s\): FC-00000000/);
       // two items dismissed with one (shared) note
       const dio = memIo(false);
       expect(await run(dio, "factcheck", s.slug, "--dismiss", `${d1},${d2}`, "--note", "Background only, never asserted.")).toBe(0);
