@@ -236,3 +236,16 @@ export async function readWavRange(path: string, startFrame: number, frames: num
 
 **Proposed diff.** None required. Optional (I): pass the style suggestion (`StyleSuggestion.titles[0]`…) to `writePublishKit` as an extra optional field if the spec's "style suggestion fallback" is wanted.
 **Local workaround.** As described (additive keys, fallbacks inside the package).
+
+## 2026-10-03 remotion (W7) → core `DEFERRED_TRANSITIONS` (I), director (W6) — every M3 transition is implemented
+
+**Problem.** `@docmaker/remotion` now renders every transition of §10.5: the covers `filmBurn`, `whipStreaks`, `paperRip`, `dotWipe`, `iris` (listed in `IMPLEMENTED_COVERS`, exported from `@docmaker/remotion/compute`) and the overlaps `push`, `wipe`, `blurDissolve`. Core still ships `DEFERRED_TRANSITIONS = { filmBurn: "flash", paperRip: "flash", whipStreaks: "flash", dotWipe: "dipToBlack", iris: "dipToBlack" }` and the director applies it (`packages/director/src/transitions.ts`), so a style that weights these covers never gets them.
+**Proposed diff.**
+```ts
+// packages/core/src/schema/style.ts
+/** Covers a renderer may not implement yet map here (the director applies the chain). All of §10.5 is implemented (W7, 2026-10-03). */
+export const DEFERRED_TRANSITIONS: Partial<Record<TransitionKey, TransitionKey>> = {};
+```
+No director code change is needed (it reads the map); its tests that assume the mapping need updating (W6). Remotion keeps its own fallback: `resolveCover()` maps a presentation unknown to an older build through `DEFERRED_TRANSITIONS`, else to `flash`, with a `computeTimeline` warning.
+**Facts for the director / web (W6, W11).** Every cover window is centred on the cut (`floor(d/2)` frames before it; dips switch mid-hold) and accepts any `d ≥ 2`; the spec durations are dotWipe ≈ 13 f, iris ≈ 12 f, paperRip 10–15 f, whipStreaks ≈ 8 f, filmBurn 15–30 f. dotWipe, iris and paperRip fully cover the frame on the frame before the cut **and** on the cut frame (unit-tested geometry + render test); filmBurn over-exposes to near white there; whipStreaks hides the switch under a motion-smear wash. `direction` is the motion direction (dotWipe wave, paperRip sheet entry / tear, whipStreaks); iris ignores it. `color`: dotWipe uses it (default black); iris uses it only when dark (luminance < 0.5), else black.
+**Local workaround.** None needed in remotion; until core changes, these covers only appear when a user override (`setTransition`) or a hand-written timeline asks for them.
