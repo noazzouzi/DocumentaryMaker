@@ -1,14 +1,14 @@
 // createEngine (§4.19, §5.5): the Engine implementation (in-process runner; "worker" runner forwards jobs to a forked
 // job worker, see worker.ts). Reads/writes/approvals/estimates/styles/assets run in the calling process.
 import { existsSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   CostEstimate as CostEstimateSchema, DocmakerError, ENV_KEYS, FactSheet as FactSheetSchema, LocalIndexDoc, P, UserPicksDoc, VARIANT_STAGES, canonicalJson, docEntryFor, hashJson, type Approval, type CostEstimate, type CostTracker, type GateId,
   type HomeConfig, type JobEvent, type JobRecord, type JobRequest, type Lang, type NewProjectInput, type PipelineEstimate, type Project,
-  type RenderPresetId, type StageId, type StyleSuggestion, type UploadDeclaration,
+  type RenderPresetId, type StageId, type StyleSuggestion, type UploadDeclaration, type VoiceInfo, type VoiceProviderId, type VoiceTrack,
 } from "@docmaker/core";
-import { ProjectStore, cacheCapBytes, ensureHome, readHomeConfig, run, writeHomeConfig, writeSecret } from "@docmaker/core/node";
+import { ProjectStore, cacheCapBytes, ensureHome, maskSecret, readHomeConfig, run, writeHomeConfig, writeSecret } from "@docmaker/core/node";
 import type { z } from "zod";
 import type { DemoOptions, Engine, EngineOptions, ImpactReport, StageStatus } from "./types";
 import { REAL_DEPS } from "./deps";
@@ -505,6 +505,38 @@ class EngineImpl implements Engine {
   }
 
   // ---------------------------------------------------------------- additive helpers (CLI / web)
+  /** Voices of a TTS provider (static lists for kokoro/piper/synthetic; ElevenLabs needs its key and the network). */
+  async listVoices(provider: VoiceProviderId, lang: Lang | null): Promise<VoiceInfo[]> {
+    this.rt.refresh();
+    if (provider === "recording") return [];
+    if (provider === "elevenlabs" && (this.rt.config.offline || !this.rt.secrets.elevenlabs)) return [];
+    const p = this.rt.deps.voice.createTtsProvider(provider, { config: this.rt.config, secrets: this.rt.secrets, logger: this.rt.logger });
+    return p.listVoices(lang ?? undefined);
+  }
+
+  /** Every take of a language (newest first), scratch and final. */
+  async listTakes(slug: string, lang: Lang): Promise<VoiceTrack[]> {
+    const store = await this.open(slug);
+    let names: string[] = [];
+    try {
+      names = (await readdir(store.abs(`voice/${lang}`))).filter((n) => /^(take|scratch)-[a-f0-9]{12}$/.test(n));
+    } catch {
+      return [];
+    }
+    const out: VoiceTrack[] = [];
+    for (const n of names) {
+      const t = await docs.take(store, lang, n).catch(() => null);
+      if (t) out.push(t);
+    }
+    return out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : a.id < b.id ? -1 : 1));
+  }
+
+  /** Which provider keys are set (masked values only; never the secrets). */
+  async secretStatus(): Promise<{ name: keyof typeof ENV_KEYS; env: string; set: boolean; masked: string }[]> {
+    this.rt.refresh();
+    return (Object.entries(ENV_KEYS) as [keyof typeof ENV_KEYS, string][]).map(([name, env]) => ({ name, env, set: !!this.rt.secrets[name], masked: maskSecret(this.rt.secrets[name]) }));
+  }
+
   async importLocalDir(slug: string, i: { dir: string; declaration: UploadDeclaration | null; tags: string[] }): Promise<LocalIndexDoc> {
     const store = await this.open(slug);
     const project = await readProject(store);
@@ -687,6 +719,9 @@ class EngineImpl implements Engine {
 export type SetupComponent = "sfx" | "tts" | "python" | "yt-dlp" | "whisper" | "clip";
 
 export type EngineExt = Engine & {
+  listVoices(provider: VoiceProviderId, lang: Lang | null): Promise<VoiceInfo[]>;
+  listTakes(slug: string, lang: Lang): Promise<VoiceTrack[]>;
+  secretStatus(): Promise<{ name: keyof typeof ENV_KEYS; env: string; set: boolean; masked: string }[]>;
   importLocalDir(slug: string, i: { dir: string; declaration: UploadDeclaration | null; tags: string[] }): Promise<LocalIndexDoc>;
   calibrate(slug: string, lang: Lang): Promise<{ charsPerSec: number }>;
   teleprompter(slug: string, lang: Lang, o: { mirror: boolean }): Promise<string>;

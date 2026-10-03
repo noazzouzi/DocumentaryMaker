@@ -2,6 +2,7 @@
 // assets.buildCredits() → publish kit / editorial report → export.writeExportBundle() (reference MP4 when an
 // up-to-date render of this timeline + mix exists, master preferred). Export never waits for a render.
 import { mkdir } from "node:fs/promises";
+import path from "node:path";
 import {
   P, docHash, type ExportFormat, type Lang, type MusicDoc, type RenderPresetId, type SfxEntry, type Timeline,
 } from "@docmaker/core";
@@ -100,7 +101,10 @@ export const exportStage: StageDef = {
     // README.md is the stage's completion marker (the bundle writer normally writes it; make sure it exists)
     if (!(await ctx.store.exists(exportReadmeRel(lang)))) await writeTextIfChanged(ctx.store.abs(exportReadmeRel(lang)), readme);
     if (!ref) emitLog(ctx, "export", "info", `${lang}: no up-to-date render — the bundle has no reference.mp4`);
-    for (const f of bundle.files) ctx.emit({ type: "artifact", stage: "export", lang, path: f, kind: "export" });
+    for (const f of bundle.files) {
+      const rel = path.isAbsolute(f) ? path.relative(ctx.store.dir, f).split(path.sep).join("/") : `${P.exportDir(lang)}${f}`;
+      ctx.emit({ type: "artifact", stage: "export", lang, path: rel, kind: "export" });
+    }
     return { artifacts: [exportReadmeRel(lang), P.credits(lang)] };
   },
 };

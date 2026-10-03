@@ -166,7 +166,9 @@ export const qaStage: StageDef = {
         projectDir: ctx.store.dir, timelineRel: (await ctx.store.exists(snapRel)) ? snapRel : P.timeline(lang), frames: sheetFrames(t), outDir, scale: 0.25,
         sheet: { cols: 6, width: 640, label: true },
       }, { onEvent: (ev) => ctx.emit(ev), signal: ctx.signal });
-      contactSheets = files.map((f) => path.relative(ctx.store.dir, f).split(path.sep).join("/"));
+      // renderStills returns the stills followed by the sheets; the report lists the sheets (all files when no sheet was made)
+      const sheets = files.filter((f) => /sheet-\d+\.(jpe?g|png)$/i.test(path.basename(f)));
+      contactSheets = (sheets.length ? sheets : files).map((f) => path.relative(ctx.store.dir, f).split(path.sep).join("/"));
     } else {
       checks.push(check("contact-sheets", "info", true, "no render client in this process: contact sheets skipped"));
     }

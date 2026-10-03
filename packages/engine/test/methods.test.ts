@@ -93,6 +93,15 @@ describe("engine methods", () => {
     await expect(e.setSecret("nope", "x")).rejects.toMatchObject({ code: "VALIDATION" });
   });
 
+  it("voices, takes and key status for the web", async () => {
+    expect((await e.listVoices("synthetic", "en")).map((v) => v.id)).toEqual(["synthetic-m1", "synthetic-f1"]);
+    expect(await e.listVoices("elevenlabs", "en")).toEqual([]); // no key / offline
+    expect(await e.listTakes(slug, "fr")).toEqual([]);
+    const st = await e.secretStatus();
+    expect(st.find((x) => x.name === "anthropic")).toMatchObject({ set: false, masked: "(unset)" });
+    expect(JSON.stringify(st)).not.toContain("test-key-123456789");
+  });
+
   it("home config round trip", async () => {
     const hc = await e.setHomeConfig({ contact: "https://example.org/contact", uiLang: "fr" });
     expect(hc).toMatchObject({ contact: "https://example.org/contact", uiLang: "fr" });

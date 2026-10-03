@@ -1,7 +1,6 @@
 // assets (§7.3, App. D): audio.ensureSfxPack (global cache) → prepareMusic (ENGINE: per used mood generateMusic /
 // scanMusicLibrary → assets.freezeFile → assets/music.json) → assets.resolveAssets (+ reranker when a key is set) →
 // candidates, clips, picks, frozen (music merged), ledger. Never writes user-picks.json or usage.
-import { mkdir, rm } from "node:fs/promises";
 import {
   CandidatesDoc, ClipWordsDoc, FrozenDoc, Ledger, MusicDoc, P, PicksDoc, docHash, hashJson, rngFor,
   type BeatPlan, type FrozenAsset, type LicenseInfo, type MusicMood, type MusicTrack, type Project, type SfxEntry, type StylePlugin,
@@ -64,20 +63,25 @@ export async function prepareMusic(ctx: StageCtx, plans: readonly BeatPlan[]): P
       return { tracks, frozen };
     }
     const lib = await e.rt.deps.audio.scanMusicLibrary(p.audio.musicLibraryDir, actx);
-    const tmp = ctx.store.abs("assets/.tmp-music");
-    await mkdir(tmp, { recursive: true });
-    try {
-      for (const t of lib) {
-        const conform = await e.rt.deps.assets.conformAudio(t.file, tmp, { targetLufs: -18 }, assets);
-        const fa = await e.rt.deps.assets.freezeFile({ file: t.file, kind: "audio", role: "music", candidate: null, declaration: null, conform, projectDir: ctx.store.dir }, assets);
-        frozen.push(fa);
-        tracks.push({
-          assetId: fa.id, title: t.title, source: "library", moods: t.moods.length ? t.moods : ["none"], energy: "mid", bpm: t.bpm,
-          beatsMs: t.beatsMs, downbeatsMs: t.downbeatsMs, durationMs: fa.durationMs ?? t.durationMs, lufs: fa.lufs ?? -18, loopable: false, license: t.license,
-        });
+    for (const t of lib) {
+      // undeclared library tracks are never used (no USER-OWNED default; the user declares a licence first)
+      if (t.license.code === "UNKNOWN" || t.license.restrictions.includes("unknown-rights")) {
+        emitLog(ctx, "assets", "warn", `music ${t.title}: no licence declared — skipped`);
+        continue;
       }
-    } finally {
-      await rm(tmp, { recursive: true, force: true });
+      // scanMusicLibrary already returns the normalised (-18 LUFS) copy
+      const fa = await e.rt.deps.assets.freezeFile({
+        file: t.file, kind: "audio", role: "music", candidate: null, declaration: null, projectDir: ctx.store.dir,
+        conform: {
+          file: t.file, ext: "wav", width: null, height: null, durationMs: t.durationMs, fps: null, hasAudio: true, lufs: -18, recipe: "audio-norm-v1",
+          sourceInMs: null, sourceOutMs: null, handleHeadMs: 0, handleTailMs: 0, analysis: { grayscale: null, meanLuma: null, year: null, lowRes: false },
+        },
+      }, assets);
+      frozen.push(fa);
+      tracks.push({
+        assetId: fa.id, title: t.title, source: "library", moods: t.moods.length ? t.moods : ["none"], energy: "mid", bpm: t.bpm,
+        beatsMs: t.beatsMs, downbeatsMs: t.downbeatsMs, durationMs: fa.durationMs ?? t.durationMs, lufs: -18, loopable: false, license: t.license,
+      });
     }
     return { tracks, frozen };
   }

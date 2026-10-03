@@ -15,7 +15,7 @@ import { nowIso } from "./util";
 export function detectModels(modelsDir: string): { kokoro: boolean; piper: boolean } {
   const has = (sub: string) => {
     try {
-      return readdirSync(path.join(modelsDir, sub), { withFileTypes: true }).some((d) => d.isDirectory());
+      return readdirSync(path.join(/*turbopackIgnore: true*/ modelsDir, sub), { withFileTypes: true }).some((d) => d.isDirectory());
     } catch {
       return false;
     }
@@ -25,10 +25,10 @@ export function detectModels(modelsDir: string): { kokoro: boolean; piper: boole
 
 function uniqueSlug(projectsDir: string, base: string): string {
   const root = base || "project";
-  if (!existsSync(path.join(projectsDir, root, P.project))) return root;
+  if (!existsSync(path.join(/*turbopackIgnore: true*/ projectsDir, root, P.project))) return root;
   for (let n = 2; n < 1000; n++) {
     const s = `${root.slice(0, 44)}-${n}`;
-    if (!existsSync(path.join(projectsDir, s, P.project))) return s;
+    if (!existsSync(path.join(/*turbopackIgnore: true*/ projectsDir, s, P.project))) return s;
   }
   throw new DocmakerError("VALIDATION", `cannot find a free slug for ${root}`);
 }
@@ -39,7 +39,7 @@ export async function createProjectIn(rt: Runtime, input: NewProjectInputT, extr
   const models = detectModels(rt.config.paths.models);
   const explicitSlug = parsed.slug !== undefined;
   const slug = explicitSlug ? parsed.slug! : uniqueSlug(rt.config.projectsDir, slugify(parsed.idea));
-  if (explicitSlug && existsSync(path.join(rt.config.projectsDir, slug, P.project))) throw new DocmakerError("VALIDATION", `project ${slug} already exists`);
+  if (explicitSlug && existsSync(path.join(/*turbopackIgnore: true*/ rt.config.projectsDir, slug, P.project))) throw new DocmakerError("VALIDATION", `project ${slug} already exists`);
   let p = defaultProject({ ...input, slug, styleId: input.styleId ?? hc?.defaults.styleId ?? null }, new Date(), {
     hasElevenLabs: !!rt.secrets.elevenlabs, kokoro: models.kokoro, piper: models.piper,
     homeDefaults: hc ? { languages: hc.defaults.languages, targetMinutes: hc.defaults.targetMinutes } : null,
@@ -110,7 +110,7 @@ export async function listProjectsIn(rt: Runtime): Promise<{ slug: string; title
   for (const e of entries) {
     if (!e.isDirectory()) continue;
     try {
-      const p = Project.safeParse(JSON.parse(await readFile(path.join(rt.config.projectsDir, e.name, P.project), "utf8")));
+      const p = Project.safeParse(JSON.parse(await readFile(path.join(/*turbopackIgnore: true*/ rt.config.projectsDir, e.name, P.project), "utf8")));
       if (p.success && p.data.slug === e.name) out.push({ slug: p.data.slug, title: p.data.title, updatedAt: p.data.updatedAt, languages: p.data.languages });
     } catch { /* not a project */ }
   }
