@@ -4,8 +4,10 @@ import {
   type OverlayComponentId,
 } from "@docmaker/core";
 import { clamp, cueFrame, round2, truncate, type BeatCtx, type Ctx } from "../ctx";
+import { dateLabel, spokenDate } from "../dates";
 import { boundFullFrameHold, fitFormula, holdOf } from "./hold";
 import { CLS, addOv, enterOf, personById, personRule, policyOf, portraitFor, type Ov, type OvState } from "./state";
+import { contentText } from "./cues";
 import { fillAts, findSpoken, syncWords } from "./sync";
 
 const TEMPLATE_CUES: Partial<Record<MotionTemplate, CueType[]>> = {
@@ -123,7 +125,7 @@ function buildTemplate(ctx: Ctx, b: BeatCtx, tpl: Exclude<MotionTemplate, "none"
         ? (md.lines as string[])
         : (md.nodes as { label: string; role: string }[]).map((n) => (n.role ? `${n.label} — ${n.role}` : n.label));
       const L = lines.map((l) => truncate(l, 48)).filter(Boolean).slice(0, 4);
-      if (L.length === 0) return null;
+      if (L.length === 0 || contentText(L.join(" "), ctx.lang) === null) return null; // never a lone function word
       return out({ lines: L, emphasis: ((md.emphasis as string[] | undefined) ?? []).slice(0, 8), align: "center" });
     }
     case "counter": case "money_counter": {
@@ -139,12 +141,13 @@ function buildTemplate(ctx: Ctx, b: BeatCtx, tpl: Exclude<MotionTemplate, "none"
     case "timeline": {
       const evs = (md.events as { date: string; label: string; event_id: string }[]).slice(0, 8).map((e) => {
         const te = e.event_id ? ctx.facts.timeline.find((x) => x.id === e.event_id) : undefined;
-        return { dateLabel: truncate(te ? te.date : e.date, 24), label: truncate(e.label, 60) };
+        const raw = te ? te.date : e.date;
+        return { dateLabel: truncate(dateLabel(raw, ctx.lang), 24), label: truncate(e.label, 60), spoken: spokenDate(raw, ctx.lang) };
       });
       if (evs.length < 2) return null;
-      const s = syncItems(evs.map((e) => e.dateLabel), ctx.F30(12));
+      const s = syncItems(evs.map((e) => e.spoken), ctx.F30(12));
       const active = clamp(md.active_index as number, -1, evs.length - 1);
-      return out({ events: evs.map((e, k) => ({ ...e, at: s.ats[k]! })), activeIndex: active }, { subBeats: s.ats.map((a) => from + a), contentFrames: Math.max(...s.ats) + ctx.F30(30) });
+      return out({ events: evs.map((e, k) => ({ dateLabel: e.dateLabel, label: e.label, at: s.ats[k]! })), activeIndex: active }, { subBeats: s.ats.map((a) => from + a), contentFrames: Math.max(...s.ats) + ctx.F30(30) });
     }
     case "bar_chart": case "line_chart": {
       const bars = (md.bars as { label: string; value: number; figure_id: string; highlight: boolean }[]).map((x) => {
@@ -180,7 +183,7 @@ function buildTemplate(ctx: Ctx, b: BeatCtx, tpl: Exclude<MotionTemplate, "none"
       const ats = anySync ? fillAts(synced.map((w) => w.at), enter, ctx.F30(6)) : [];
       const lastMatched = anySync ? Math.max(...synced.map((w) => w.at ?? 0)) : null;
       return out({
-        text, speaker: truncate(sp.name, 60), sourceLabel: truncate([src?.publisher ?? "", q.date].filter(Boolean).join(", "), 80),
+        text, speaker: truncate(sp.name, 60), sourceLabel: truncate([src?.publisher ?? "", dateLabel(q.date, ctx.lang)].filter(Boolean).join(", "), 80),
         portraitAssetId: sp.anon ? null : portraitFor(ctx, q.speakerId), translated,
         words: anySync ? synced.map((w, k) => ({ text: w.text, at: ats[k]!, emphasis: false })) : [],
       }, { narratedEnd: lastMatched !== null ? lastMatched + ctx.F30(10) : null, subBeats: anySync ? [from + ats[0]!] : [] });
@@ -196,14 +199,14 @@ function buildTemplate(ctx: Ctx, b: BeatCtx, tpl: Exclude<MotionTemplate, "none"
       const revealAt = m ? Math.max(enter, m.first.from - from) : enter + ctx.F30(10);
       return out({
         variant: md.variant as string, displayName: truncate(sp.anon ? "@user" : sp.name, 50), handle: truncate(handle as string, 40), body,
-        timestampLabel: truncate((md.date as string) || q.date, 40), likes: md.likes ?? null, reposts: md.reposts ?? null, replies: md.replies ?? null,
+        timestampLabel: truncate(dateLabel((md.date as string) || q.date, ctx.lang), 40), likes: md.likes ?? null, reposts: md.reposts ?? null, replies: md.replies ?? null,
         avatarAssetId: sp.anon ? null : portraitFor(ctx, q.speakerId), imageAssetId: null, verified: false, theme: "dark", revealAt,
       }, { subBeats: [from + revealAt], narratedEnd: m ? m.last.from + m.last.dur - from : null });
     }
     case "headline_stack": {
       const items = (md.items as { source_id: string; outlet: string; headline: string; date: string }[]).map((it) => {
         const s = sourceById(ctx, it.source_id);
-        return s ? { outlet: truncate(s.publisher, 40), headline: truncate(s.title, 140), dateLabel: truncate(it.date || s.publishedAt, 30) } : null;
+        return s ? { outlet: truncate(s.publisher, 40), headline: truncate(s.title, 140), dateLabel: truncate(dateLabel(it.date || s.publishedAt, ctx.lang), 30) } : null;
       }).filter((x): x is NonNullable<typeof x> => x !== null).slice(0, 5);
       if (items.length === 0) { ctx.warn("TEMPLATE_FACTS", b.id, "headline sources missing; stack skipped"); return null; }
       const s = syncItems(items.map((x) => x.headline), ctx.F30(18));
@@ -227,7 +230,7 @@ function buildTemplate(ctx: Ctx, b: BeatCtx, tpl: Exclude<MotionTemplate, "none"
         const highlightAt = m ? Math.max(enter, m.first.from - from) : enter + ctx.F30(15);
         const shot = (ctx.picksByBeat.get(b.id) ?? []).find((p) => ctx.frozen[p.assetId]?.kind === "image");
         return out({
-          outlet: truncate(src.publisher, 60), headline: truncate((md.title as string) || src.title, 160), dateLabel: truncate((md.date as string) || src.publishedAt, 40),
+          outlet: truncate(src.publisher, 60), headline: truncate((md.title as string) || src.title, 160), dateLabel: truncate(dateLabel((md.date as string) || src.publishedAt, ctx.lang), 40),
           paragraphs, highlight: hl, highlightAt, screenshotAssetId: b.plan.visualKind === "document_screenshot" && shot ? shot.assetId : null,
         }, { subBeats: [from + highlightAt], narratedEnd: m ? m.last.from + m.last.dur - from : null });
       }

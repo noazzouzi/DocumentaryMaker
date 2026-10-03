@@ -4,10 +4,11 @@ import {
   DERIVABLE_TRIGGERS, STAMP_LEXICON, lerp, normWord, tokenizeDisplay, weightedPick, type CueTag, type OverlayComponentId,
 } from "@docmaker/core";
 import { clamp, cueFrame, cueWord, round2, shotIdxAt, truncate, type BeatCtx, type Ctx, type Shot } from "../ctx";
+import { dateLabel } from "../dates";
 import { evidenceBoard, photoBurstFrames, photoBurstProps } from "./fromMotion";
 import { boundFullFrameHold, holdOf } from "./hold";
 import { CLS, addOv, cooldownOk, enterOf, overshootOk, personById, personRule, portraitFor, type OvState } from "./state";
-import { keywordSlam } from "./cues";
+import { contentText, keywordSlam } from "./cues";
 import { fillAts, syncWords } from "./sync";
 
 export interface Bleep { wordId: string; from: number; dur: number; beatId: string }
@@ -118,7 +119,7 @@ function derive(ctx: Ctx, shots: readonly Shot[], b: BeatCtx, k: number, cue: Cu
         const ats = ok ? fillAts(synced.map((x) => x.at), enter, ctx.F30(6)) : [];
         return {
           props: {
-            text, speaker: named ? truncate(sp!.name, 60) : "", sourceLabel: truncate([src?.publisher ?? "", q.date].filter(Boolean).join(", "), 80),
+            text, speaker: named ? truncate(sp!.name, 60) : "", sourceLabel: truncate([src?.publisher ?? "", dateLabel(q.date, ctx.lang)].filter(Boolean).join(", "), 80),
             portraitAssetId: named ? portraitFor(ctx, sp!.id) : null, translated: false, words: ok ? synced.map((x, j) => ({ text: x.text, at: ats[j]!, emphasis: false })) : [],
           },
           from: a, anchorWord, narratedEnd: ok ? Math.max(...ats) + ctx.F30(10) : null, subBeats: ok ? [a + ats[0]!] : [],
@@ -127,7 +128,7 @@ function derive(ctx: Ctx, shots: readonly Shot[], b: BeatCtx, k: number, cue: Cu
       const first = synced.find((x) => x.at !== null)?.at ?? enter + ctx.F30(10);
       return {
         props: {
-          variant: "post", displayName: truncate(named ? sp!.name : "@user", 50), handle: "", body: text, timestampLabel: truncate(q.date, 40),
+          variant: "post", displayName: truncate(named ? sp!.name : "@user", 50), handle: "", body: text, timestampLabel: truncate(dateLabel(q.date, ctx.lang), 40),
           likes: null, reposts: null, replies: null, avatarAssetId: named ? portraitFor(ctx, sp!.id) : null, imageAssetId: null, verified: false, theme: "dark", revealAt: first,
         },
         from: a, anchorWord, subBeats: [a + first],
@@ -158,7 +159,7 @@ function derive(ctx: Ctx, shots: readonly Shot[], b: BeatCtx, k: number, cue: Cu
       };
     }
     case "KineticText": {
-      if (!b.text.onScreenText.trim()) return null;
+      if (!b.text.onScreenText.trim() || contentText(b.text.onScreenText, ctx.lang) === null) return null; // never a lone "THE"
       const lines = toLines(b.text.onScreenText);
       if (lines.length === 0) return null;
       const bw = ctx.words.slice(b.wordStart, b.wordEnd);

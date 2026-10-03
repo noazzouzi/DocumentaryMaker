@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { beatWordRanges, chapterCardReadMs, chapterOfBeat, chapterOfSegment, isDocmakerError, normWord, parseWordId, spokenText, tokenizeDisplay, wordId } from "../src/index";
+import { beatWordRanges, chapterCardReadMs, chapterOfBeat, chapterOfSegment, isDocmakerError, isFunctionWord, normWord, parseWordId, spokenText, tokenizeDisplay, wordId } from "../src/index";
 
 const texts = (s: string) => tokenizeDisplay(s).map((w) => w.text);
 const norms = (s: string) => tokenizeDisplay(s).map((w) => w.norm);
@@ -77,5 +77,18 @@ describe("chapterCardReadMs", () => {
     const long = "The Day the Buyers Stopped Showing Up";
     expect(chapterCardReadMs(long, 12)).toBe(Math.round(1000 * (0.4 + long.length / 20 + 0.8)) - 200);
     expect(chapterCardReadMs("Écluse", 0)).toBe(1000);
+  });
+});
+
+describe("isFunctionWord", () => {
+  it("articles, prepositions and pronouns in either case and with punctuation; content words are not", () => {
+    expect(isFunctionWord("THE", "en")).toBe(true);
+    expect(isFunctionWord("of,", "en")).toBe(true);
+    expect(isFunctionWord("TWIST", "en")).toBe(false);
+    expect(isFunctionWord("l'", "fr")).toBe(true);
+    expect(isFunctionWord("Les", "fr")).toBe(true);
+    expect(isFunctionWord("chute", "fr")).toBe(false);
+    expect(isFunctionWord("le")).toBe(true); // either language when none is given
+    expect(isFunctionWord("—")).toBe(true); // punctuation only
   });
 });

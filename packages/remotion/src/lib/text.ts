@@ -1,5 +1,5 @@
 // Text helpers shared by components: number formatting (Intl + guilders), casing, word splitting, labels. Pure.
-import { normWord } from "@docmaker/core";
+import { isFunctionWord, normWord } from "@docmaker/core";
 
 export type NumberFormatKind = "number" | "currency" | "percent" | "compact";
 export interface NumberFormatSpec {
@@ -66,6 +66,32 @@ export const formatNumber = (value: number, spec: NumberFormatSpec): string => f
 export const upper = (s: string, locale: string): string => s.toLocaleUpperCase(locale);
 /** Splits display text into words keeping punctuation attached (for per-word reveals). */
 export const splitWords = (s: string): string[] => s.split(/\s+/).filter((w) => w.length > 0);
+/**
+ * Per-word reveal slots for a line: a function word ("THE", "OF", "LE") never appears alone — it shares the slot of the
+ * next content word ("THE TWIST" reveals as one unit); a trailing function word joins the previous slot. Returns the
+ * slot index of each word (0-based, contiguous) and the slot count.
+ */
+export function revealSlots(words: readonly string[], lang?: "en" | "fr", first = 0): { slots: number[]; count: number } {
+  const fn = words.map((w) => isFunctionWord(w, lang));
+  const slots: number[] = [];
+  let slot = first;
+  let pending = false; // the current slot holds only function words so far
+  for (let i = 0; i < words.length; i++) {
+    if (i > 0 && !pending) slot++;
+    slots.push(slot);
+    pending = fn[i]!;
+  }
+  // a line ending on function words: they join the last content word's slot
+  if (pending) {
+    let k = words.length - 1;
+    while (k >= 0 && fn[k]) k--;
+    if (k >= 0) for (let j = k + 1; j < words.length; j++) slots[j] = slots[k]!;
+  }
+  const used = [...new Set(slots)].sort((a, b) => a - b);
+  const remap = new Map(used.map((v, k) => [v, first + k]));
+  return { slots: slots.map((v) => remap.get(v)!), count: used.length };
+}
+
 /** True when `word` matches one of the emphasis entries (accent/case-insensitive, punctuation ignored). */
 export function isEmphasis(word: string, emphasis: readonly string[]): boolean {
   const n = normWord(word);

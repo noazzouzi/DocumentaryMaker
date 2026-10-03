@@ -1,7 +1,8 @@
 // Step 7 (b)–(f), (h)–(j): person intros, date stamps, keyword slams, clip cards/labels, disclosure labels, chapter cards,
 // title sting, safe-messaging card, letterbox.
-import { lerp, spokenText, tokenizeDisplay, type Person } from "@docmaker/core";
+import { isFunctionWord, lerp, spokenText, tokenizeDisplay, type Person } from "@docmaker/core";
 import { cueFrame, cueWord, isAiAsset, rateOk, round2, shotIdxAt, truncate, wordCount, type BeatCtx, type Ctx, type Shot } from "../ctx";
+import { dateLabel } from "../dates";
 import { CHAPTER_KICKER, LABEL_TEXT, SAFE_MESSAGING_CARD } from "../resources";
 import { backdropRecipe } from "../shots";
 import { holdOf } from "./hold";
@@ -79,7 +80,7 @@ export function dateStampsAndSlams(ctx: Ctx, st: OvState): void {
       const a = cueFrame(ctx, b, k);
       const w = cueWord(ctx, b, k);
       if (c.type === "TIME_JUMP" && policyOf(ctx, "DateStamp")) {
-        const raw = /\p{N}/u.test(b.text.onScreenText) ? b.text.onScreenText : c.value;
+        const raw = dateLabel(/\p{N}/u.test(b.text.onScreenText) ? b.text.onScreenText : c.value, ctx.lang);
         const text = truncate(raw.toLocaleUpperCase(ctx.lang), 48);
         if (!text) return;
         const typeFrames = 2 * [...text].length;
@@ -95,14 +96,27 @@ export function dateStampsAndSlams(ctx: Ctx, st: OvState): void {
   }
 }
 
-/** KeywordSlam for a SHOCK beat (energy 5, 1–3 words of onScreenText), within keywordSlamPerMin and its cooldown. */
+/**
+ * Slam / kinetic text that never reads as a lone function word: trailing function words are dropped ("PRICES FELL AND"
+ * → "PRICES FELL"); null when no content word is left ("THE", "OF THE").
+ */
+export function contentText(text: string, lang: "en" | "fr"): string | null {
+  const ws = text.trim().split(/\s+/).filter(Boolean);
+  while (ws.length > 0 && isFunctionWord(ws[ws.length - 1]!, lang)) ws.pop();
+  if (!ws.some((w) => !isFunctionWord(w, lang))) return null;
+  return ws.join(" ");
+}
+
+/** KeywordSlam for a SHOCK beat (energy 5, 1–3 words of onScreenText, at least one content word), within keywordSlamPerMin and its cooldown. */
 export function keywordSlam(ctx: Ctx, st: OvState, b: BeatCtx, a: number, wordId: string | null) {
   if (!policyOf(ctx, "KeywordSlam") || b.energy < 5) return null;
   const n = wordCount(b.text.onScreenText);
   if (n < 1 || n > 3) return null;
+  const slam = contentText(b.text.onScreenText, ctx.lang);
+  if (slam === null) { ctx.warn("SLAM_TEXT", b.id, `KeywordSlam skipped: "${b.text.onScreenText}" has no content word`); return null; }
   if (!cooldownOk(ctx, st, "KeywordSlam", a)) return null;
   if (!rateOk(ctx, st.items.filter((o) => !o.dropped && o.component === "KeywordSlam").map((o) => o.from), a, ctx.Bu.keywordSlamPerMin * b.intensity)) return null;
-  const text = truncate(b.text.onScreenText.toLocaleUpperCase(ctx.lang), 28);
+  const text = truncate(slam.toLocaleUpperCase(ctx.lang), 28);
   const props = { text, color: ctx.tok.tokens.palette.danger, background: "black" };
   const h = holdOf("KeywordSlam", props, ctx.fps);
   return addOv(ctx, st, { component: "KeywordSlam", ref: b.id, beatId: b.id, from: a, dur: h.dur, props, cls: CLS.cue, origin: "cue", anchorWord: wordId, readHold: h.readHold });
@@ -143,7 +157,7 @@ export function clipOverlays(ctx: Ctx, st: OvState, shots: readonly Shot[]): voi
       narratedEnd = last ? last.from + last.dur - from : null;
     }
     const props = {
-      text, speaker: showName ? truncate(speaker.name, 60) : "", sourceLabel: truncate([src?.publisher ?? "", quote?.date ?? ""].filter(Boolean).join(", "), 80),
+      text, speaker: showName ? truncate(speaker.name, 60) : "", sourceLabel: truncate([src?.publisher ?? "", dateLabel(quote?.date ?? "", ctx.lang)].filter(Boolean).join(", "), 80),
       portraitAssetId: showName ? portraitFor(ctx, speaker.id) : null, translated: b.sseg.subtitleTranslation !== "", words,
     };
     const h = holdOf("QuoteCard", props, ctx.fps, { narratedEnd });

@@ -1,11 +1,11 @@
 // KineticText (M1): lines of big headline type, each word slides up through a mask, staggered over ≤ staggerMaxFrames
-// (15 f) in total; emphasis words in the accent colour; slow 1.02 drift; exit 6 f. Also the FallbackCard text look.
+// (15 f) in total (function words enter with their content word, so a lone "THE" never shows); emphasis words in the accent colour; slow 1.02 drift; exit 6 f. Also the FallbackCard text look.
 import type React from "react";
 import { AbsoluteFill } from "remotion";
 import { accentOf, familyOf, fontStack, useEnv } from "../data/env";
 import { rgba } from "../lib/color";
 import { clamp01 } from "../lib/easing";
-import { isEmphasis, splitWords, upper } from "../lib/text";
+import { isEmphasis, revealSlots, splitWords, upper } from "../lib/text";
 import { fitFontSize } from "./fit";
 import { useItemClock, useZone, zoneFor, type ComponentProps, type ItemClock } from "./shared";
 
@@ -30,11 +30,18 @@ export const KineticBlock: React.FC<KineticBlockProps> = ({ lines, emphasis, ali
   const byHeight = Math.floor(box.height / Math.max(1, shown.length) / lineH);
   const size = Math.min(byHeight, ...shown.map((l) => fitFontSize(l, { family, width: box.width - 40, max: maxSize, min: 40 })));
   const words = shown.map((l) => splitWords(l));
-  const total = words.reduce((a, w) => a + w.length, 0);
+  // reveal slots per word: a function word ("THE") enters with the next content word, never alone
+  const lang = env.lang === "fr" ? "fr" : "en";
+  const slotOf: number[][] = [];
+  let total = 0;
+  for (const ws of words) {
+    const r = revealSlots(ws, lang, total);
+    slotOf.push(r.slots);
+    total += r.count;
+  }
   const stagger = Math.max(1, env.tokens.motion.staggerMaxFrames);
   const step = total > 1 ? Math.min(4, stagger / (total - 1)) : 0;
   const wordFrames = Math.max(4, Math.min(env.tokens.motion.entryMaxFrames, c.enter || 8));
-  let idx = 0;
   const drift = 1 + 0.02 * c.hold;
   return (
     <AbsoluteFill style={{ pointerEvents: "none", opacity: 1 - c.outP }}>
@@ -49,7 +56,7 @@ export const KineticBlock: React.FC<KineticBlockProps> = ({ lines, emphasis, ali
         {words.map((ws, li) => (
           <div key={li} style={{ display: "flex", flexWrap: "nowrap", gap: `0 ${(size * 0.22).toFixed(1)}px`, justifyContent: align === "center" ? "center" : "flex-start" }}>
             {ws.map((w, wi) => {
-              const start = (idx++) * step;
+              const start = slotOf[li]![wi]! * step;
               const p = c.entryEase(clamp01((c.f - start) / wordFrames));
               const em = isEmphasis(w, emphasis);
               return (

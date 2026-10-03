@@ -47,6 +47,24 @@ export function tokenizeDisplay(text: string): DisplayWord[] {
   return spans.map((sp, idx) => ({ idx, text: text.slice(sp.start, sp.end), norm: sp.norm, start: sp.start, end: sp.end }));
 }
 
+/**
+ * Function words (normWord form) that never stand alone as a hero/slam word: articles, prepositions, conjunctions,
+ * pronouns, auxiliaries. Shared by keyword captions, KeywordSlam/KineticText text choice and per-word reveals.
+ */
+export const FUNCTION_WORDS: Readonly<Record<"en" | "fr", ReadonlySet<string>>> = {
+  en: new Set(["a", "an", "the", "of", "to", "in", "on", "at", "for", "and", "or", "but", "with", "by", "from", "they", "he", "she", "it", "we", "you", "i", "his", "her", "their", "its", "was", "were", "is", "are", "be", "had", "has", "have", "that", "this", "as", "so", "than", "then", "what", "who", "which", "not", "no"]),
+  fr: new Set(["le", "la", "les", "l", "un", "une", "des", "de", "du", "d", "a", "au", "aux", "en", "dans", "sur", "pour", "par", "avec", "et", "ou", "mais", "il", "elle", "ils", "elles", "on", "nous", "vous", "je", "son", "sa", "ses", "leur", "leurs", "est", "sont", "etait", "que", "qui", "ce", "cette", "ne", "pas", "se", "s", "qu"]),
+};
+
+/** True when `word` (any form; normalised here) is a function word of `lang` (both languages when omitted). */
+export function isFunctionWord(word: string, lang?: "en" | "fr"): boolean {
+  const n = normWord(word);
+  if (n === "") return true;
+  // elided French forms ("l'", "d'", "qu'") normalise with their apostrophe
+  const base = n.replace(/'$/, "");
+  return lang ? FUNCTION_WORDS[lang].has(base) : FUNCTION_WORDS.en.has(base) || FUNCTION_WORDS.fr.has(base);
+}
+
 export function wordId(segmentId: string, idx: number): string {
   return `${segmentId}:${idx}`;
 }

@@ -1,15 +1,17 @@
-// TimelineGraphic (M2): a line draws on (evolvePath) to each event as it pops at its `at`; dates above, labels below;
+// TimelineGraphic (M2): a line draws on (evolvePath) to each event as it pops at its `at`; dates above (viewer-facing
+// labels resolved by the director, fitted to one line), labels below;
 // the active index is highlighted (accent, larger); the camera tracks the newest event when the line is wider than
 // the frame.
 import type React from "react";
 import { AbsoluteFill } from "remotion";
 import { evolvePath } from "@remotion/paths";
-import { accentOf, fontStack, useEnv } from "../data/env";
+import { accentOf, familyOf, fontStack, useEnv } from "../data/env";
 import { rgba } from "../lib/color";
 import { clamp, clamp01, inOutCubic } from "../lib/easing";
 import { ease as motionEase } from "../lib/motion";
 import { seedOf } from "../lib/random";
 import { GeneratedBackdrop } from "../media/GeneratedBackdrop";
+import { fitFontSize } from "./fit";
 import { pushScale, useItemClock, type ComponentProps } from "./shared";
 
 export const TimelineGraphic: React.FC<ComponentProps<"TimelineGraphic">> = ({ item }) => {
@@ -36,6 +38,10 @@ export const TimelineGraphic: React.FC<ComponentProps<"TimelineGraphic">> = ({ i
   const viewW = 1640;
   const camX = total > viewW ? clamp(lineX - viewW * 0.6, 0, total - viewW) : (total - viewW) / 2;
   const y0 = 540;
+  // date labels ("5 Feb 1637", "24 sept. 1637") stay on one line inside their slot: shrink to fit, never wrap or overlap
+  const family = familyOf(env.tokens, "headline");
+  const slotW = Math.min(400, n > 1 ? spacing - 24 : 400);
+  const dateSize = (label: string, isActive: boolean) => fitFontSize(label, { family, width: slotW, max: isActive ? 84 : 60, min: 28 });
   return (
     <AbsoluteFill style={{ opacity: 1 - c.outP }}>
       <GeneratedBackdrop recipe="darkNoise" seed={seedOf(item.id)} />
@@ -54,7 +60,7 @@ export const TimelineGraphic: React.FC<ComponentProps<"TimelineGraphic">> = ({ i
             return (
               <div key={i} style={{ position: "absolute", left: xs[i]!, top: 0, width: 0, height: 0 }}>
                 <div style={{ position: "absolute", left: -size / 2, top: -size / 2, width: size, height: size, borderRadius: "50%", backgroundColor: isActive ? accent : pal.text, border: `5px solid ${pal.ink}`, transform: `scale(${s.toFixed(4)})` }} />
-                <div style={{ position: "absolute", left: -200, width: 400, bottom: 40, textAlign: "center", fontFamily: fontStack(env.tokens, "headline"), fontSize: isActive ? 84 : 60, lineHeight: 1, color: isActive ? accent : pal.text, opacity: clamp01(t / 5), transform: `translateY(${(16 * (1 - clamp01(t / 8))).toFixed(2)}px)` }}>{e.dateLabel}</div>
+                <div style={{ position: "absolute", left: -200, width: 400, bottom: 40, textAlign: "center", whiteSpace: "nowrap", fontFamily: fontStack(env.tokens, "headline"), fontSize: dateSize(e.dateLabel, isActive), lineHeight: 1, color: isActive ? accent : pal.text, opacity: clamp01(t / 5), transform: `translateY(${(16 * (1 - clamp01(t / 8))).toFixed(2)}px)` }}>{e.dateLabel}</div>
                 <div style={{ position: "absolute", left: -180, width: 360, top: 40, textAlign: "center", fontFamily: fontStack(env.tokens, "body"), fontWeight: 600, fontSize: 30, lineHeight: 1.2, color: rgba(pal.text, isActive ? 1 : 0.8), opacity: clamp01((t - 3) / 6) }}>{e.label}</div>
               </div>
             );

@@ -1,7 +1,7 @@
 // Step 10 — CAPTIONS (§9.3, §9.4): SRT groups (always), burned keyword phrases (drama default) or pop/karaoke/rail groups,
 // clip and translation subtitles; suppression under text cards and around keyword slams.
 import {
-  COMPONENT_META, ids, lerp, msToFrame, tokenizeDisplay, type CaptionDNA, type CaptionGroup, type LayoutWord, type WordTiming,
+  COMPONENT_META, FUNCTION_WORDS, ids, lerp, msToFrame, tokenizeDisplay, type CaptionDNA, type CaptionGroup, type LayoutWord, type WordTiming,
 } from "@docmaker/core";
 import { anchorAt, wordCount, type BeatCtx, type Ctx } from "./ctx";
 import type { Ov, OvState } from "./overlays";
@@ -248,10 +248,7 @@ export function buildCaptions(ctx: Ctx, st: OvState): CaptionResult {
 }
 
 /** Function words a keyword phrase never ends on. */
-const TRAIL_STOP: Record<"en" | "fr", ReadonlySet<string>> = {
-  en: new Set(["a", "an", "the", "of", "to", "in", "on", "at", "for", "and", "or", "but", "with", "by", "from", "they", "he", "she", "it", "we", "you", "i", "his", "her", "their", "its", "was", "were", "is", "are", "be", "had", "has", "have", "that", "this", "as", "so", "than", "then", "what", "who", "which", "not", "no"]),
-  fr: new Set(["le", "la", "les", "l", "un", "une", "des", "de", "du", "d", "a", "au", "aux", "en", "dans", "sur", "pour", "par", "avec", "et", "ou", "mais", "il", "elle", "ils", "elles", "on", "nous", "vous", "je", "son", "sa", "ses", "leur", "leurs", "est", "sont", "etait", "que", "qui", "ce", "cette", "ne", "pas", "se", "s", "qu"]),
-};
+const TRAIL_STOP = FUNCTION_WORDS;
 
 interface Phrase { seg: string; words: LayoutWord[]; from: number; dur: number; prio: number; gap: number }
 
