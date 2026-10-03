@@ -175,6 +175,11 @@ export async function persistApproval(rt: Runtime, store: ProjectStore, gate: Ga
   const fx = await prepareApproval(store, project, gate, a, { fixtureAllowed: o.fixtureAllowed, facts, stage: o.stage });
   if (fx.outline) await store.writeJson(P.outline, Outline, fx.outline, { writer: "user" });
   if (fx.factCheck) await store.writeJson(P.factcheck(fx.factCheck.lang), FactCheck, fx.factCheck, { writer: "user" });
+  if (gate === "style-confirm" && fx.projectPatch?.styleId && !project.styleConfirmed) {
+    // confirming a style applies its caption default (defaultProject cannot know the style, F note 7)
+    const reg = await rt.styles();
+    if (reg.has(fx.projectPatch.styleId)) fx.projectPatch = { ...fx.projectPatch, captions: reg.get(fx.projectPatch.styleId).data.captionDNA.defaultMode };
+  }
   if (fx.projectPatch) await updateProjectDoc(store, fx.projectPatch, "engine");
   // the outline approval binds to the outline as written (thesis confirmation included)
   const approval = gate === "outline-approval" && fx.outline ? { ...fx.approval, planHash: docHash(fx.outline) } : fx.approval;
