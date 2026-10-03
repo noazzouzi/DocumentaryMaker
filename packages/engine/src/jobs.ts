@@ -144,6 +144,7 @@ export class JobManager {
     const file = store.abs(P.jobEvents(jobId));
     let offset = 0;
     let carry = "";
+    let terminalSince: number | null = null;
     for (;;) {
       let chunk = "";
       try {
@@ -177,9 +178,11 @@ export class JobManager {
       const live = this.live.get(jobId);
       if (!live) {
         const rec = await this.getJob(jobId);
-        if (!rec || (isTerminal(rec.status) && !chunk)) {
-          // ended without a job-end line (e.g. reconciled by another process before it wrote one): stop
-          if (!rec || (await this.readIndexRecord(store, jobId))?.status !== "running") return;
+        if (!rec) return;
+        if (isTerminal(rec.status) && !chunk) {
+          // the index turns terminal just before job-end is appended: give the line a moment, then stop
+          terminalSince ??= Date.now();
+          if (Date.now() - terminalSince > 2_000) return;
         }
       }
       await new Promise<void>((resolve) => {
