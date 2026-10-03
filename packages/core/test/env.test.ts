@@ -72,6 +72,19 @@ describe("userAgentFor", () => {
     const none = loadRuntime({ cwd: root, env: { DOCMAKER_HOME: home } }).config;
     expect(userAgentFor("https://commons.wikimedia.org/", none)).toBe("DocumentaryMaker/9.9.9");
   });
+  it("appends the project homepage from the root package.json; placeholder URLs are ignored", async () => {
+    const { root, home } = await fakeRepo();
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "x", version: "9.9.9", homepage: "https://github.com/acme/documentary" }));
+    const a = loadRuntime({ cwd: root, env: { DOCMAKER_HOME: home } }).config;
+    expect(userAgentFor("https://commons.wikimedia.org/w/api.php", a)).toBe("DocumentaryMaker/9.9.9 (+https://github.com/acme/documentary)");
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "x", version: "9.9.9", homepage: "https://example.com/" }));
+    expect(loadRuntime({ cwd: root, env: { DOCMAKER_HOME: home } }).config.userAgentBase).toBe("DocumentaryMaker/9.9.9");
+  });
+  it("the shipped root package.json declares a project homepage (Wikimedia UA policy wants a URL or contact)", () => {
+    const pkg = JSON.parse(readFileSync(new URL("../../../package.json", import.meta.url), "utf8")) as { homepage?: unknown };
+    expect(pkg.homepage).toMatch(/^https:\/\/\S+$/);
+    expect(String(pkg.homepage)).not.toMatch(/@|example\.(com|org)/);
+  });
   it("never reads git config, the OS user or the hostname", () => {
     const src = readFileSync(new URL("../src/node/env.ts", import.meta.url), "utf8");
     expect(src).not.toMatch(/userInfo|hostname\(|\.gitconfig|git config|execSync|USERNAME|LOGNAME/);
@@ -95,6 +108,14 @@ describe("secrets helpers", () => {
     expect((await stat(path.join(home, ".env"))).mode & 0o777).toBe(0o600);
     await expect(writeSecret(home, "bad name", "x")).rejects.toThrow();
     await expect(writeSecret(home, "X", "a\nb")).rejects.toThrow();
+  });
+  it("writeSecret → parseEnvFile round-trips backslashes, quotes and a literal backslash-n", async () => {
+    const { home } = await fakeRepo();
+    const values = ["abc\\ndef", "a\\b", 'q"uo"te', "end\\", "\\\\n", '\\"', "plain-key_1.2"];
+    for (const [i, v] of values.entries()) await writeSecret(home, `K${i}`, v);
+    const parsed = parseEnvFile(await readFile(path.join(home, ".env"), "utf8"));
+    expect(values.map((_, i) => parsed[`K${i}`])).toEqual(values);
+    expect(parseEnvFile('A="x\\ny"\nB="x\\\\ny"\n')).toEqual({ A: "x\ny", B: "x\\ny" }); // \n escape still decodes to a newline
   });
   it("the logger redacts secret values and secret-like keys", () => {
     const lines: string[] = [];

@@ -1,6 +1,8 @@
 {
   "name": "documentarymaker",
   "private": true,
+  "homepage": "https://github.com/noazzouzi/DocumentaryMaker",
+  "repository": { "type": "git", "url": "git+https://github.com/noazzouzi/DocumentaryMaker.git" },
   "type": "module",
   "packageManager": "pnpm@10.28.0",
   "engines": { "node": ">=22.12.0 <23" },

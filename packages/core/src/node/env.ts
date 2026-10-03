@@ -42,7 +42,8 @@ export function parseEnvFile(text: string): Record<string, string> {
     let v = m[2]!;
     if (v.startsWith('"')) {
       const end = v.lastIndexOf('"');
-      v = (end > 0 ? v.slice(1, end) : v.slice(1)).replace(/\\n/g, "\n").replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+      // one pass, so an escaped backslash followed by "n" (`\\n`) stays a backslash + "n" (quoteEnvValue's inverse)
+      v = (end > 0 ? v.slice(1, end) : v.slice(1)).replace(/\\([\\"n])/g, (_, c: string) => (c === "n" ? "\n" : c));
     } else if (v.startsWith("'")) {
       const end = v.lastIndexOf("'");
       v = end > 0 ? v.slice(1, end) : v.slice(1);
