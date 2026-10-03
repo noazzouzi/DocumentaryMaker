@@ -1,5 +1,6 @@
 // AudioLayer (preview only, §10.4/§4.18): @remotion/media <Audio> with the SAME gain tables as the offline mixer.
-// voProgram at 0 dB × G.vo; music sections (loop, trimBefore); SFX (loop, fades); clip audio (ducked when duckUnderVo):
+// voProgram at 0 dB × G.vo; music sections (loop, trimBefore); SFX (loop, fades); clip audio (ducked when duckUnderVo,
+// silences such as bleeps always):
 // volume(f) = table[min(N−1, item.from + f)] · dbToGain(item.gainDb) · itemEnvelope(item, f).
 // Pan is not available in @remotion/media: SFX pans and RL sweeps are heard only in the final mix.
 import type React from "react";
@@ -52,7 +53,11 @@ export const AudioLayer: React.FC = () => {
         if (!src || c.dur <= 0) return null;
         return (
           <Sequence key={c.id} from={c.from} durationInFrames={c.dur} premountFor={env.fps} name={c.id}>
-            <Audio src={src} trimBefore={c.sourceInFrames} volume={(f) => clampVol((c.duckUnderVo ? at(gains.clip, c.from + f) : 1) * dbToGain(c.gainDb))} />
+            {/* not ducked: only the silence mask applies (silences are exact zeros in the table; ducking never reaches 0) */}
+            <Audio src={src} trimBefore={c.sourceInFrames} volume={(f) => {
+              const g = at(gains.clip, c.from + f);
+              return clampVol((c.duckUnderVo ? g : g === 0 ? 0 : 1) * dbToGain(c.gainDb));
+            }} />
           </Sequence>
         );
       })}
