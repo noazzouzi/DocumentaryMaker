@@ -9,7 +9,7 @@ import { concatListLine } from "../src/concat";
 describe("presets (§12.2)", () => {
   it("draft: half scale, veryfast, crf 23, jpeg 80, no post", () => {
     expect(presetRenderOptions("draft", { gpu: false })).toEqual({
-      codec: "h264-ts", scale: 0.5, imageFormat: "jpeg", jpegQuality: 80, pixelFormat: "yuv420p", muted: true, x264Preset: "veryfast", crf: 23,
+      codec: "h264-ts", scale: 0.5, imageFormat: "jpeg", jpegQuality: 80, pixelFormat: "yuv420p", muted: true, x264Preset: "veryfast", crf: 23, colorSpace: "bt709",
     });
     expect(PRESETS.draft.post).toBe(false);
     expect(presetSize("draft")).toEqual({ width: 960, height: 540 });
@@ -17,7 +17,7 @@ describe("presets (§12.2)", () => {
 
   it("master: full scale, medium, crf 18, jpeg 92, post; GPU host → hardware acceleration + 10M, no crf", () => {
     expect(presetRenderOptions("master", { gpu: false })).toEqual({
-      codec: "h264-ts", scale: 1, imageFormat: "jpeg", jpegQuality: 92, pixelFormat: "yuv420p", muted: true, x264Preset: "medium", crf: 18,
+      codec: "h264-ts", scale: 1, imageFormat: "jpeg", jpegQuality: 92, pixelFormat: "yuv420p", muted: true, x264Preset: "medium", crf: 18, colorSpace: "bt709",
     });
     const gpu = presetRenderOptions("master", { gpu: true });
     expect(gpu.hardwareAcceleration).toBe("if-possible");
@@ -60,8 +60,8 @@ describe("chunk range, post filter, mux and concat arguments", () => {
 
   it("post: lut3d + temporal grain, nothing when both are off", () => {
     expect(postFilter({ lutFile: null, grain: 0 })).toBeNull();
-    expect(postFilter({ lutFile: "grade.cube", grain: 4 })).toBe("lut3d=file=grade.cube:interp=tetrahedral,noise=alls=4:allf=t,format=yuv420p");
-    expect(postFilter({ lutFile: null, grain: 99 })).toBe("noise=alls=16:allf=t,format=yuv420p");
+    expect(postFilter({ lutFile: "grade.cube", grain: 4 })).toBe("lut3d=file=grade.cube:interp=tetrahedral,noise=alls=4:allf=t,scale=out_color_matrix=bt709:out_range=tv,format=yuv420p");
+    expect(postFilter({ lutFile: null, grain: 99 })).toBe("noise=alls=16:allf=t,scale=out_color_matrix=bt709:out_range=tv,format=yuv420p");
   });
 
   it("mux: exact -t, AAC 256k 48 kHz stereo, silent track without a mix, -ss for a frame range", () => {

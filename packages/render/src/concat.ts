@@ -3,6 +3,7 @@
 import { rm, writeFile } from "node:fs/promises";
 import { DocmakerError, type Logger, type RuntimeConfig } from "@docmaker/core";
 import { countVideoFrames, ffAtomic } from "./ff";
+import { BT709_TV_ARGS } from "./presets";
 
 /** concat demuxer list line (single quotes escaped the ffmpeg way). */
 export const concatListLine = (file: string): string => `file '${file.replace(/'/g, "'\\''")}'`;
@@ -28,7 +29,7 @@ export async function concatChunks(files: readonly string[], out: string, o: Con
     o.logger.warn("stream-copy concat is not frame-exact; re-encoding", { frames, expected: o.expectedFrames });
     await ffAtomic([
       "-f", "concat", "-safe", "0", "-i", list, "-map", "0:v:0", "-c:v", "libx264", "-preset", o.x264Preset, "-crf", String(o.crf),
-      "-pix_fmt", "yuv420p", "-fps_mode", "cfr", "-r", String(o.fps), "-frames:v", String(o.expectedFrames), "-movflags", "+faststart", "-f", "mp4",
+      "-pix_fmt", "yuv420p", ...BT709_TV_ARGS, "-fps_mode", "cfr", "-r", String(o.fps), "-frames:v", String(o.expectedFrames), "-movflags", "+faststart", "-f", "mp4",
     ], out, { config: o.config, signal: o.signal, onProgress });
     frames = await countVideoFrames(out, o);
     if (frames !== o.expectedFrames) throw new DocmakerError("RENDER_FAILED", `concatenated video has ${frames} frames, expected ${o.expectedFrames}`);

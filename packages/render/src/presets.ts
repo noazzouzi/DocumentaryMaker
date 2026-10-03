@@ -19,19 +19,36 @@ export interface PresetSpec {
   post: boolean;
   proResProfile: "4444" | null;
   pixelFormat: "yuv420p" | "yuva444p10le";
+  /**
+   * Remotion colorSpace. "bt709" makes Remotion convert the full-range JPEG/PNG frames to limited-range BT.709
+   * (zscale) and tag the stream (colorspace/primaries/trc bt709, color_range tv). Without it x264 keeps the JPEG
+   * full range and the H.264 stream reads as `yuvj420p` (ISSUES 2026-10-03 engine → render).
+   */
+  colorSpace: "bt709" | null;
 }
 
+/**
+ * Bumped whenever the chunk encoding changes in a way the slice hash cannot see (pixel format, range, colour tags), so
+ * chunks cached by an older encoder are never concatenated with new ones. v2: limited-range BT.709 (was yuvj420p).
+ */
+export const CHUNK_ENCODING_VERSION = 2;
+/** The `preset` string that goes into `sliceHash` (preset id + chunk encoding version). */
+export const chunkHashPreset = (preset: PresetId): string => `${preset}@enc${CHUNK_ENCODING_VERSION}`;
+
+/** Output colour tags of every 8-bit H.264 re-encode (concat fallback, master post): limited-range BT.709. */
+export const BT709_TV_ARGS: readonly string[] = ["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv"];
+
 export const PRESETS: Record<PresetId, PresetSpec> = {
-  draft: { id: "draft", scale: 0.5, codec: "h264-ts", x264Preset: "veryfast", crf: 23, imageFormat: "jpeg", jpegQuality: 80, post: false, proResProfile: null, pixelFormat: "yuv420p" },
-  master: { id: "master", scale: 1, codec: "h264-ts", x264Preset: "medium", crf: 18, imageFormat: "jpeg", jpegQuality: 92, post: true, proResProfile: null, pixelFormat: "yuv420p" },
-  overlay: { id: "overlay", scale: 1, codec: "prores", x264Preset: null, crf: null, imageFormat: "png", jpegQuality: null, post: false, proResProfile: "4444", pixelFormat: "yuva444p10le" },
+  draft: { id: "draft", scale: 0.5, codec: "h264-ts", x264Preset: "veryfast", crf: 23, imageFormat: "jpeg", jpegQuality: 80, post: false, proResProfile: null, pixelFormat: "yuv420p", colorSpace: "bt709" },
+  master: { id: "master", scale: 1, codec: "h264-ts", x264Preset: "medium", crf: 18, imageFormat: "jpeg", jpegQuality: 92, post: true, proResProfile: null, pixelFormat: "yuv420p", colorSpace: "bt709" },
+  overlay: { id: "overlay", scale: 1, codec: "prores", x264Preset: null, crf: null, imageFormat: "png", jpegQuality: null, post: false, proResProfile: "4444", pixelFormat: "yuva444p10le", colorSpace: null },
 };
 
 /** The renderMedia options a preset maps to (GPU hosts: hardware acceleration if possible + 10M bitrate for master). */
 export interface PresetRenderOptions {
   codec: "h264-ts" | "prores"; scale: number; imageFormat: "jpeg" | "png"; pixelFormat: "yuv420p" | "yuva444p10le"; muted: true;
   jpegQuality?: number; x264Preset?: "veryfast" | "medium"; proResProfile?: "4444"; crf?: number;
-  hardwareAcceleration?: "if-possible"; videoBitrate?: string;
+  hardwareAcceleration?: "if-possible"; videoBitrate?: string; colorSpace?: "bt709";
 }
 export function presetRenderOptions(preset: PresetId, o: { gpu: boolean }): PresetRenderOptions {
   const p = PRESETS[preset];
@@ -39,6 +56,7 @@ export function presetRenderOptions(preset: PresetId, o: { gpu: boolean }): Pres
   if (p.jpegQuality !== null) out.jpegQuality = p.jpegQuality;
   if (p.x264Preset) out.x264Preset = p.x264Preset;
   if (p.proResProfile) out.proResProfile = p.proResProfile;
+  if (p.colorSpace) out.colorSpace = p.colorSpace;
   if (preset === "master" && o.gpu) {
     out.hardwareAcceleration = "if-possible";
     out.videoBitrate = "10M"; // Remotion refuses crf together with a bitrate

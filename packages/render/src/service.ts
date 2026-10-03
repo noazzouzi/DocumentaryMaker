@@ -23,7 +23,7 @@ import { loudnessGate } from "./loudnessGate";
 import { cachedLutCube } from "./lut";
 import { muxMaster } from "./mux";
 import { masterPost } from "./post";
-import { commonRemotionOptions, PRESETS, presetRenderOptions, resolveConcurrency, type GlMode } from "./presets";
+import { chunkHashPreset, commonRemotionOptions, PRESETS, presetRenderOptions, resolveConcurrency, type GlMode } from "./presets";
 import { ProgressTracker } from "./progress";
 import { COMPOSITIONS, loadRenderer, type BrowserLog, type HeadlessBrowser } from "./remotion";
 import { buildContactSheets, frameLabel } from "./sheets";
@@ -282,7 +282,7 @@ export class RenderService {
         for (const c of planned) {
           if (signal.aborted) throw abortError("render");
           const frames = c.to - c.from + 1;
-          const hash = sliceHash(timeline, c.from, c.to, { codeHash, preset: req.preset, premount: fps });
+          const hash = sliceHash(timeline, c.from, c.to, { codeHash, preset: chunkHashPreset(req.preset), premount: fps });
           const file = path.join(req.projectDir, P.renderChunk(lang, req.preset, hash));
           const tc = Date.now();
           const label = `chunk ${c.index + 1}/${planned.length}`;

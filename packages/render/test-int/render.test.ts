@@ -134,6 +134,8 @@ describe("render (§12.3, §16.2.2)", () => {
     const v = p.streams.find((s) => s.codec_type === "video")!;
     const a = p.streams.find((s) => s.codec_type === "audio")!;
     expect([v.codec_name, v.width, v.height]).toEqual(["h264", 960, 540]);
+    // limited-range BT.709 (§16.4: yuv420p; a full-range JPEG pipeline would read as yuvj420p)
+    expect([v.pix_fmt, v.color_range, v.color_space]).toEqual(["yuv420p", "tv", "bt709"]);
     expect([a.codec_name, a.sample_rate, a.channels]).toEqual(["aac", "48000", 2]);
     expect(Number(p.format.duration)).toBeGreaterThan(4.98);
     expect(Number(p.format.duration)).toBeLessThan(5.05);
@@ -174,6 +176,7 @@ describe("render (§12.3, §16.2.2)", () => {
     const final = path.join(projectDir, r.outFile);
     const v = probeJson(final).streams.find((s) => s.codec_type === "video")!;
     expect([v.width, v.height]).toEqual([1920, 1080]);
+    expect([v.pix_fmt, v.color_range, v.color_space]).toEqual(["yuv420p", "tv", "bt709"]); // post keeps limited-range BT.709
     expect(probeFrames(final)).toBe(30);
     expect(progressOf(events).some((e) => e.detail.phase === "post")).toBe(true);
     expect((await readdir(path.join(config.paths.cache, "luts"))).filter((f) => f.endsWith(".cube"))).toHaveLength(1);

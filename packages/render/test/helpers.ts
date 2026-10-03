@@ -35,7 +35,7 @@ export function probeFrames(file: string): number {
   return Number.parseInt(r.stdout.trim(), 10);
 }
 
-export function probeJson(file: string): { format: { duration: string }; streams: { codec_type: string; codec_name: string; width?: number; height?: number; sample_rate?: string; channels?: number; duration?: string }[] } {
+export function probeJson(file: string): { format: { duration: string }; streams: { codec_type: string; codec_name: string; width?: number; height?: number; sample_rate?: string; channels?: number; duration?: string; pix_fmt?: string; color_range?: string; color_space?: string }[] } {
   const r = spawnSync("ffprobe", ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", file], { encoding: "utf8" });
   return JSON.parse(r.stdout);
 }
