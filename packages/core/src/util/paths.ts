@@ -81,6 +81,7 @@ export const P = {
   qaReport: (lang: Lang, preset: string) => `qa/${lang}/${preset}/report.json`,
   qaSheets: (lang: Lang, preset: string) => `qa/${lang}/${preset}/sheets/`,
   history: (rel: string) => `.history/${rel}/`, // last 20 versions of user-editable docs
+  writeLock: (rel: string) => `.locks/${rel}.lock`, // per-document write lock (read-compare-write of writeJson; held for milliseconds)
 } as const;
 export type ProjectPaths = typeof P;
 

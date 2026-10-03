@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -90,6 +90,44 @@ describe("ProjectStore", () => {
     const b = await store.writeJson(P.script("en"), Script, { ...s, title: "x" }, { writer: "user", ifMatch: a.etag });
     expect(await code(store.writeJson(P.script("en"), Script, { ...s, title: "y" }, { writer: "user", ifMatch: a.etag }))).toBe("CONFLICT");
     expect(b.changed).toBe(true);
+  });
+  it("concurrent writers on the same base etag: exactly one wins, the other gets CONFLICT (no silent lost edit)", async () => {
+    const s = makeScript();
+    const a = await store.writeJson(P.script("en"), Script, s, { writer: "user", ifMatch: null });
+    for (let round = 0; round < 5; round++) {
+      const base = (await store.etag(P.script("en")))!;
+      const results = await Promise.all(["edit A", "edit B", "edit C"].map((title) =>
+        code(store.writeJson(P.script("en"), Script, { ...s, title: `${title} ${round}` }, { writer: "user", ifMatch: base }))));
+      expect(results.filter((r) => r === "ok")).toHaveLength(1);
+      expect(results.filter((r) => r === "CONFLICT")).toHaveLength(2);
+      const winner = ["edit A", "edit B", "edit C"][results.indexOf("ok")];
+      expect((await store.readJson(P.script("en"), Script)).title).toBe(`${winner} ${round}`);
+    }
+    expect(a.changed).toBe(true);
+    // the same holds across two store instances (two ProjectStore handles share the per-path lock)
+    const other = await ProjectStore.open(root, store.slug);
+    const base = (await store.etag(P.script("en")))!;
+    const r = await Promise.all([
+      code(store.writeJson(P.script("en"), Script, { ...s, title: "one" }, { writer: "user", ifMatch: base })),
+      code(other.writeJson(P.script("en"), Script, { ...s, title: "two" }, { writer: "user", ifMatch: base })),
+    ]);
+    expect([...r].sort()).toEqual(["CONFLICT", "ok"]);
+    expect(await readdir(path.dirname(store.abs(P.writeLock(P.script("en")))))).toEqual([]); // locks released
+  });
+  it("waits for a write lock held by another live process, then proceeds", async () => {
+    const s = makeScript();
+    await store.writeJson(P.script("en"), Script, s, { writer: "user", ifMatch: null });
+    const lock = store.abs(P.writeLock(P.script("en")));
+    await mkdir(path.dirname(lock), { recursive: true });
+    await writeFile(lock, JSON.stringify({ pid: process.ppid > 1 ? process.ppid : 1, owner: "other-process", at: new Date().toISOString() }));
+    let settled = false;
+    const p = store.writeJson(P.script("en"), Script, { ...s, title: "after lock" }, { writer: "user" }).finally(() => { settled = true; });
+    await new Promise((r) => setTimeout(r, 120));
+    expect(settled).toBe(false);
+    expect((await store.readJson(P.script("en"), Script)).title).not.toBe("after lock");
+    await rm(lock);
+    expect((await p).changed).toBe(true);
+    expect((await store.readJson(P.script("en"), Script)).title).toBe("after lock");
   });
   it("reads with migration and refuses paths outside the project", async () => {
     registerMigration("factsheet", 0, (r) => ({ ...r, gaps: r.gaps ?? [] }));

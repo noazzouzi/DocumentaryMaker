@@ -11,7 +11,7 @@ import { migrateDoc } from "../util/migrate";
 import { DocmakerError } from "../util/errors";
 import { atomicWrite } from "./fsutil";
 import { sha256Bytes } from "./hash";
-import { releaseLock, tryAcquireLock } from "./locks";
+import { releaseLock, tryAcquireLock, withFileLock } from "./locks";
 
 export interface StoreWriteOptions {
   ifMatch?: string | null; // optimistic concurrency on BYTE etags → CONFLICT on mismatch (null = must not exist)
@@ -20,6 +20,25 @@ export interface StoreWriteOptions {
 }
 
 const HISTORY_KEEP = 20;
+const WRITE_LOCK_TIMEOUT_MS = 30_000;
+const WRITE_LOCK_POLL_MS = 15;
+
+/** In-process FIFO mutex per document path (the file lock below covers other processes: web ↔ job worker). */
+const inProcess = new Map<string, Promise<void>>();
+async function withPathMutex<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = inProcess.get(key) ?? Promise.resolve();
+  let done!: () => void;
+  const mine = new Promise<void>((r) => { done = r; });
+  const tail = prev.then(() => mine);
+  inProcess.set(key, tail);
+  await prev;
+  try {
+    return await fn();
+  } finally {
+    done();
+    if (inProcess.get(key) === tail) inProcess.delete(key);
+  }
+}
 const isoForFile = (d: Date) => d.toISOString().replace(/:/g, "-");
 const isoFromFile = (s: string) => s.replace(/^(\d{4}-\d{2}-\d{2}T\d{2})-(\d{2})-(\d{2}(?:\.\d+)?Z)$/, "$1:$2:$3");
 
@@ -141,7 +160,24 @@ export class ProjectStore {
       if (!reg.success) throw new DocmakerError("VALIDATION", `${rel}: value does not match the registered ${entry.kind} schema`, { details: zodIssues(reg.error) });
     }
     const nextHash = docHash(next);
+    const lockPath = this.abs(P.writeLock(rel));
+    // The read → ifMatch compare → history → write sequence must be atomic per document, or two writers holding the
+    // same base etag both pass the check and the later rename silently drops the earlier edit.
+    return withPathMutex(lockPath, async () => {
+      try {
+        return await withFileLock(lockPath, `store:${rel}`, () => this.writeLocked(rel, abs, entry, schema, next, nextHash, opts), {
+          signal: AbortSignal.timeout(WRITE_LOCK_TIMEOUT_MS), pollMs: WRITE_LOCK_POLL_MS,
+        });
+      } catch (e) {
+        if (e instanceof DocmakerError && e.code === "CANCELED") {
+          throw new DocmakerError("LOCKED", `${rel} is being written by another process`, { retryable: true, hint: `stale lock? remove ${lockPath}` });
+        }
+        throw e;
+      }
+    });
+  }
 
+  private async writeLocked(rel: string, abs: string, entry: DocRegistryEntry | null, schema: z.ZodType, next: unknown, nextHash: string, opts: StoreWriteOptions): Promise<{ etag: string; docHash: string; changed: boolean }> {
     let old: { bytes: Buffer; value: unknown } | null = null;
     try {
       old = await this.readRaw(rel);
