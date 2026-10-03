@@ -1,9 +1,11 @@
 // Defamation / privacy safety nets (P3 review): blocked-person names, attribution lexicon, gating rules c/f/i,
 // fact-sheet masking in prompts.
 import { describe, expect, it } from "vitest";
+import type { z } from "zod";
 import { type BeatLang, type BeatPlan, type FactSheet, type Script, type ScriptSegment } from "@docmaker/core";
 import { TEST_NOW, makeBeats, makeFactSheet, makeScript } from "@docmaker/core/testing";
-import { ACCUSATORY, ATTRIBUTION, deterministicFactChecks, factSheetToWire, lintScript } from "../src/index";
+import { ACCUSATORY, ATTRIBUTION, deterministicFactChecks, factSheetToWire, lintScript, recheck, type LlmClient, type ResearchResult, type StructuredRequest } from "../src/index";
+import { makeCtx } from "./helpers";
 import { maskPersons, mentionsPerson } from "../src/text";
 
 function seg(id: string, displayText: string, o: Partial<ScriptSegment> = {}): ScriptSegment {
@@ -120,5 +122,35 @@ describe("(f) accusatory on-screen text names a person the model did not tag", (
       script: { ...script, chapters: [] }, plans: { ...plans, plans: [plan] }, slices: { ...slices, texts: [text] }, factSheet: facts(), publish: null, riskFlags: [],
     });
     expect(xs.filter((x) => x.rule === "f").map((x) => [x.sentence, x.risk, x.factIds])).toEqual([["JOHN SMITH: FRAUDSTER", "high", ["P1"]], ["FRAUDSTER", "high", ["P1"]]]);
+  });
+});
+
+describe("recheck: a status change needs a supporting source", () => {
+  class RecheckLlm implements LlmClient {
+    readonly kind = "fixture" as const;
+    constructor(private readonly claims: unknown[]) {}
+    async structured<S extends z.ZodType>(req: StructuredRequest<S>): Promise<z.infer<S>> {
+      return req.schema.parse({ claims: this.claims });
+    }
+    async research(): Promise<ResearchResult> {
+      return { dossierMarkdown: "notes", searchesUsed: 1, fetchesUsed: 0, turns: 1,
+        registry: [{ id: "S1", url: "https://court.example/ruling", title: "Ruling", pageAge: null, fetched: false, cited: 1, snippets: [] }] };
+    }
+  }
+  const w = (o: Record<string, unknown>) => ({ id: "C4", status: "criminal_conviction", jurisdiction: "", decision_date: "", subject_response: "", changed: true, note: "", source_urls: [], ...o });
+  it("unsourced (or invented-URL) change → old status kept, not checked, listed as unverified", async () => {
+    for (const urls of [[], ["https://invented.example/x"]]) {
+      const out = await recheck(makeCtx(new RecheckLlm([w({ source_urls: urls })])), { factSheet: facts(), claimIds: ["C4"], asOf: "2026-10-03" });
+      expect(out.factSheet.claims.find((c) => c.id === "C4")!.status).toBe("charged_pending");
+      expect([out.changed, out.checked]).toEqual([[], []]);
+      expect(out.unverified).toEqual([{ id: "C4", from: "charged_pending", to: "criminal_conviction", sourceIds: [] }]);
+    }
+  });
+  it("sourced change applied; an upgrade to an established status is reported", async () => {
+    const out = await recheck(makeCtx(new RecheckLlm([w({ source_urls: ["https://court.example/ruling"] })])), { factSheet: facts(), claimIds: ["C4"], asOf: "2026-10-03" });
+    const c4 = out.factSheet.claims.find((c) => c.id === "C4")!;
+    expect(c4.status).toBe("criminal_conviction");
+    expect([out.changed, out.checked]).toEqual([["C4"], ["C4"]]);
+    expect(out.upgrades).toEqual([{ id: "C4", from: "charged_pending", to: "criminal_conviction", sourceIds: [c4.sourceIds[c4.sourceIds.length - 1]] }]);
   });
 });

@@ -1,6 +1,6 @@
 // Step 6 fact-check (LLM per chapter + deterministic rules a–h, resolutions carried over) and 6b recheck.
 import {
-  FactCheck, FactSheet, hashJson, type BeatPlansDoc, type BeatSlicesDoc, type PublishInfo, type RiskFlag, type Script, type Source,
+  ESTABLISHED_STATUSES, FactCheck, FactSheet, hashJson, type BeatPlansDoc, type BeatSlicesDoc, type PublishInfo, type RiskFlag, type Script, type Source,
 } from "@docmaker/core";
 import { carryOverResolutions, deterministicFactChecks, factCheckId } from "../factcheck/rules";
 import { splitSentences } from "../lexicon";
@@ -74,14 +74,24 @@ export async function factCheck(ctx: StepCtx, i: {
   });
 }
 
+/** A status change proposed by the recheck (from → to) and the fact-sheet sources supporting it. */
+export interface RecheckStatusChange { id: string; from: string; to: string; sourceIds: string[] }
+
 /** 6b: re-research the status of pending claims (web_search ≤ 10), then a structured delta merged into the fact sheet. */
 /**
  * `changed`: re-checked claims whose status (or decision date, subject response) changed. `checked`: every requested claim
  * the structured output actually covered (changed or not) — a claim the output omitted was NOT re-checked.
+ * A status change is applied only when at least one of its source_urls is a URL the recheck searches returned; otherwise
+ * the old status is kept and the claim is listed in `unverified` (and NOT in `checked`: it stays pending, the gate holds).
+ * `upgrades`: applied (sourced) changes into an established status (conviction, judicial finding, established fact),
+ * which switch off attribution checks downstream — logged so the user reviews them.
  */
-export async function recheck(ctx: StepCtx, i: { factSheet: FactSheet; claimIds: string[]; asOf: string }): Promise<{ factSheet: FactSheet; changed: string[]; checked: string[] }> {
+export async function recheck(ctx: StepCtx, i: { factSheet: FactSheet; claimIds: string[]; asOf: string }): Promise<{
+  // optional in the type only (always returned): keeps existing callers' fakes valid
+  factSheet: FactSheet; changed: string[]; checked: string[]; unverified?: RecheckStatusChange[]; upgrades?: RecheckStatusChange[];
+}> {
   const targets = i.factSheet.claims.filter((c) => i.claimIds.includes(c.id));
-  if (targets.length === 0) return { factSheet: i.factSheet, changed: [], checked: [] };
+  if (targets.length === 0) return { factSheet: i.factSheet, changed: [], checked: [], unverified: [], upgrades: [] };
   const claimsJson = json(targets.map((c) => ({
     id: c.id, summary: c.summary, made_by: c.madeBy, against: c.against, status: c.status, jurisdiction: c.jurisdiction,
     decision_date: c.decisionDate, subject_response: c.subjectResponse, as_of: c.asOf,
@@ -100,11 +110,14 @@ export async function recheck(ctx: StepCtx, i: { factSheet: FactSheet; claimIds:
   const byUrl = new Map(notes.registry.map((r) => [r.url, r]));
   const changed: string[] = [];
   const checked: string[] = [];
+  const unverified: RecheckStatusChange[] = [];
+  const upgrades: RecheckStatusChange[] = [];
+  const established = ESTABLISHED_STATUSES as readonly string[];
   const claims = i.factSheet.claims.map((c) => {
     const w = wire.claims.find((x) => x.id.trim().toUpperCase() === c.id);
     if (!w || !i.claimIds.includes(c.id)) return c;
-    checked.push(c.id);
     const sourceIds = [...c.sourceIds];
+    const supporting: string[] = [];
     for (const url of w.source_urls) {
       const r = byUrl.get(url.trim());
       if (!r) continue; // only URLs the API returned
@@ -117,13 +130,25 @@ export async function recheck(ctx: StepCtx, i: { factSheet: FactSheet; claimIds:
         sources.push(s);
       }
       if (!sourceIds.includes(s.id)) sourceIds.push(s.id);
+      if (!supporting.includes(s.id)) supporting.push(s.id);
     }
+    if (w.status !== c.status && supporting.length === 0) {
+      // a status change with no provenance (no returned URL supports it): never applied, the claim stays pending
+      unverified.push({ id: c.id, from: c.status, to: w.status, sourceIds: [] });
+      ctx.logger.warn("recheck: status change without a supporting source ignored", { claim: c.id, from: c.status, to: w.status });
+      return c;
+    }
+    checked.push(c.id);
     const next = {
       ...c, status: w.status, jurisdiction: w.jurisdiction.trim() || c.jurisdiction, decisionDate: w.decision_date.trim() || c.decisionDate,
       subjectResponse: w.subject_response.trim() || c.subjectResponse, asOf: i.asOf, sourceIds,
     };
+    if (next.status !== c.status && established.includes(next.status) && !established.includes(c.status)) {
+      upgrades.push({ id: c.id, from: c.status, to: next.status, sourceIds: supporting });
+      ctx.logger.warn("recheck: claim upgraded to an established status — review it before publishing", { claim: c.id, from: c.status, to: next.status, sources: supporting });
+    }
     if (w.changed || next.status !== c.status || next.decisionDate !== c.decisionDate || next.subjectResponse !== c.subjectResponse) changed.push(c.id);
     return next;
   });
-  return { factSheet: FactSheet.parse({ ...i.factSheet, sources, claims }), changed, checked };
+  return { factSheet: FactSheet.parse({ ...i.factSheet, sources, claims }), changed, checked, unverified, upgrades };
 }
