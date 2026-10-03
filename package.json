@@ -13,11 +13,11 @@
     "test:e2e": "vitest run --project e2e",
     "test:watch": "vitest --project '!e2e' --project '!render-int'",
     "smoke": "tsx scripts/smoke.ts",
-    "docmaker": "node apps/cli/bin/docmaker.js",
-    "demo": "node apps/cli/bin/docmaker.js demo --offline",
+    "docmaker": "node --disable-warning=UNDICI-EHPA apps/cli/bin/docmaker.js",
+    "demo": "node --disable-warning=UNDICI-EHPA apps/cli/bin/docmaker.js demo --offline",
     "dev:web": "pnpm --filter @docmaker/web dev",
-    "setup": "node apps/cli/bin/docmaker.js setup",
-    "doctor": "node apps/cli/bin/docmaker.js doctor",
+    "setup": "node --disable-warning=UNDICI-EHPA apps/cli/bin/docmaker.js setup",
+    "doctor": "node --disable-warning=UNDICI-EHPA apps/cli/bin/docmaker.js doctor",
     "check:deps": "node scripts/check-remotion-versions.mjs && node scripts/check-forbidden-deps.mjs && node scripts/check-deps-graph.mjs"
   },
   "devDependencies": {
