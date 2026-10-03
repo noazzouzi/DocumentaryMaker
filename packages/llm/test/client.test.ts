@@ -11,6 +11,8 @@ import {
   AnthropicLlm, FALLBACK_BETA, FixtureLlm, REFUSAL_HINT, buildResearchFromTurns, createLlmClient, estimateStepCost, mapSdkError, systemParam,
   type AnthropicLike, type StructuredRequest,
 } from "../src/index";
+import { ChapterBeatsWire } from "../src/wire/schemas";
+import { wireJsonSchema } from "../src/wire/jsonschema";
 import { FakeCosts, fixtureDir, silentLogger } from "./helpers";
 
 const turn = (n: number) => JSON.parse(readFileSync(join(__dirname, "data", `research-turn-${n}.json`), "utf8")) as Record<string, unknown>;
@@ -248,6 +250,13 @@ describe("AnthropicLlm.structured (mocked SDK)", () => {
     expect(schema.properties.kind!.const).toBe("x");
     expect(((schema.properties.list!.items as { properties: Record<string, { enum: string[] }> }).properties.d!).enum).toEqual(["a", "b"]);
     expect(JSON.stringify(schema)).not.toContain("{enum:");
+  });
+
+  it("the beats wire schema keeps every closed list as an enum (constrained decoding)", () => {
+    const beat = (wireJsonSchema(ChapterBeatsWire) as { properties: { beats: { items: { properties: Record<string, { enum?: unknown[]; items?: { enum?: unknown[] } }> } } } })
+      .properties.beats.items.properties;
+    for (const k of ["purpose", "visual_kind", "motion_template", "camera", "transition_in", "music_cue", "music_mood"]) expect(beat[k]!.enum, k).toBeTruthy();
+    expect(beat.sfx!.items!.enum).toBeTruthy();
   });
 
   it("systemParam keeps at most 4 cache breakpoints (the last ones)", () => {
