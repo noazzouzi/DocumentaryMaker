@@ -3,7 +3,7 @@
 // enforces the fact-check resolution rules (fix-only items, notes ≥ 10 characters).
 import {
   ActiveTake, BeatSlicesDoc, DocmakerError, FactCheck, Outline, P, Project, Script, UserPicksDoc, checkRefs, docEntryFor, docHash,
-  type ChapterScript, type FactCheckItem, type Lang, type LintIssue, type ScriptSegment,
+  type BeatPlansDoc, type ChapterScript, type FactCheckItem, type FactSheet, type Lang, type LintIssue, type PublishInfo, type ScriptSegment,
 } from "@docmaker/core";
 import type { ProjectStore } from "@docmaker/core/node";
 import type { z } from "zod";
@@ -30,18 +30,72 @@ export function factIssues(items: readonly FactCheckItem[]): LintIssue[] {
 
 const normText = (s: string) => s.toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, " ").trim();
 
-/** The current text at a fact-check location: segment displayText, beat text + on-screen text, or the publish fields. */
-async function textAt(store: ProjectStore, lang: Lang, where: string): Promise<string | null> {
-  if (/^CH\d+-S\d+$/.test(where)) {
-    const s = await docs.script(store, lang);
-    return s?.chapters.flatMap((c) => c.segments).find((x) => x.id === where)?.displayText ?? null;
+/** Every string value of a JSON-ish value (motion data), unescaped. */
+function stringsIn(v: unknown): string[] {
+  if (typeof v === "string") return [v];
+  if (Array.isArray(v)) return v.flatMap(stringsIn);
+  if (v && typeof v === "object") return Object.values(v as Record<string, unknown>).flatMap(stringsIn);
+  return [];
+}
+
+/** The documents a fact-check location is resolved against. */
+export interface FlaggedTextSources {
+  script: Script | null; slices: BeatSlicesDoc | null; plans: BeatPlansDoc | null; facts: FactSheet | null; publish: PublishInfo | null;
+}
+
+/**
+ * The current text at a fact-check location (null when it cannot be located): a segment's displayText (+ the clip
+ * subtitle), a beat's text, on-screen text, motion-data strings and cue-derived strings (a synthetic -CLIP beat also
+ * includes its clip segment), or a publish surface (title, thumbnail, description).
+ */
+export function flaggedTextAt(src: FlaggedTextSources, where: string): string | null {
+  const segText = (id: string): string | null => {
+    const s = src.script?.chapters.flatMap((c) => c.segments).find((x) => x.id === id);
+    return s ? `${s.displayText} ${s.subtitleTranslation}` : null;
+  };
+  if (where === "title") return src.publish?.title ?? null;
+  if (where === "thumbnail") return src.publish?.thumbnailText ?? null;
+  if (where === "description") return src.publish?.description ?? null;
+  if (/^CH\d+-S\d+$/.test(where)) return segText(where);
+  const beat = /^(CH\d+-S\d+)-(?:CLIP|BR)$/.exec(where);
+  if (!beat && !/^CH\d+-B\d+$/.test(where)) return null;
+  const parts: string[] = [];
+  if (beat) {
+    const seg = segText(beat[1]!);
+    if (seg !== null) parts.push(seg);
   }
-  if (/^CH\d+-B\d+/.test(where)) {
-    const sl = await docs.slices(store, lang);
-    const t = sl?.texts.find((x) => x.beatId === where);
-    return t ? `${t.text} ${t.onScreenText} ${JSON.stringify(t.motionData)}` : null;
+  const t = src.slices?.texts.find((x) => x.beatId === where);
+  if (t) parts.push(t.text, t.onScreenText, ...stringsIn(t.motionData));
+  const plan = src.plans?.plans.find((p) => p.id === where);
+  if (plan) {
+    parts.push(...plan.cueTags.map((c) => c.value));
+    for (const pid of plan.personIds) {
+      const person = src.facts?.people.find((p) => p.id === pid);
+      if (person) parts.push(person.roleInStory, person.name);
+    }
   }
-  return null;
+  return parts.length ? parts.join(" \n ") : null;
+}
+
+/**
+ * A "rewritten" resolution holds only when the flagged text can be located and no longer contains the flagged
+ * sentence. Locations that cannot be resolved, and items whose "sentence" is only a placeholder (empty, or the location
+ * id itself: a quote flagged on a synthetic clip beat), never count as rewritten: re-run the fact-check instead.
+ */
+export function rewrittenHolds(it: Pick<FactCheckItem, "where" | "sentence">, src: FlaggedTextSources): boolean {
+  const sentence = normText(it.sentence);
+  if (sentence === "" || sentence === normText(it.where)) return false;
+  const text = flaggedTextAt(src, it.where);
+  if (text === null) return false;
+  return !normText(text).includes(sentence);
+}
+
+export async function flaggedTextSources(store: ProjectStore, project: Project, lang: Lang): Promise<FlaggedTextSources> {
+  const script = await docs.script(store, lang);
+  return {
+    script, slices: await docs.slices(store, lang), plans: await docs.plans(store), facts: await docs.factsheet(store),
+    publish: effectivePublish(project, lang, script, await docs.suggestion(store)),
+  };
 }
 
 /** User script edit: userEdited per changed chapter, ttsText rebuilt for changed narration (unless ttsTextEdited). */
@@ -167,6 +221,7 @@ export async function writeUserDoc<S extends z.ZodType>(
       const next = doc as FactCheck;
       const prev = await docs.factcheck(store, next.lang);
       const prevById = new Map((prev?.items ?? []).map((i) => [i.id, i]));
+      let sources: FlaggedTextSources | null = null;
       for (const it of next.items) {
         const old = prevById.get(it.id);
         if (!old) throw new DocmakerError("VALIDATION", `unknown fact-check item ${it.id} (items come from the fact-check stage)`);
@@ -175,9 +230,9 @@ export async function writeUserDoc<S extends z.ZodType>(
         }
         if (it.resolution === old.resolution && it.note === old.note) continue;
         if (it.resolution === "rewritten" && old.resolution !== "rewritten") {
-          const where = await textAt(store, next.lang, it.where);
-          if (where !== null && normText(where).includes(normText(it.sentence)) && normText(it.sentence).length > 0) {
-            throw new DocmakerError("VALIDATION", `${it.id}: the flagged text is still in ${it.where} — rewrite it first`);
+          sources ??= await flaggedTextSources(store, project, next.lang);
+          if (flaggedTextAt(sources, it.where) === null || !rewrittenHolds(it, sources)) {
+            throw new DocmakerError("VALIDATION", `${it.id}: the flagged text is still in ${it.where} (or cannot be located there) — rewrite it first, or re-run the fact-check`);
           }
         }
         if ((it.resolution === "acknowledged" || it.resolution === "dismissed") && fixOnly(it)) {

@@ -4,7 +4,8 @@ import {
   ApprovalsDoc, DocmakerError, EDITORIAL_GATES, FactCheck, P, PENDING_STATUSES, Project, docHash, hashJson, normWord,
   type Approval, type FactCheckItem, type FactSheet, type GateId, type Lang, type Outline, type RiskFlag, type StageId,
 } from "@docmaker/core";
-import type { ProjectStore } from "@docmaker/core/node";
+import { withFileLock, type ProjectStore } from "@docmaker/core/node";
+import { videoVerifiedQuotes } from "@docmaker/assets";
 import { docs, effectivePublish } from "./docs";
 import { daysBetween, nowIso } from "./util";
 
@@ -16,9 +17,13 @@ const GATING_RISK_FLAGS: readonly RiskFlag[] = ["real_person_allegations", "sexu
 export const RECHECK_MAX_AGE_DAYS = 30;
 
 // ---------------------------------------------------------------- approvals doc
+const NEVER = new AbortController().signal;
+/** Appends under a file lock: the web process and the job worker record approvals concurrently. */
 export async function addApproval(store: ProjectStore, a: Approval): Promise<void> {
-  const cur = await docs.approvals(store);
-  await store.writeJson(P.approvals, ApprovalsDoc, { schemaVersion: 1, approvals: [...cur.approvals, a] }, { writer: "engine" });
+  await withFileLock(store.abs(".approvals.lock"), `approvals:${process.pid}`, async () => {
+    const cur = await docs.approvals(store);
+    await store.writeJson(P.approvals, ApprovalsDoc, { schemaVersion: 1, approvals: [...cur.approvals, a] }, { writer: "engine" });
+  }, { signal: NEVER, pollMs: 20 });
 }
 
 export function personAcksOf(doc: ApprovalsDoc): string[] {
@@ -87,6 +92,24 @@ export function reopenChanged(items: readonly FactCheckItem[], previous: FactChe
   });
 }
 
+/** The fact-check sees video-verified quotes as verbatim (the fact sheet itself is never rewritten here). */
+export function withVideoVerified(fs: FactSheet, ids: readonly string[]): FactSheet {
+  if (ids.length === 0) return fs;
+  const set = new Set(ids);
+  return { ...fs, quotes: fs.quotes.map((q) => (set.has(q.id) && q.verification !== "verbatim" ? { ...q, verification: "verbatim" as const, verifiedBy: "video" as const } : q)) };
+}
+
+/** FactCheck.factsheetHash: the fact sheet the fact-check ran against (video-verified quotes applied). */
+export const factsheetHash = (fs: FactSheet): string => docHash(fs);
+
+/** The fact sheet as the factcheck stage sees it now (null without a fact sheet). */
+export async function currentFactsheetHash(store: ProjectStore): Promise<string | null> {
+  const fs = await docs.factsheet(store);
+  if (!fs) return null;
+  const picks = await docs.picks(store);
+  return factsheetHash(withVideoVerified(fs, picks ? videoVerifiedQuotes(picks) : []));
+}
+
 export interface FactcheckGateState {
   missing: boolean; stale: boolean; staleReasons: string[]; gating: FactCheckItem[]; open: FactCheckItem[]; planHash: string; factCheck: FactCheck | null;
 }
@@ -102,6 +125,8 @@ export async function factcheckGateState(store: ProjectStore, project: Project, 
   if (!script || fc.scriptHash !== docHash(script)) reasons.push("the script changed since the fact-check");
   if (!slices || fc.slicesHash !== docHash(slices)) reasons.push("the on-screen text changed since the fact-check");
   if (fc.publishHash !== hashJson(effectivePublish(project, lang, script, suggestion))) reasons.push("the title/thumbnail/description changed since the fact-check");
+  // claim statuses, sensitivities, person flags and quote verifications drive rules c, d, g and h
+  if (fc.factsheetHash !== (await currentFactsheetHash(store))) reasons.push("the fact sheet changed since the fact-check");
   const gating = gatingItems(fc, riskFlags);
   const open = gating.filter((i) => !itemSatisfied(i));
   return { missing: false, stale: reasons.length > 0, staleReasons: reasons, gating, open, planHash: factcheckPlanHash(gating), factCheck: fc };

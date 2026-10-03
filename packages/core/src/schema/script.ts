@@ -98,6 +98,8 @@ export const FactCheck = z.object({
   scriptHash: Sha256, // docHash(script/<lang>/script.json) checked
   slicesHash: Sha256, // docHash(beats/<lang>.json) checked (on-screen text)
   publishHash: Sha256, // hashJson(project.publish[lang] ?? null)
+  /** docHash of the fact sheet checked (video-verified quotes applied); absent on fact-checks that predate it (→ stale). */
+  factsheetHash: Sha256.optional(),
   items: z.array(FactCheckItem),
   needsMoreResearch: z.array(z.string()),
   titleThumbnailIssues: z.array(z.string()),

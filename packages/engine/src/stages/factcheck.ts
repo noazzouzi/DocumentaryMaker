@@ -1,23 +1,19 @@
 // factcheck[lang] (§6.3 step 6, App. D): llm.factCheck per chapter (receipt-cached) + deterministic rules a–h, resolutions
 // carried over by stable FC ids (re-opened when an item's verdict or risk changed) → script/<lang>/factcheck.json.
 // The factcheck-ack gate is evaluated before final voice takes, render and export (gates.ts), never here.
-import { FactCheck, P, docHash, hashJson, type FactSheet } from "@docmaker/core";
+import { FactCheck, P, docHash, hashJson } from "@docmaker/core";
 import type { StageCtx, StageDef } from "../types";
 import { docs, effectivePublish, need } from "../docs";
-import { reopenChanged } from "../gates";
+import { factsheetHash, reopenChanged, withVideoVerified } from "../gates";
+import { rewrittenHolds } from "../editing";
 import { X, needLang, stepCtx, writeDoc } from "./common";
+
+export { withVideoVerified };
 
 /** Quote ids whose YouTube passage matched ≥ 0.8 in the assets stage (§6.3 1b). */
 async function videoQuotes(ctx: StageCtx): Promise<string[]> {
   const picks = await docs.picks(ctx.store);
   return picks ? X(ctx).rt.deps.assets.videoVerifiedQuotes(picks) : [];
-}
-
-/** The fact-check sees video-verified quotes as verbatim (the fact sheet itself is never rewritten here). */
-export function withVideoVerified(fs: FactSheet, ids: readonly string[]): FactSheet {
-  if (ids.length === 0) return fs;
-  const set = new Set(ids);
-  return { ...fs, quotes: fs.quotes.map((q) => (set.has(q.id) && q.verification !== "verbatim" ? { ...q, verification: "verbatim" as const, verifiedBy: "video" as const } : q)) };
 }
 
 export const factcheckStage: StageDef = {
@@ -61,8 +57,13 @@ export const factcheckStage: StageDef = {
       riskFlags: (await e.riskFlags()).filter((f) => f !== "none"), scriptHash: docHash(script), slicesHash: docHash(slices),
       personAcks: await e.personAcks(),
     });
-    // resolutions carried over by stable id are re-opened when the item's verdict or risk changed (§5.4)
-    await writeDoc(ctx, "factcheck", P.factcheck(lang), FactCheck, { ...fc, items: reopenChanged(fc.items, previous) });
+    // resolutions carried over by stable id are re-opened when the item's verdict or risk changed (§5.4); a carried-over
+    // "rewritten" holds only while the flagged text is gone from its (locatable) location — an item regenerated from text
+    // that is still there, or one whose location cannot be resolved, is open again
+    const publish = effectivePublish(ctx.project, lang, script, suggestion);
+    const src = { script, slices, plans, facts, publish };
+    const items = reopenChanged(fc.items, previous).map((it) => (it.resolution === "rewritten" && !rewrittenHolds(it, src) ? { ...it, resolution: "open" as const } : it));
+    await writeDoc(ctx, "factcheck", P.factcheck(lang), FactCheck, { ...fc, items, factsheetHash: factsheetHash(facts) });
     return { artifacts: [P.factcheck(lang)] };
   },
 };

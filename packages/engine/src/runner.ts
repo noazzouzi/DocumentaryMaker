@@ -5,7 +5,7 @@ import {
   type JobOptions, type Lang, type LintIssue, type Project, type RenderClient, type RiskFlag, type StageId, type StageState, type StylePlugin,
   Project as ProjectSchema, Outline, FactCheck, docHash, EDITORIAL_GATES,
 } from "@docmaker/core";
-import type { ProjectStore } from "@docmaker/core/node";
+import { withFileLock, type ProjectStore } from "@docmaker/core/node";
 import type { StageCtx, StageDef } from "./types";
 import type { Runtime } from "./runtime";
 import type { FrozenCacheLike } from "./deps";
@@ -55,12 +55,15 @@ export async function fixtureOf(rt: Runtime, project: Project): Promise<FixtureM
 }
 export const fixtureAutoApproves = (fx: FixtureManifest | null): boolean => fx?.autoApproveGates === true;
 
+/** Read-merge-write of project.json under a file lock (the web process and the job worker patch it concurrently). */
 export async function updateProjectDoc(store: ProjectStore, patch: Partial<Project>, writer: "engine" | "user" = "engine"): Promise<Project> {
-  const cur = await readProject(store);
-  const next = ProjectSchema.parse({ ...cur, ...patch, slug: cur.slug, formatVersion: 1, schemaVersion: cur.schemaVersion, createdAt: cur.createdAt, updatedAt: nowIso() });
-  if (docHash({ ...next, updatedAt: "" }) === docHash({ ...cur, updatedAt: "" })) return cur;
-  await store.writeJson(P.project, ProjectSchema, next, { writer });
-  return next;
+  return withFileLock(store.abs(".project.lock"), `project:${process.pid}`, async () => {
+    const cur = await readProject(store);
+    const next = ProjectSchema.parse({ ...cur, ...patch, slug: cur.slug, formatVersion: 1, schemaVersion: cur.schemaVersion, createdAt: cur.createdAt, updatedAt: nowIso() });
+    if (docHash({ ...next, updatedAt: "" }) === docHash({ ...cur, updatedAt: "" })) return cur;
+    await store.writeJson(P.project, ProjectSchema, next, { writer });
+    return next;
+  }, { signal: NEVER, pollMs: 20 });
 }
 
 export async function riskFlagsOf(rt: Runtime, store: ProjectStore, project: Project): Promise<RiskFlag[]> {
