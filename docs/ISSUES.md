@@ -34,6 +34,8 @@ Deviations from the spec made in P0, and things later phases must know. None blo
 15. **`@remotion/eslint-plugin@4.0.532`** declares an ESLint ≤ 8 peer (via an old `@typescript-eslint/utils`); it loads and runs fine under ESLint 10 (`pnpm lint` passes).
 16. **`claude-opus-5-5`** appears in the verified contract (`Project.llm.model` literal, `PRICES`): kept verbatim.
 
+**Resolution (I, 2026-10-03).** Informational; kept as is. Item 12 is moot (every vitest project now has tests). A root-level `pnpm test` additionally needed `sequence.groupOrder` for the engine project (vitest 5 refuses projects with different `maxWorkers` in one group) — fixed in `packages/engine/vitest.config.ts`.
+
 ## 2026-10-02 styles (W1) → §4.19 styles stub comments, W7 (rail captions), W10/W11 (consumers)
 
 Notes and clarifications from `@docmaker/styles`; no contract change is required to use the package.
@@ -53,6 +55,8 @@ export interface StyleRegistry { /* … */ readonly rejected?: readonly { dir: s
 
 **Local workaround.** Implemented as described; additive exports: `inspectStyleDir` (non-throwing lint of a dir, for `style validate`), `lintPromptPack`, `riskFlagsOffline`, `styleFontAssets` (asset-server paths `styles/<dir>/fonts/<file>` for user style fonts → `StyleRenderTokens.fonts`), `createRegistry`, `STYLE_RULES`.
 
+**Resolution (I, 2026-10-03).** No core change needed (`StyleRegistry` lives in `@docmaker/styles`). Item 3 superseded: true-crime-dossier's Stamp is now disabled (see the W6 problem 4 resolution).
+
 ## 2026-10-02 llm (W2) → engine (W10), core (notes; additive API, no contract change required)
 
 **Problem.** A few §4.19 llm signatures cannot carry everything the engine needs; W2 added **optional/additive** exports instead of changing them.
@@ -70,6 +74,8 @@ export interface StyleRegistry { /* … */ readonly rejected?: readonly { dir: s
 
 **Proposed diff.** None required. Optionally (I): make `SegmentSkeleton.primaryHash` and `lintScript.primary` part of the §4.19 text.
 **Local workaround.** Implemented as optional parameters/new exports in `packages/llm` (all §4.19 signatures unchanged).
+
+**Resolution (I, 2026-10-03).** Accepted as additive package API; no core change. The §4.19 text is not extended (the engine already passes the optional fields).
 
 ## 2026-10-02 voice (W4) → core `node/proc.ts` (runSidecar), W10 (engine/CLI), I
 
@@ -99,6 +105,8 @@ if (err?.error && (ErrorCode.options as string[]).includes(err.error)) {
 ```
 **Local workaround.** The dispatcher also prints `ERROR <CODE>: <message>` on stderr; `voice` maps it back (`sidecarError()` in `align/faster-whisper.ts`).
 
+**Resolution (I, 2026-10-03).** Item 1 applied: `runSidecar` reads the dispatcher's `{"error", "message"}` from `out.json` and throws that `ErrorCode` (hint for TOOL_MISSING/MODEL_MISSING); `voice`'s `sidecarError()` mapper stays as a harmless fallback. Item 8 applied: `runSidecar` sets `PYTHONDONTWRITEBYTECODE=1` (`__pycache__/` was already gitignored). Items 2–7: behaviour notes, wired by W10. Logged in `docs/CONTRACT-CHANGES.md`.
+
 ## 2026-10-02 remotion (W7) → render (W8), I (notes; no core contract change)
 
 **Problem 1 — bit-exact renders need Chrome's CPU rasterizer.** With `gl: "swangle"` Chrome rasterizes tiles on the (SwiftShader) GPU, and the GPU process shares glyph/image caches across tabs. Measured on the shared Chrome Headless Shell: any glyph drawn larger than ~160 device px (e.g. KeywordSlam 220 px, NumberCounter 160 px, slam-in scales) and some image/blend tiles differ by 1–7 LSB between renders of the same frame (3 renders → 3 hashes), so §16.2.3 "render twice → identical sha256" is flaky. With `--disable-gpu-rasterization` every probed frame (glyphs, images, covers, dissolves, velocity cuts, counters) is identical across 3–8 renders, sequential or concurrent, at similar speed on this CPU-only machine. Remotion 4.0.532 exposes that flag only through the env var `__RESERVED_IS_INSIDE_REMOTION_LAMBDA=true` (read by `open-browser.js`; its only other effect is the wording of an out-of-memory error).
@@ -113,6 +121,8 @@ if (err?.error && (ErrorCode.options as string[]).includes(err.error)) {
 5. Remotion's types forbid `premountFor` with `layout="none"`; timed items therefore use the default absolute-fill Sequence layout (every component is a full-frame AbsoluteFill anyway).
 6. Preview audio cannot pan (`@remotion/media` `<Audio>` has no pan): SFX pans and RL sweeps are heard only in the offline mix (intended preview difference, §10.13).
 7. Letterbox bars follow the geometry: 2.39 → 138 px per bar at 1920×1080 (§10.7 quotes 132 px).
+
+**Resolution (I, 2026-10-03).** Problem 1 implemented by W8 (`__RESERVED_IS_INSIDE_REMOTION_LAMBDA` around `openBrowser()`, see the W8 entry). Problem 2: notes, no change.
 
 ## 2026-10-02 director (W6) → core `director` §4.19 types (I), core/testing (I), styles (W1), engine (W10)
 
@@ -149,6 +159,8 @@ if (err?.error && (ErrorCode.options as string[]).includes(err.error)) {
 3. Caption ids: SRT and pop/karaoke/rail groups of a segment share one `ids.caption(segmentId, n)` counter (unique per segment across variants); consumers must use `CaptionGroup.variant`, not the id, to tell them apart. Keyword captions use `kw:`.
 4. `SILENT_CUT_SHARE` (warn) can be unavoidable for fast-cut styles: drama-commentary cuts 15–30 times a minute but `sfxPolicy.perMin` tops out at 15, so `(1 − silentCutShare) × cuts` cut textures do not always fit. The director fills cut textures per 60 s block up to the SFX cap (61 % / 73 % silent cuts on the rich / tulip-mania test scenarios vs the 50 % ± 10 target).
 
+**Resolution (I, 2026-10-03).** P1 and P2 applied in `packages/director/src/types.ts` (+ §4.19 text): `DirectorInput.outline?: Outline | null` and `project` gains an optional `assets` (`maxClipSeconds`); the engine passes `outline` typed. P3 (`BeatPlan.downgradedFrom`) deferred to P3: it changes the persisted `beats/plans.json` shape (DOC_VERSIONS bump + migration + llm `validateBeats`), and the `isReconstruction` heuristic covers the demo. P4 applied the conformant way: true-crime-dossier's Stamp is disabled (Appendix A keeps `overshootAllowedIn: []`) and style lint warns `STYLE_OVERSHOOT` for an enabled overshoot-only component missing from `overshootAllowedIn`. P5: accepted as documented. P6 rejected: `makeTimeline` is a structural fixture that must exercise every transition class for remotion/render/export (export goldens depend on it); the director lint test keeps normalising it.
+
 ## 2026-10-03 assets (W3) → core `interfaces.ts` (CONTACT_UA_HOSTS), core `util/paths.ts` (path table), engine (W10), web (W11)
 
 Notes from `@docmaker/assets`. Every §4.19 signature is unchanged; the items below are additive or requests.
@@ -179,6 +191,8 @@ export const CONTACT_UA_HOSTS: readonly string[] = ["commons.wikimedia.org", "up
 8. Person privacy covers the whole fact sheet. Names and aliases of minors and private victims, and of non-public persons without a person-ack, are stripped from every outgoing query, even when the beat does not list them in `personIds`. `resolveClips` takes `personAcks?`, which the stage passes on. A quote whose speaker is blocked gets `skipped-policy` and is never searched. `liveSearch` takes optional `facts?` and `personAcks?`. When they are omitted it reads `research/factsheet.json` and the `person-ack` items of `approvals.json` itself. W10 needs to change nothing. It also drops blocked `personIds` and the blocked person's `entityQid` from the client query.
 9. HttpClient: caller headers such as API keys are not sent after a redirect leaves the first origin. POSTs are retried only after connection-level failures or a 429, never after a 5xx or a header timeout, so a fal job is never submitted twice.
 
+**Resolution (I, 2026-10-03).** P1 applied: `upload.wikimedia.org` added to `CONTACT_UA_HOSTS` (tests updated). P2 applied as path-table entries only (`P.userFrozen`, `P.liveCache`): these files are unversioned package-private records (no `schemaVersion`), so they stay out of `DOC_REGISTRY` (whose rows are versioned, migrated documents). P3: `allowPaid` stays the package's optional input. Notes: no change.
+
 ## 2026-10-03 render (W8) → engine (W10), core `RenderRequest` (I), styles (W1) — notes; no blocking contract change
 
 **Problem.**
@@ -198,6 +212,8 @@ export const CONTACT_UA_HOSTS: readonly string[] = ["commons.wikimedia.org", "up
 targetLufs: z.number().default(-14), truePeakGate: z.number().default(-1),
 ```
 **Local workaround.** Items 1–2 as described; everything else is behaviour documentation.
+
+**Resolution (I, 2026-10-03).** No core change: `RenderRequest` keeps paths only and render reads the loudness targets from `project.json` (one source of truth). Notes accepted. Follow-ups applied in P2: a full render of an `onlyChapters` timeline no longer prunes the whole-programme chunk cache; the loudness-gate re-mux keeps the exact programme length (`-t`).
 
 ## 2026-10-03 audio (W5) → core node WAV I/O (I), engine (W10), director (W6), remotion (W7) — notes; no blocking contract change
 
@@ -225,6 +241,8 @@ export async function readWavRange(path: string, startFrame: number, frames: num
 ```
 **Local workaround.** None needed: the mixer works block-wise on everything it renders and only the decoded sources are held whole.
 
+**Resolution (I, 2026-10-03).** Notes accepted. The streaming WAV reader / faster s24 encoder is a performance item for P3 (the 2-chapter demo mixes in seconds).
+
 ## 2026-10-03 export (W9) → engine (W10), I — notes; no blocking contract change
 
 **Problem / notes.** The §4.19 export signatures are unchanged; these are the conventions the engine and the integration need to know.
@@ -239,6 +257,8 @@ export async function readWavRange(path: string, startFrame: number, frames: num
 **Proposed diff.** None required. Optional (I): pass the style suggestion (`StyleSuggestion.titles[0]`…) to `writePublishKit` as an extra optional field if the spec's "style suggestion fallback" is wanted.
 **Local workaround.** As described (additive keys, fallbacks inside the package).
 
+**Resolution (I, 2026-10-03).** Notes accepted; no contract change. The style-suggestion fallback for the publish kit is left to P3.
+
 ## 2026-10-03 remotion (W7) → core `DEFERRED_TRANSITIONS` (I), director (W6) — every M3 transition is implemented
 
 **Problem.** `@docmaker/remotion` now renders every transition of §10.5: the covers `filmBurn`, `whipStreaks`, `paperRip`, `dotWipe`, `iris` (listed in `IMPLEMENTED_COVERS`, exported from `@docmaker/remotion/compute`) and the overlaps `push`, `wipe`, `blurDissolve`. Core still ships `DEFERRED_TRANSITIONS = { filmBurn: "flash", paperRip: "flash", whipStreaks: "flash", dotWipe: "dipToBlack", iris: "dipToBlack" }` and the director applies it (`packages/director/src/transitions.ts`), so a style that weights these covers never gets them.
@@ -251,6 +271,8 @@ export const DEFERRED_TRANSITIONS: Partial<Record<TransitionKey, TransitionKey>>
 No director code change is needed (it reads the map); its tests that assume the mapping need updating (W6). Remotion keeps its own fallback: `resolveCover()` maps a presentation unknown to an older build through `DEFERRED_TRANSITIONS`, else to `flash`, with a `computeTimeline` warning.
 **Facts for the director / web (W6, W11).** Every cover window is centred on the cut (`floor(d/2)` frames before it; dips switch mid-hold) and accepts any `d ≥ 2`; the spec durations are dotWipe ≈ 13 f, iris ≈ 12 f, paperRip 10–15 f, whipStreaks ≈ 8 f, filmBurn 15–30 f. dotWipe, iris and paperRip fully cover the frame on the frame before the cut **and** on the cut frame (unit-tested geometry + render test); filmBurn over-exposes to near white there; whipStreaks hides the switch under a motion-smear wash. `direction` is the motion direction (dotWipe wave, paperRip sheet entry / tear, whipStreaks); iris ignores it. `color`: dotWipe uses it (default black); iris uses it only when dark (luminance < 0.5), else black.
 **Local workaround.** None needed in remotion; until core changes, these covers only appear when a user override (`setTransition`) or a hand-written timeline asks for them.
+
+**Resolution (I, 2026-10-03).** Applied: `DEFERRED_TRANSITIONS = {}` (core + §4.19 text). Director and remotion tests pass unchanged; drama-commentary's `paperRip` weight (0.04) can now place a real paper-rip cover.
 
 ## 2026-10-03 web (W11) → engine (W10), core/package.json (F/I), spec §14 (I)
 
@@ -285,6 +307,8 @@ Notes from `apps/web`. No contract signature was changed; every item below is wo
 2. Approvals: the route always sets `by:"web"`; for editorial gates whose `planHash` the engine recomputes (style-confirm, person-ack, recheck, fair-use, factcheck-ack) a missing `planHash` defaults to 64 zeros; `outline-approval` and `cost` must send the reviewed hash (the outline page sends `docHash(outline)` as loaded).
 3. After a voice job or a take activation the web submits `pipeline layout→mix` (§5.3); after a pick change it submits `pipeline assets→direct` (coalesced by the engine).
 
+**Resolution (I, 2026-10-03).** P1, P5, P6: done by W10 (`EngineExt.listVoices`, `listTakes`, `secretStatus`, `startDemo`). P2: deferred to P3/M3 (`EngineExt.setupComponent` exists; the setup page keeps the CLI commands). P3: spec §14.3/§17.2 text updated (`src/proxy.ts`, upload route outside the matcher). P4a applied: `apps/web` `test:ui` = `playwright test`; P4b: no zod dependency needed.
+
 ## 2026-10-03 engine + cli (W10) → core `JobRecord` (I), director (W6), render (W8), web (W11) — notes; additive API only
 
 Every §4.19 engine signature is unchanged; the items below are additive or behaviour notes.
@@ -310,17 +334,23 @@ Every §4.19 engine signature is unchanged; the items below are additive or beha
 7. The assets stage resolves every chapter even when `onlyChapters` is set (it is not one of its option keys, §5.1).
 8. CLI: flags with no `JobOptions` field update project settings (`assets --offline/--providers/--no-youtube`, `render --gl/--concurrency/--chunk-seconds`, `export --formats/--export-root/--fcpxml-version`, `voice --provider/--voice/--model/--speed/--consent`). `approve <slug> cost` needs `--plan <planHash>`. `demo` without `--keep` deletes earlier `demo-<fixture>-<timestamp>` projects of the same fixture. The bin shebang adds `--disable-warning=UNDICI-EHPA` (Node 22 prints the experimental-proxy warning at start-up when `NODE_USE_ENV_PROXY=1` is inherited).
 
+**Resolution (I, 2026-10-03).** P1 declined for v1: the `jobs/<id>.owner.json` sidecar is equivalent and avoids a `jobs/index.json` migration. P2 applied: a replaceSource override refused by `validateAsset` is now a `POLICY` lint **error** (other refusals stay `OVERRIDE_REJECTED` warnings); the safety e2e asserts the error. P3/P5: deferred to P3/M3. Notes accepted; the P0 stub-fallback helpers (`withStubFallback`, `isNotImplemented`) were removed from the engine with the superseded fakes.
+
 ## 2026-10-03 engine (W10) → render (W8) — the draft MP4 is `yuvj420p`
 
 **Problem.** The offline demo e2e (`tests/e2e/demo.e2e.test.ts`, real packages, run on 2026-10-03) passes 7 of its 9 checks — frame count (2302 = timeline), duration, AAC 48 kHz stereo, −14.0 LUFS / −1.5 dBTP, no black run, export bundle valid against the FCPXML 1.10 and xmeml DTDs, byte-identical re-direct, no-op beatslice, every chunk cached on re-render, no network — but `ffprobe` reports the video stream as **`yuvj420p`** (full range), where §16.4 (and the QA `video-codec` check) require `yuv420p`. The chunks are rendered from JPEG frames (`imageFormat: "jpeg"`), which x264 encodes as full-range `yuvj420p` unless told otherwise.
 **Proposed diff.** In the chunk `renderMedia` call pass `pixelFormat: "yuv420p"` (and/or `-pix_fmt yuv420p` + `-color_range tv` if the concat/mux ever re-encodes); add a `pix_fmt` assertion to the render-int concat test.
 **Local workaround.** None in the engine (it never encodes video); the QA report flags it as an error, as intended.
 
+**Resolution (I, 2026-10-03).** Fixed in render: Remotion already received `pixelFormat: "yuv420p"`, but the JPEG frames are full range, so x264 flagged the stream full range (ffprobe: `yuvj420p`). Chunks now render with `colorSpace: "bt709"` (Remotion's zscale to limited range + bt709 tags), the master post and the re-encoding concat fallback convert/tag limited-range BT.709 explicitly, and the slice hash carries a chunk-encoding version (`<preset>@enc2`) so older full-range chunks are never reused. render-int asserts `yuv420p`/`tv`/`bt709` on draft and master.
+
 ## 2026-10-03 voice (W4) → W10 (engine `setup --whisper`, doctor)
 
 **ASR QA during synthesis never downloads.** `synthesizeTrack` auto-detects an ASR only when its model is already on disk (`firstAsrAligner(cfg, "auto", { localFilesOnly: true })`; the sidecar then runs with `HF_HUB_OFFLINE=1` / `local_files_only`). A failing ASR no longer fails the take: timings stay provider/estimated, `asrWer` is null and the take gets the note `ASR QA skipped: <CODE>: <message>`. QA is batched per chapter (`asr` input `audios: [...]`, one model load).
 
 **Requested change (W10).** `engine.ts` setup currently says "faster-whisper downloads its model on first use"; that first use is now only `importRecording` (online). Please call the new export `ensureFasterWhisperModel(config, signal, { onProgress })` from `docmaker setup --whisper faster-whisper` (and after `setup --python` if desired): it downloads `large-v3-turbo` (~1.6 GB) into `<models>/whisper/fw`, is a no-op when present and throws `OFFLINE` when offline. `fasterWhisperModelPresent(<models>/whisper/fw, "large-v3-turbo")` is exported for `doctor`'s `model:whisper` row.
+
+**Resolution (I, 2026-10-03).** Done by W10 (fix round 1, note 7). The sidecar now also loads a converted `<models>/whisper/fw/<model>/model.bin` directory by path, matching `fasterWhisperModelPresent`.
 
 ## 2026-10-03 engine (W10) — fix round 1: behaviour notes for web (W11) and llm (W2)
 
@@ -332,3 +362,5 @@ Every §4.19 engine signature is unchanged; the items below are additive or beha
 5. **Transcreate is cost-gated per segment** (§6.2 6t): additive `EngineExt.estimateTranscreate(slug, lang, segmentId) → {planHash, totalUsd, lines, approved}`; `transcreate()` throws `GATE_REQUIRED` (details `{gate:"cost", stage:"script", lang, planHash, totalUsd}`) until a `cost` approval with that planHash exists, unless the estimate is ≤ `budget.autoApproveUnderUsd` (recorded `by:"auto-threshold"`). The plan hash binds to the segment's current primary and secondary texts. Fixture projects cost 0.
 6. **`demo` pruning** (supersedes note 8 of the earlier W10 entry): without `--keep`, only *untouched* earlier `demo-<fixture>-<timestamp>` projects are removed — a project with `.history/` entries, an approval not by `fixture`/`auto-threshold`, a non-demo job, or a queued/running job is kept and listed.
 7. `setup --whisper faster-whisper` now calls voice's `ensureFasterWhisperModel` (W4 request); doctor's `model:whisper` row uses `fasterWhisperModelPresent`.
+
+**Resolution (I, 2026-10-03).** Behaviour notes; nothing to apply.

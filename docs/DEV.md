@@ -70,6 +70,13 @@ export DOCMAKER_BROWSER_EXECUTABLE=<path above>
 - `@docmaker/remotion` has a placeholder `Documentary` (ink background, chapter title, frame counter), a `Root` registering every `COMPOSITION_IDS` entry, `entry.ts`, `fonts/fonts.css.ts` and `eslint.determinism.js`.
 - `apps/cli`: `bin/docmaker.js` + `src/main.ts` (prints the version) + `src/worker.ts` (stub). `apps/web`: `next.config.ts`, a layout importing `@docmaker/remotion/fonts`, a page with a client component importing `@docmaker/remotion` and `./compute`.
 
+## State after P2 (integration)
+
+- Every package is implemented; the P0 stubs and the engine's stub-fallback composition are gone. The walking-skeleton fakes for assets, audio and export were deleted: engine unit tests, CLI tests and `tests/e2e/{skeleton,safety}.e2e.test.ts` run the real packages. Only `packages/engine/test/fakes/render.ts` (`FakeRenderClient`, an ffmpeg-written MP4 with the timeline's frame count) remains, so `pnpm test` never launches Chrome.
+- `pnpm test:e2e` = the offline demo (real Remotion render under the render lock, ≈ 20–25 min on 4 vCPU), the skeleton (≈ demo minus Remotion) and the safety suite. Set `DOCMAKER_KEEP_E2E=1` to keep their temp homes/projects for inspection.
+- Draft and master MP4s are limited-range BT.709 `yuv420p` (Remotion `colorSpace: "bt709"`); chunks rendered before P2 (full-range `yuvj420p`) are never reused (slice-hash encoding version).
+- The web app forks `apps/cli/src/worker.ts` from `config.repoRoot` with `--import <repoRoot>/node_modules/tsx/dist/esm/index.mjs`; jobs (incl. `POST /api/demo`) run and render in that worker and stream to `/api/jobs/<id>/events` (SSE).
+
 ## Test factories (`@docmaker/core/testing`)
 
 `TEST_STYLE` (Appendix A), `makeProject`, `makeFactSheet`, `makeScript` (EN/FR, same skeleton), `makeBeats`, `makeTake`, `makeLayout`, `makeScenario` (the consistent script/beats/take/layout set behind `makeLayout`/`makeTimeline`), `makeFrozen`, `makePicks`, `makeSfxManifest`, `makeSfxEntry`, `makeMusicTrack`, `makeTimeline`. Properties: deterministic bytes; `makeTimeline({seconds})` has exactly `round(seconds·fps)` frames (for seconds ≥ 2), contiguous video, unique ids, every M1 overlay component when long enough, and `resolveTimeline(makeTimeline(o), buildAnchorIndex(makeLayout(o), docHash(makeLayout(o))))` is the identity.
