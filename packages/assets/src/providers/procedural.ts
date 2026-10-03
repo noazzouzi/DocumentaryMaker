@@ -22,6 +22,18 @@ const INK = "#0e0f12";
 const ACCENT = "#e8b13a";
 const SECOND = "#3a5a8c";
 const pal = (p: string[]) => ({ ink: ffColor(p[0], INK), accent: ffColor(p[1], ACCENT), second: ffColor(p[2], SECOND) });
+const PAPER = "#e0cfa8";
+/** Linear mix of two "#RRGGBB" colours (t = share of b) → ffmpeg colour. */
+export function mixColor(a: string | undefined, b: string | undefined, t: number, fa = INK, fb = PAPER): string {
+  const rgb = (h: string) => { const x = ffColor(h, h).slice(2); return [0, 2, 4].map((k) => parseInt(x.slice(k, k + 2), 16)); };
+  const A = rgb(a ?? fa);
+  const B = rgb(b ?? fb);
+  return `0x${A.map((v, k) => Math.round(v * (1 - t) + B[k]! * t).toString(16).padStart(2, "0")).join("")}`;
+}
+/** Muted drama palette for moving backdrops: ink, the accent pulled toward ink, and a dim paper tone (never a pure primary). */
+const muted = (p: string[]) => ({ ink: ffColor(p[0], INK), accent: mixColor(p[1] ?? ACCENT, p[0] ?? INK, 0.55), paper: mixColor(p[0] ?? INK, PAPER, 0.28) });
+/** Seeded phase in [0, 2π) with 2 decimals (deterministic expression text). */
+const phase = (seed: number, k: number) => (((Math.abs(Math.trunc(seed)) >>> (k * 3)) % 628) / 100).toFixed(2);
 const seedOf = (s: number) => String(Math.abs(Math.trunc(s)) % 4294967296);
 const VIDEO_OUT = (fps: number, seconds: number) => ["-t", seconds.toFixed(3), "-r", String(fps), "-pix_fmt", "yuv420p", "-c:v", "libx264", "-preset", "veryfast", "-crf", "16"];
 
@@ -30,23 +42,34 @@ export const PROCEDURAL_RECIPES: readonly ProceduralRecipe[] = [
     // Moon look. NB: gradients speed=0 is rejected by ffmpeg 6.1 (range [1e-05, 1]).
     id: "gradient-grid", kind: "image",
     args: ({ seed, palette }) => {
-      const c = pal(palette);
-      return ["-f", "lavfi", "-i", `gradients=s=1920x1080:c0=${c.ink}:c1=${c.accent}:x0=0:y0=0:x1=1920:y1=1080:nb_colors=2:seed=${seedOf(seed)}:speed=0.00001,drawgrid=w=150:h=150:t=2:c=white@0.10,noise=alls=6:allf=u`, "-frames:v", "1"];
+      const c = muted(palette);
+      return ["-f", "lavfi", "-i", `gradients=s=1920x1080:c0=${c.ink}:c1=${c.accent}:x0=0:y0=0:x1=1920:y1=1080:nb_colors=2:seed=${seedOf(seed)}:speed=0.00001,hue=s=0.6,drawgrid=w=150:h=150:t=2:c=white@0.10,noise=alls=6:allf=u`, "-frames:v", "1"];
     },
   },
   {
+    // Aged ledger paper: low-frequency stains, ruled lines, a margin rule and a printed double frame — visible structure for
+    // camera moves and a period backdrop for text cards (a flat vignette read as an empty frame).
     id: "archive-still", kind: "image",
-    args: ({ seed }) => [
-      "-f", "lavfi", "-i",
-      `color=c=0x6b5b45:s=1920x1080,noise=alls=28:allf=u:all_seed=${Math.abs(Math.trunc(seed)) % 2147483647},colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131,vignette=PI/4`,
-      "-frames:v", "1",
-    ],
+    args: ({ seed }) => {
+      const S = `(sin(X/211+${phase(seed, 0)})*sin(Y/157+${phase(seed, 1)})+0.5*sin(X/97+${phase(seed, 2)})*cos(Y/83+${phase(seed, 3)})+0.25*cos(X/41+${phase(seed, 4)})*sin(Y/37+${phase(seed, 5)}))`;
+      const rule = 44 + (Math.abs(Math.trunc(seed)) % 13);
+      const margin = 200 + (Math.abs(Math.trunc(seed >> 4)) % 120);
+      return [
+        "-f", "lavfi", "-i",
+        `color=c=0xe0cfa8:s=1920x1080,format=rgb24,geq=r='clip(r(X,Y)-16*${S}-14,0,255)':g='clip(g(X,Y)-20*${S}-18,0,255)':b='clip(b(X,Y)-24*${S}-22,0,255)',`
+        + `drawgrid=w=1920:h=${rule}:x=0:y=${rule - 14}:t=2:c=0x5a4a36@0.22,drawbox=x=${margin}:y=0:w=3:h=1080:c=0x8a3a2a@0.30:t=fill,`
+        + "drawbox=x=70:y=56:w=1780:h=968:c=0x3b2f22@0.55:t=3,drawbox=x=82:y=68:w=1756:h=944:c=0x3b2f22@0.35:t=1,"
+        + `noise=alls=14:allf=u:all_seed=${Math.abs(Math.trunc(seed)) % 2147483647},vignette=PI/4.5`,
+        "-frames:v", "1",
+      ];
+    },
   },
   {
+    // Slow drift between ink and a muted accent (saturation pulled down: the style's pure primaries clash with stills).
     id: "drift-gradient", kind: "video",
     args: ({ seed, palette, fps, seconds }) => {
-      const c = pal(palette);
-      return ["-f", "lavfi", "-i", `gradients=s=1920x1080:c0=${c.ink}:c1=${c.accent}:c2=${c.second}:nb_colors=3:seed=${seedOf(seed)}:speed=0.015:r=${fps}`, ...VIDEO_OUT(fps, seconds)];
+      const c = muted(palette);
+      return ["-f", "lavfi", "-i", `gradients=s=1920x1080:c0=${c.ink}:c1=${c.accent}:c2=${c.paper}:nb_colors=3:seed=${seedOf(seed)}:speed=0.012:r=${fps},hue=s=0.6,vignette=PI/5`, ...VIDEO_OUT(fps, seconds)];
     },
   },
   {
@@ -59,8 +82,22 @@ export const PROCEDURAL_RECIPES: readonly ProceduralRecipe[] = [
   {
     id: "scanline-news", kind: "video",
     args: ({ seed, palette, fps, seconds }) => {
-      const c = pal(palette);
-      return ["-f", "lavfi", "-i", `gradients=s=1920x1080:c0=${c.ink}:c1=${c.second}:nb_colors=2:seed=${seedOf(seed)}:speed=0.01:r=${fps},drawgrid=w=1920:h=4:t=1:c=black@0.25`, ...VIDEO_OUT(fps, seconds)];
+      const c = muted(palette);
+      return ["-f", "lavfi", "-i", `gradients=s=1920x1080:c0=${c.ink}:c1=${c.paper}:nb_colors=2:seed=${seedOf(seed)}:speed=0.01:r=${fps},hue=s=0.5,drawgrid=w=1920:h=4:t=1:c=black@0.25`, ...VIDEO_OUT(fps, seconds)];
+    },
+  },
+  {
+    // Moving paper: the ledger stains drift slowly under a soft light (replaces life-texture, which read as a dead signal).
+    id: "paper-drift", kind: "video",
+    args: ({ seed, fps, seconds }) => {
+      // Evaluated on a 480×270 grid (frequencies ÷ 4) then scaled up: cheap per frame, smooth after bicubic scaling.
+      const S = `(sin(X/58+${phase(seed, 0)}+T*0.11)*sin(Y/43+${phase(seed, 1)})+0.5*sin(X/25+${phase(seed, 2)})*cos(Y/22+${phase(seed, 3)}-T*0.07))`;
+      return [
+        "-f", "lavfi", "-i",
+        `color=c=0xd6c49c:s=480x270:r=${fps},format=rgb24,geq=r='clip(r(X,Y)-18*${S}-16,0,255)':g='clip(g(X,Y)-22*${S}-20,0,255)':b='clip(b(X,Y)-26*${S}-24,0,255)',`
+        + "scale=1920:1080:flags=bicubic,vignette=PI/4.5",
+        ...VIDEO_OUT(fps, seconds),
+      ];
     },
   },
 ];
@@ -86,7 +123,7 @@ export async function proceduralAsset(i: { recipe: string; seed: number; palette
 export function recipeFor(kind: "image" | "video", role: AssetQuery["role"] | null, seed: number): string {
   if (kind === "image") return role === "archival" || role === "document" ? "archive-still" : "gradient-grid";
   if (role === "archival") return "scanline-news";
-  return seed % 2 === 0 ? "drift-gradient" : "life-texture";
+  return seed % 2 === 0 ? "drift-gradient" : "paper-drift";
 }
 
 /** providerAssetId grammar: `<recipe>|<seed>|<ink>.<accent>.<second>|<seconds>` (everything fetchOriginal needs). */

@@ -15,7 +15,8 @@ export function geometryOf(ctx: Ctx, s: Shot): StillGeometry | null {
 
 function forcedCard(ctx: Ctx, s: Shot, g: StillGeometry): boolean {
   const kind = s.beatId ? ctx.beatById.get(s.beatId)?.plan.visualKind : undefined;
-  return g.aspect < ctx.St.cardIfAspectBelow || g.w < ctx.St.cardIfWidthBelow || kind === "document_screenshot" || kind === "social_post" || g.maxCover < 1;
+  const docKind = (kind === "document_screenshot" || kind === "social_post") && !isProceduralStill(ctx, s); // a backdrop is no document
+  return g.aspect < ctx.St.cardIfAspectBelow || g.w < ctx.St.cardIfWidthBelow || docKind || g.maxCover < 1;
 }
 
 /** Applies a layout (and its parameters, scale caps) to an image (or low-resolution video) shot. */
@@ -53,6 +54,11 @@ function treatmentOf(ctx: Ctx, s: Shot): Shot["treatment"] {
   return "none";
 }
 
+function isProceduralStill(ctx: Ctx, s: Shot): boolean {
+  const a = s.src.assetId ? ctx.frozen[s.src.assetId] : undefined;
+  return a !== undefined && (a.candidate?.provider === "procedural" || a.conform.recipe.startsWith("proc-"));
+}
+
 export function decideLayouts(ctx: Ctx, shots: Shot[]): void {
   let cardRun = 0;
   let tiltSign = 1;
@@ -83,6 +89,8 @@ export function decideLayouts(ctx: Ctx, shots: Shot[]): void {
         else layout = !forced ? "cover" : "card";
       } else if (forced) layout = "card";
       else layout = weightedPick(ctx.St.layoutWeights, ctx.R(`lay:${s.id}`)) ?? "cover";
+      // A procedural backdrop is never framed as a card: an empty card reads as a missing picture.
+      if (layout === "card" && !forced && isProceduralStill(ctx, s)) layout = "cover";
       if (layout === "card" && cardRun >= ctx.St.maxCardRun) {
         if (!forced) layout = "cover";
         else {
@@ -132,7 +140,7 @@ function assetReuse(ctx: Ctx, shots: Shot[]): void {
     if (s.src.kind === "image") {
       const g = geometryOf(ctx, s)!;
       const run = (shots[i - 1]?.layout === "card" ? 1 : 0) + (shots[i - 2]?.layout === "card" && shots[i - 1]?.layout === "card" ? 1 : 0);
-      if (s.layout === "cover" && run < ctx.St.maxCardRun) { applyStillLayout(ctx, s, "card", (i % 2) ? 1 : -1); continue; }
+      if (s.layout === "cover" && run < ctx.St.maxCardRun && !isProceduralStill(ctx, s)) { applyStillLayout(ctx, s, "card", (i % 2) ? 1 : -1); continue; }
       if (s.layout === "card" && !s.forcedCard && g.maxCover >= 1) { applyStillLayout(ctx, s, "cover", 1); continue; }
     }
     if (!s.change) { s.change = true; continue; }
@@ -150,7 +158,7 @@ export function relayoutChanges(ctx: Ctx, shots: Shot[]): void {
     if (s.layoutParams === null && s.layout === "card" && s.src.kind === "image") applyStillLayout(ctx, s, "card", i % 2 ? 1 : -1);
     if (s.change && prev && s.src.kind === "image" && prev.src.assetId === s.src.assetId && s.role === "normal") {
       const g = geometryOf(ctx, s)!;
-      if (s.layout === "cover" && g.maxCover < ctx.P.reframe.scale[0] && run < ctx.St.maxCardRun) applyStillLayout(ctx, s, "card", i % 2 ? 1 : -1);
+      if (s.layout === "cover" && g.maxCover < ctx.P.reframe.scale[0] && run < ctx.St.maxCardRun && !isProceduralStill(ctx, s)) applyStillLayout(ctx, s, "card", i % 2 ? 1 : -1);
       else if (s.layout === "card" && run >= ctx.St.maxCardRun && !s.forcedCard && g.maxCover >= 1) applyStillLayout(ctx, s, "cover", 1);
       if (s.layout === "card" && s.layoutParams) s.layoutParams = { ...s.layoutParams, backdropSeed: s.layoutParams.backdropSeed, entry: "none" };
     }

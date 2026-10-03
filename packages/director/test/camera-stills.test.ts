@@ -171,6 +171,19 @@ describe("montage", () => {
   });
 });
 
+describe("procedural stills", () => {
+  it("are never framed as cards (an empty card reads as a missing picture)", () => {
+    const sc = policyScenario({ seconds: 300, chapters: 3 });
+    const frozen = Object.fromEntries(Object.entries(sc.input.frozen).map(([id, a]) => [id, a.kind === "image" ? FrozenAsset.parse({ ...a, width: 1920, height: 1080, conform: { ...a.conform, recipe: "proc-image-v1" } }) : a]));
+    const base = direct(sc.input).timeline.video.filter((c) => c.source.kind === "image" && c.layout === "card");
+    expect(base.length).toBeGreaterThan(0); // the same scenario with real pictures does use cards
+    const t = direct({ ...sc.input, frozen }).timeline;
+    const images = t.video.filter((c) => c.source.kind === "image");
+    expect(images.length).toBeGreaterThan(0);
+    for (const c of images) expect(c.layout, c.id).not.toBe("card");
+  });
+});
+
 describe("generated keyword cards", () => {
   it("are never reframed or punched: camera ≤ 1.05, no span zoom (punch) over them (SHOCK plate hits are momentary)", () => {
     // every third non-clip beat becomes a text card without picks (→ generated keywordCard backdrop)

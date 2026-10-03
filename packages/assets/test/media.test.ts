@@ -7,7 +7,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { FrozenAsset } from "@docmaker/core";
 import { ffmpeg, ffprobeJson, run, sha256File } from "@docmaker/core/node";
 import {
-  conformAudio, conformClip, conformImage, conformVideo, createProceduralProvider, freezeFile, FrozenCache, PROCEDURAL_RECIPES, proceduralAsset, trimWindow,
+  conformAudio, conformClip, conformImage, conformVideo, createProceduralProvider, freezeFile, FrozenCache, PROCEDURAL_RECIPES, proceduralAsset, recipeFor, trimWindow,
 } from "../src/index";
 import { cleanup, makeCtx, quietLogger, tmpDir } from "./helpers";
 
@@ -25,7 +25,7 @@ async function keyframeTimes(file: string): Promise<number[]> {
 
 describe("procedural recipes (§7.9) execute on ffmpeg", () => {
   it("covers the five spec recipes and keeps gradients speed > 0", () => {
-    expect(PROCEDURAL_RECIPES.map((r) => r.id)).toEqual(["gradient-grid", "archive-still", "drift-gradient", "life-texture", "scanline-news"]);
+    expect(PROCEDURAL_RECIPES.map((r) => r.id)).toEqual(["gradient-grid", "archive-still", "drift-gradient", "life-texture", "scanline-news", "paper-drift"]);
     const args = PROCEDURAL_RECIPES[0]!.args({ seed: 1, palette: PALETTE, fps: 30, seconds: 1 }).join(" ");
     expect(args).toContain("speed=0.00001");
     expect(args).not.toMatch(/speed=0[:,\s]/);
@@ -47,6 +47,28 @@ describe("procedural recipes (§7.9) execute on ffmpeg", () => {
       }
     }, 60_000);
   }
+
+  it("fallbacks carry structure and a muted palette (no flat vignette, no dead-signal speckles, no saturated primaries)", async () => {
+    const LOUD = ["#14110f", "#E8412F", "#2F3CFF"]; // drama-commentary ink / accent / secondary
+    for (let seed = 0; seed < 8; seed++) {
+      expect(recipeFor("video", "broll", seed)).not.toBe("life-texture");
+    }
+    const chroma = async (file: string) => {
+      const { data } = await sharp(file).resize(64, 36, { fit: "fill" }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+      let sum = 0;
+      for (let k = 0; k < data.length; k += 3) sum += (Math.max(data[k]!, data[k + 1]!, data[k + 2]!) - Math.min(data[k]!, data[k + 1]!, data[k + 2]!)) / 255;
+      return sum / (data.length / 3);
+    };
+    const still = await proceduralAsset({ recipe: "archive-still", seed: 11, palette: LOUD, fps: 30, seconds: 1, outDir: path.join(work, "look") }, ctx);
+    const st = await sharp(still).greyscale().stats();
+    expect(st.channels[0]!.stdev).toBeGreaterThan(12); // stains, rules and frame: something for the camera to move over
+    const grid = await proceduralAsset({ recipe: "gradient-grid", seed: 11, palette: LOUD, fps: 30, seconds: 1, outDir: path.join(work, "look") }, ctx);
+    expect(await chroma(grid)).toBeLessThan(0.35);
+    const drift = await proceduralAsset({ recipe: "drift-gradient", seed: 11, palette: LOUD, fps: 30, seconds: 1.5, outDir: path.join(work, "look") }, ctx);
+    const frame = path.join(work, "look", "drift.png");
+    await ffmpeg(["-y", "-ss", "1", "-i", drift, "-frames:v", "1", frame], { config: ctx.config, signal });
+    expect(await chroma(frame)).toBeLessThan(0.35);
+  }, 120_000);
 
   it("is deterministic per seed and differs across seeds", async () => {
     const a = await proceduralAsset({ recipe: "gradient-grid", seed: 7, palette: PALETTE, fps: 30, seconds: 1, outDir: path.join(work, "det1") }, ctx);
