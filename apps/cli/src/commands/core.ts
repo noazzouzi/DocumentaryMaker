@@ -2,7 +2,7 @@
 import { readFileSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import type { Command } from "commander";
-import { P, Project, QaReport, StageId, type Lang, type RenderPresetId } from "@docmaker/core";
+import { ApprovalsDoc, JobsIndex, P, Project, QaReport, StageId, type Lang, type RenderPresetId } from "@docmaker/core";
 import { ensureHome, loadRuntime } from "@docmaker/core/node";
 import type { DemoOptions } from "@docmaker/engine";
 import { UsageError, splitList, type CliContext } from "../context";
@@ -47,6 +47,64 @@ function qaSummary(file: string): string {
   }
 }
 
+/**
+ * Earlier auto-named demo projects of a fixture (`demo-<fixture>-<yyyymmdd-hhmmss>`) are removed after a successful demo
+ * (`--keep` keeps them) — but only untouched ones: a project with user edits (.history), a non-fixture approval or a
+ * queued/running job is kept.
+ */
+export function pruneDemoProjects(projectsDir: string, fixture: string, currentSlug: string): { removed: string[]; kept: { slug: string; why: string }[] } {
+  const re = new RegExp(`^demo-${fixture.replace(/[^a-z0-9-]/g, "")}-\\d{8}-\\d{6}$`);
+  const removed: string[] = [];
+  const kept: { slug: string; why: string }[] = [];
+  let names: string[] = [];
+  try {
+    names = readdirSync(projectsDir);
+  } catch {
+    return { removed, kept };
+  }
+  for (const name of names.sort()) {
+    if (name === currentSlug || !re.test(name)) continue;
+    const dir = path.join(projectsDir, name);
+    let p: Project;
+    try {
+      p = Project.parse(JSON.parse(readFileSync(path.join(dir, P.project), "utf8")));
+    } catch {
+      continue; // not a project
+    }
+    if (p.llm.provider !== "fixture" || p.llm.fixtureId !== fixture) continue;
+    const why = demoTouched(dir);
+    if (why) kept.push({ slug: name, why });
+    else {
+      rmSync(dir, { recursive: true, force: true });
+      removed.push(name);
+    }
+  }
+  return { removed, kept };
+}
+
+/** Why a demo project must not be removed automatically (null: untouched). */
+function demoTouched(dir: string): string | null {
+  const hasFiles = (d: string): boolean => {
+    try {
+      return readdirSync(d, { withFileTypes: true }).some((e) => (e.isDirectory() ? hasFiles(path.join(d, e.name)) : true));
+    } catch {
+      return false;
+    }
+  };
+  if (hasFiles(path.join(dir, ".history"))) return "it has user edits";
+  try {
+    const a = ApprovalsDoc.parse(JSON.parse(readFileSync(path.join(dir, P.approvals), "utf8")));
+    if (a.approvals.some((x) => x.by !== "fixture" && x.by !== "auto-threshold")) return "it has approvals by a person";
+  } catch { /* no approvals */ }
+  try {
+    const j = JobsIndex.parse(JSON.parse(readFileSync(path.join(dir, P.jobsIndex), "utf8")));
+    const own = new Set(j.jobs.filter((x) => x.request.kind === "demo").map((x) => x.id));
+    if (j.jobs.some((x) => x.status === "running" || x.status === "queued")) return "a job is queued or running";
+    if (j.jobs.some((x) => !own.has(x.id))) return "it was used beyond the demo run";
+  } catch { /* no jobs index */ }
+  return null;
+}
+
 export function registerCore(program: Command, ctx: CliContext): void {
   program
     .command("demo")
@@ -59,7 +117,7 @@ export function registerCore(program: Command, ctx: CliContext): void {
     .option("--preset <preset>", "draft | master", "draft")
     .option("--only-chapters <ids>", "e.g. CH1,CH2")
     .option("--slug <slug>", "project slug (default demo-<fixture>-<timestamp>)")
-    .option("--keep", "keep earlier demo projects of this fixture")
+    .option("--keep", "keep earlier demo projects of this fixture (otherwise untouched ones are removed)")
     .action(async (o: { fixture: string; lang: string; online?: boolean; offline?: boolean; tts: string; preset: string; onlyChapters?: string; slug?: string; keep?: boolean }) => {
       if (!["auto", "synthetic", "kokoro", "piper"].includes(o.tts)) throw new UsageError("--tts must be auto, synthetic, kokoro or piper");
       if (o.online && o.offline) throw new UsageError("--online and --offline are exclusive");
@@ -76,17 +134,10 @@ export function registerCore(program: Command, ctx: CliContext): void {
         process.exitCode = r.status === "canceled" ? EXIT.canceled : r.status === "waiting-approval" ? EXIT.gate : EXIT.error;
         return;
       }
-      if (!o.keep) {
-        const re = new RegExp(`^demo-${o.fixture.replace(/[^a-z0-9-]/g, "")}-\\d{8}-\\d{6}$`);
-        for (const name of readdirSync(engine.config.projectsDir)) {
-          if (name === d.slug || !re.test(name)) continue;
-          try {
-            const p = Project.parse(JSON.parse(readFileSync(path.join(engine.config.projectsDir, name, P.project), "utf8")));
-            if (p.llm.provider === "fixture" && p.llm.fixtureId === o.fixture) rmSync(path.join(engine.config.projectsDir, name), { recursive: true, force: true });
-          } catch { /* not a demo project */ }
-        }
-      }
+      const pruned = o.keep ? { removed: [], kept: [] } : pruneDemoProjects(engine.config.projectsDir, o.fixture, d.slug);
       if (ctx.globals().json) return;
+      if (pruned.removed.length) ctx.io.out(`removed ${pruned.removed.length} earlier untouched demo project(s): ${pruned.removed.join(", ")} (--keep keeps them)\n`);
+      for (const k of pruned.kept) ctx.io.out(`kept ${k.slug}: ${k.why}\n`);
       const projectDir = path.join(engine.config.projectsDir, d.slug);
       for (const lang of d.langs) {
         ctx.io.out(`\n${lang}:\n  video:  ${path.join(projectDir, P.renderFinal(lang, d.preset))}\n  export: ${path.join(projectDir, P.exportDir(lang))}\n`);

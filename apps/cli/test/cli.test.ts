@@ -1,6 +1,6 @@
 // CLI: parsing, exit codes (0/1/2/3/4), --yes/--max-cost never editorial, --ack all refused without a TTY,
 // --ack-file (mocked engine), and one real run of `demo` on the walking-skeleton fakes.
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -347,6 +347,51 @@ describe("factcheck on a real engine (gate-test)", () => {
       rmSync(root, { recursive: true, force: true });
     }
   }, 300_000);
+});
+
+describe("demo pruning", () => {
+  it("removes only untouched earlier demo projects of the same fixture", async () => {
+    const { makeProject } = await import("@docmaker/core/testing");
+    const { pruneDemoProjects } = await import("../src/commands/core");
+    const root = mkdtempSync(path.join(os.tmpdir(), "docmaker-cli-prune-"));
+    try {
+      const mk = (slug: string, fixtureId = "tulip-mania", files: Record<string, unknown> = {}) => {
+        mkdirSync(path.join(root, slug), { recursive: true });
+        writeFileSync(path.join(root, slug, "project.json"), JSON.stringify(makeProject({ slug, llm: { ...makeProject().llm, fixtureId } })));
+        for (const [rel, v] of Object.entries(files)) {
+          mkdirSync(path.dirname(path.join(root, slug, rel)), { recursive: true });
+          writeFileSync(path.join(root, slug, rel), typeof v === "string" ? v : JSON.stringify(v));
+        }
+      };
+      const job = (id: string, kind: JobRequest["kind"], status: JobRecord["status"]): JobRecord => ({
+        id, request: { slug: "x", kind, stage: null, from: "research", to: "qa", langs: [], force: false, options: {}, preset: null },
+        status, createdAt: NOW, startedAt: NOW, endedAt: NOW, error: null, coalescedInto: null, resumeOf: null,
+      });
+      const approval = (by: Approval["by"]): Approval => ({ gate: "outline-approval", stage: "outline", lang: null, planHash: "a".repeat(64), approvedAt: NOW, by, note: "", items: [], itemNotes: {} });
+      mk("demo-tulip-mania-20261001-101010", "tulip-mania", { "jobs/index.json": { schemaVersion: 1, jobs: [job("job-20261001-101010-aaaaaa", "demo", "succeeded")] }, "approvals.json": { schemaVersion: 1, approvals: [approval("fixture")] } });
+      mk("demo-tulip-mania-20261001-111111", "tulip-mania", { ".history/script/en/script.json/2026-10-01T11-11-11.000Z.json": "{}" });
+      mk("demo-tulip-mania-20261001-121212", "tulip-mania", { "approvals.json": { schemaVersion: 1, approvals: [approval("fixture"), approval("cli")] } });
+      mk("demo-tulip-mania-20261001-131313", "tulip-mania", { "jobs/index.json": { schemaVersion: 1, jobs: [job("job-20261001-131313-aaaaaa", "demo", "succeeded"), job("job-20261001-131314-bbbbbb", "stage", "succeeded")] } });
+      mk("demo-tulip-mania-20261001-141414", "tulip-mania", { "jobs/index.json": { schemaVersion: 1, jobs: [job("job-20261001-141414-aaaaaa", "demo", "running")] } });
+      mk("demo-tulip-mania-20261001-151515", "gate-test");
+      mk("demo-tulip-mania-mine");
+      mk("demo-tulip-mania-20261003-090000");
+      const r = pruneDemoProjects(root, "tulip-mania", "demo-tulip-mania-20261003-090000");
+      expect(r.removed).toEqual(["demo-tulip-mania-20261001-101010"]);
+      expect(r.kept).toEqual([
+        { slug: "demo-tulip-mania-20261001-111111", why: "it has user edits" },
+        { slug: "demo-tulip-mania-20261001-121212", why: "it has approvals by a person" },
+        { slug: "demo-tulip-mania-20261001-131313", why: "it was used beyond the demo run" },
+        { slug: "demo-tulip-mania-20261001-141414", why: "a job is queued or running" },
+      ]);
+      expect(readdirSync(root).sort()).toEqual([
+        "demo-tulip-mania-20261001-111111", "demo-tulip-mania-20261001-121212", "demo-tulip-mania-20261001-131313", "demo-tulip-mania-20261001-141414",
+        "demo-tulip-mania-20261001-151515", "demo-tulip-mania-20261003-090000", "demo-tulip-mania-mine",
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("demo on the walking-skeleton fakes", () => {
