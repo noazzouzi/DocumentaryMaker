@@ -6,7 +6,7 @@ import { P, Project, QaReport, StageId, type Lang, type RenderPresetId } from "@
 import { ensureHome, loadRuntime } from "@docmaker/core/node";
 import type { DemoOptions } from "@docmaker/engine";
 import { UsageError, splitList, type CliContext } from "../context";
-import { EXIT, follow, runJob } from "../jobrun";
+import { EXIT, followWithCancel, runJob } from "../jobrun";
 
 export function parseLangs(v: string | undefined, allowAll = true): Lang[] {
   if (!v) return [];
@@ -70,7 +70,7 @@ export function registerCore(program: Command, ctx: CliContext): void {
       const engine = await ctx.engine();
       const d = await engine.startDemo(opts);
       if (!ctx.globals().json) ctx.io.out(`demo project ${d.slug} (${d.langs.join(", ")}, ${d.preset})\n`);
-      const r = await follow(ctx, engine, d.jobId);
+      const r = await followWithCancel(ctx, engine, d.jobId);
       if (r.status !== "succeeded") {
         if (r.lastError && !ctx.globals().json) ctx.io.err(`demo failed: ${r.lastError.code}: ${r.lastError.message}\n`);
         process.exitCode = r.status === "canceled" ? EXIT.canceled : r.status === "waiting-approval" ? EXIT.gate : EXIT.error;

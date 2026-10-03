@@ -87,6 +87,23 @@ export async function follow(ctx: CliContext, engine: EngineExt, jobId: string):
   return { status, needs, estimates, spentEstimate, lastError };
 }
 
+/** Follows a job; Ctrl-C cancels it (first press), the follower then sees job-end "canceled". */
+export async function followWithCancel(ctx: CliContext, engine: EngineExt, jobId: string): Promise<FollowResult> {
+  let canceled = false;
+  const onSig = () => {
+    if (canceled) return;
+    canceled = true;
+    ctx.io.err("\ncanceling…\n");
+    void engine.cancel(jobId).catch(() => undefined);
+  };
+  process.on("SIGINT", onSig);
+  try {
+    return await follow(ctx, engine, jobId);
+  } finally {
+    process.off("SIGINT", onSig);
+  }
+}
+
 /** Submits (or resumes) a job and follows it to the end, applying --yes/--max-cost to cost/style gates. */
 export async function runJob(ctx: CliContext, req: JobRequest | { resume: string; slug: string }): Promise<number> {
   const engine = await ctx.engine();
