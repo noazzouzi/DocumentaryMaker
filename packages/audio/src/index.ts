@@ -62,3 +62,5 @@ export { IMPACT_CATEGORIES, cutsWithSfx } from "./qa/density";
 export type { DensityReport } from "./qa/density";
 export { AUDIO_NORM_RECIPE, BEATS_LATENCY_MS, LIBRARY_EXTENSIONS, UNDECLARED_LICENSE, gridFromBeats } from "./music/library";
 export type { LibraryTrack } from "./music/library";
+export { HYPERFRAMES_CATEGORY, PACK_LICENSES, REMOTION_CC0_CATEGORY, categorySyncPoint, detectDirection, importSfxPack } from "./sfx/import";
+export type { ImportablePack } from "./sfx/import";
