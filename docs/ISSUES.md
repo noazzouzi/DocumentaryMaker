@@ -148,3 +148,30 @@ if (err?.error && (ErrorCode.options as string[]).includes(err.error)) {
 2. A scratch take gets one whole-program `SourceLabel{scratch-voice}` instead of `{synthetic-voice}` *and* `{scratch-voice}`: both are whole-programme labels in the top-right zone and would overlap; scratch-voice already implies synthetic voice.
 3. Caption ids: SRT and pop/karaoke/rail groups of a segment share one `ids.caption(segmentId, n)` counter (unique per segment across variants); consumers must use `CaptionGroup.variant`, not the id, to tell them apart. Keyword captions use `kw:`.
 4. `SILENT_CUT_SHARE` (warn) can be unavoidable for fast-cut styles: drama-commentary cuts 15–30 times a minute but `sfxPolicy.perMin` tops out at 15, so `(1 − silentCutShare) × cuts` cut textures do not always fit. The director fills cut textures per 60 s block up to the SFX cap (61 % / 73 % silent cuts on the rich / tulip-mania test scenarios vs the 50 % ± 10 target).
+
+## 2026-10-03 assets (W3) → core `interfaces.ts` (CONTACT_UA_HOSTS), core `util/paths.ts` (path table), engine (W10), web (W11)
+
+Notes from `@docmaker/assets`. Every §4.19 signature is unchanged; the items below are additive or requests.
+
+**Problem 1 — Wikimedia media hosts throttle generic User-Agents.** Live runs from this container got `HTTP 429` ("use thumbnail images in sizes listed on https://w.wiki/GHai") from `upload.wikimedia.org` while `commons.wikimedia.org` (contact UA) answered. Wikimedia's UA policy covers every Wikimedia host, but `CONTACT_UA_HOSTS` only lists the API hosts. Wikimedia also only serves hotlinked thumbnails at standard widths (20 … 960, 1280, 1920, 3840; T414805): the assets package downloads originals ≤ 3840 px and the `3840px-` thumbnail above that (a standard width).
+**Proposed diff.**
+```ts
+export const CONTACT_UA_HOSTS: readonly string[] = ["commons.wikimedia.org", "upload.wikimedia.org", "www.wikidata.org", "wikidata.org", "api.openverse.org"];
+```
+**Local workaround.** None needed to work: a 429 is retried with `Retry-After` (or `x-ratelimit-reset`, which Wikimedia sends) up to 60 s, then the stage moves to the next candidate.
+
+**Problem 2 — files the assets package writes outside the stage are not in the path table.** Only the assets stage writes `assets/frozen.json`; assets frozen by `importUpload`, `freezeCandidate` and `resolveManualClip` (outside a stage run) are recorded in `assets/user-frozen/<assetId>.json` (schema `FrozenAsset`) and merged into `frozen.json`/`ledger.json` by the next assets run. `liveSearch` caches records in `assets/live-cache/<provider>-<sha16>.json` (`{cachedAt, record: CandidateRecord}`, 7-day TTL) so `freezeCandidate` re-derives licences server-side.
+**Proposed diff.** `DOC_REGISTRY` rows (owner `assets`, not user-editable): `^assets/user-frozen/[a-f0-9]{64}\.json$` → `FrozenAsset`; `^assets/live-cache/[a-z-]+-[a-f0-9]{16}\.json$` → `z.object({ cachedAt: z.number(), record: CandidateRecord })`.
+**Local workaround.** Written atomically by the package; exported helpers `readUserFrozen`, `recordUserFrozen`, `USER_FROZEN_DIR`.
+
+**Problem 3 — `AssetsStageInput` has no `allowPaid`** although `allowPaid` is the stage's hashed option key (§5.1).
+**Proposed diff.** `allowPaid?: boolean` in `AssetsStageInput` (added locally, optional).
+**Local workaround.** `allowPaid === false` skips paid providers (Brave, fal); undefined = the engine's cost gate approved paid work. W10: pass `JobOptions.allowPaid ?? false` and `reranker: null` when rerank is not approved.
+
+**Notes for W10/W11 (no change required).**
+1. `resolveAssets` returns documents only; the engine writes `picks.json`, `frozen.json`, `ledger.json`, `candidates/<beatId>.json` and `clips/<segmentId>.json` (from `clipWords`). Music assets already in the previous `frozen.json` (`role: "music"`) are carried over, never dropped.
+2. `videoVerifiedQuotes(picks)` lists quote ids whose YouTube passage matched ≥ 0.8 (the factcheck stage upgrades them to `verbatim`/`video`).
+3. Clip passages are snapped to shot boundaries within ±0.5 s (`python/docmaker_sidecar/cmd_cuts.py` when the venv exists, else ffmpeg `scdet`), never cutting into the matched words; `ClipResolution.youtube.startMs/endMs` hold the final window.
+4. `findPassage` also returns `matchStartMs`/`matchEndMs` (additive); `ytDownload` accepts an optional `o.durationSec` (whole-video download when ≤ 15 min).
+5. Extra exports: `activeProviders`, `QuotaBuckets`, `parse*` provider parsers, `licenseInfo`, `parseCcLicense`, `declarationLicense`, `requireDeclaration`, `ledgerEntryFor`, `buildLedger`, `resolveClips`, `loadClip`, `falAllowedForBeat`, `falPrompt`, `FAL_PROMPT_SUFFIX`, `FAL_NEGATIVE_PROMPT`.
+6. Live provider tests (`DOCMAKER_LIVE_TESTS=1`; run with `NODE_USE_ENV_PROXY=1` behind a proxy) passed on 2026-10-03 against Wikidata, Commons, Openverse, LOC, NASA and the Internet Archive.
