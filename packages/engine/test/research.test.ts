@@ -1,6 +1,6 @@
 // Research resume (§5.6): saved research turns are resumed only for the same request; a changed idea / as-of date or a
 // new request starts over (old turns discarded); a forced re-run of the same request replays the completed turns.
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DocmakerError, P, ResearchDossier, type JobEvent } from "@docmaker/core";
@@ -101,12 +101,16 @@ describe("research resume", () => {
 
   it("a forced re-run of the same request replays the completed turns (no new call)", async () => {
     const before = readFileSync(path.join(t.env.DOCMAKER_PROJECTS!, slug, P.dossier), "utf8");
+    const raw = () => readdirSync(rawDir()).sort().map((f) => [f, readFileSync(path.join(rawDir(), f), "utf8"), statSync(path.join(rawDir(), f)).mtimeMs] as const);
+    const rawBefore = raw();
+    expect(rawBefore.map(([f]) => f)).toEqual(["meta.json", "turn-1.json", "turn-2.json", "turn-3.json"]);
     const r = await run({ force: true });
     expect(r.status).toBe("succeeded");
     const call = fake.calls.at(-1)!;
     expect(call.resumeTurns).toHaveLength(3);
     expect(call.newTurns).toBe(0);
     expect(readFileSync(path.join(t.env.DOCMAKER_PROJECTS!, slug, P.dossier), "utf8")).toBe(before);
+    expect(raw()).toEqual(rawBefore); // nothing under research/raw is rewritten
   });
 
   it("a changed as-of date starts a new research and discards the old turns", async () => {

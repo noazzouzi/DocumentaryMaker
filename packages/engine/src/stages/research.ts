@@ -28,18 +28,19 @@ export function researchRequestKey(p: Pick<Project, "idea" | "languages" | "targ
   });
 }
 
-interface RawMeta { schemaVersion: 1; requestKey: string; turns: number; complete: boolean; updatedAt: string }
+/** research/raw/meta.json: which request the saved turns belong to (no timestamps: a replay rewrites nothing). */
+interface RawMeta { schemaVersion: 1; requestKey: string }
 
 async function readMeta(store: ProjectStore): Promise<RawMeta | null> {
   try {
     const m = JSON.parse(await readFile(store.abs(RESEARCH_META), "utf8")) as Partial<RawMeta>;
-    return typeof m.requestKey === "string" ? { schemaVersion: 1, requestKey: m.requestKey, turns: Number(m.turns) || 0, complete: m.complete === true, updatedAt: String(m.updatedAt ?? "") } : null;
+    return typeof m.requestKey === "string" ? { schemaVersion: 1, requestKey: m.requestKey } : null;
   } catch {
     return null;
   }
 }
-async function writeMeta(store: ProjectStore, m: Omit<RawMeta, "schemaVersion" | "updatedAt">): Promise<void> {
-  await writeTextIfChanged(store.abs(RESEARCH_META), JSON.stringify({ schemaVersion: 1, ...m, updatedAt: nowIso() }, null, 2) + "\n");
+async function writeMeta(store: ProjectStore, requestKey: string): Promise<void> {
+  await writeTextIfChanged(store.abs(RESEARCH_META), JSON.stringify({ schemaVersion: 1, requestKey } satisfies RawMeta, null, 2) + "\n");
 }
 
 async function turnFiles(dirAbs: string): Promise<string[]> {
@@ -139,20 +140,16 @@ export const researchStage: StageDef = {
       const done = stopReason(resumeTurns[resumeTurns.length - 1]) !== "pause_turn";
       emitLog(ctx, "research", "info", done ? `reusing the completed research (${resumeTurns.length} saved turn(s))` : `resuming research from ${resumeTurns.length} saved turn(s)`);
     }
-    await writeMeta(ctx.store, { requestKey, turns: resumeTurns.length, complete: false });
+    await writeMeta(ctx.store, requestKey);
     const rawFiles: string[] = resumeTurns.map((_, i) => P.researchTurn(i + 1));
-    let turnCount = resumeTurns.length;
     const r = await e.rt.deps.llm.runResearch(stepCtx(ctx), {
       topic: p.idea, langs: p.languages, minutes: p.targetMinutes, asOf: p.editorial.asOf, resumeTurns,
       onTurn: async (n, message) => {
         const rel = P.researchTurn(n);
         await writeTextIfChanged(ctx.store.abs(rel), JSON.stringify(message));
         if (!rawFiles.includes(rel)) rawFiles.push(rel);
-        turnCount = Math.max(turnCount, n);
-        await writeMeta(ctx.store, { requestKey, turns: turnCount, complete: false });
       },
     });
-    await writeMeta(ctx.store, { requestKey, turns: turnCount, complete: true });
     const registry: RegistryDoc = { schemaVersion: 1, entries: r.registry };
     const dossier: ResearchDossier = {
       schemaVersion: 1, topic: p.idea, asOf: p.editorial.asOf, searchLanguages: p.languages, markdown: r.dossierMarkdown,
