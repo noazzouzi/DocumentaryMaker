@@ -8,6 +8,7 @@ import type { AudioCtx as Ctx } from "./util";
 import { assembleVoProgramImpl } from "./vo/assemble";
 import { generateMusicImpl } from "./music/generate";
 import { mixTimelineImpl } from "./mix/mixer";
+import { densityReportImpl } from "./qa/density";
 
 export type AudioCtx = Ctx;
 export type SfxRecipe = Recipe;
@@ -39,7 +40,7 @@ export function mixTimeline(t: Timeline, i: { projectDir: string; outMixRel: str
   return mixTimelineImpl(t, i, ctx);
 }
 export function densityReport(t: Timeline): { sfxPerMin: number[]; impactsPerMin: number[]; silentCutShare: number; chapterRmsDb: Record<string, number> } {
-  throw notImplemented("audio.densityReport");
+  return densityReportImpl(t);
 }
 
 // ---- additive exports
@@ -57,3 +58,5 @@ export type { Instrument } from "./music/moods";
 export { MIX_BLOCK } from "./mix/mixer";
 export { TruePeakLimiter } from "./mix/limiter";
 export { equalPowerPan, shouldMirror } from "./mix/pan";
+export { IMPACT_CATEGORIES, cutsWithSfx } from "./qa/density";
+export type { DensityReport } from "./qa/density";
