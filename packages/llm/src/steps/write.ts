@@ -49,10 +49,15 @@ export async function writeOutline(ctx: StepCtx, i: { factSheet: FactSheet; styl
   const system = buildSystem({ style: i.style, lang: i.lang, asOf: i.factSheet.asOf, riskFlags: i.riskFlags, factSheet: i.factSheet });
   const budgetJson = json({ ...i.budget, story_shape: { id: shape.id, acts: shape.acts.map((a) => ({ id: a.id, share: a.share, purpose: a.purpose, words: i.budget.perAct[a.id] ?? 0 })) } });
   const user = OUTLINE_USER(budgetJson, i.lang) + `\nUse story_shape "${shape.id}" and exactly ${i.budget.chapters} chapters; the sum of target_words must be ${i.budget.words} (± 5 %).`;
-  const map = (w: OutlineWire) => outlineFromWire(w, {
-    lang: i.lang, budget: i.budget, budgets: i.budgets, shapeId: shape.id, avgCharsPerWord: profile.avgCharsPerWord[i.lang],
-    generatedBy: ctx.llm.kind === "fixture" ? "fixture" : "llm", now: nowIso(),
-  });
+  const map = (w: OutlineWire) => {
+    const issues: LintIssue[] = [];
+    const o = outlineFromWire(w, {
+      lang: i.lang, budget: i.budget, budgets: i.budgets, shapeId: shape.id, avgCharsPerWord: profile.avgCharsPerWord[i.lang],
+      generatedBy: ctx.llm.kind === "fixture" ? "fixture" : "llm", now: nowIso(), issues,
+    });
+    for (const x of issues) ctx.logger.warn(`outline: ${x.msg}`, { rule: x.rule, where: x.where });
+    return o;
+  };
   let outline = map(await call(ctx, { step: "outline", key: "", schema, effort: "high", maxTokens: 16000, lang: i.lang, system, user }));
   const errors = validateOutline(outline, i.style.data).filter((x) => x.level === "error");
   if (errors.length > 0) {

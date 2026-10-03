@@ -1,10 +1,11 @@
 // Wire → core mappers: the §6.4 coercion table, id normalisation, scandal_expose, FR typography.
 import { describe, expect, it } from "vitest";
-import { TopicType } from "@docmaker/core";
+import { TopicType, type LintIssue } from "@docmaker/core";
 import { TEST_STYLE } from "@docmaker/core/testing";
 import {
   StyleSuggestionWire, applyFrTypography, chapterFromWire, factSheetFromWire, normBeatId, normChapterId, normRef, normSegmentId, outlineFromWire,
-  passageFromWire, planBudget, rerankFromWire, resolveAnchors, resolveEmphasis, styleSuggestionFromWire, type ChapterScriptWire, type FactSheetWire, type OutlineWire,
+  passageFromWire, planBudget, rerankFromWire, resolveAnchors, resolveEmphasis, styleSuggestionFromWire, UNKNOWN_CHAPTER, validateOutline,
+  type ChapterScriptWire, type FactSheetWire, type OutlineWire,
 } from "../src/index";
 
 const registry = [
@@ -124,10 +125,23 @@ describe("outlineFromWire", () => {
     expect(o.chapters[1]!.closesLoops).toEqual(["L1"]);
     expect(o.thesisConfirmed).toBe(false);
   });
-  it("unknown chapter references are unrecoverable (LLM_SCHEMA)", () => {
+  it("bad references never throw after a paid call: unknown chapters → validateOutline errors (repair round), bad ids dropped", () => {
     const bad = w();
     bad.hook_teasers[0]!.paid_off_in = "the end";
-    expect(() => outlineFromWire(bad, { lang: "en", budget, budgets: {}, shapeId: "rise-fall", avgCharsPerWord: 5.6, generatedBy: "llm", now: "2026-10-02T00:00:00.000Z" })).toThrow(/hook_teasers\[0\]/);
+    bad.loops[0]!.closed_in = "Act 3";
+    bad.chapters[0]!.event_ids = ["E4", "S1", "N/A"];
+    bad.chapters[1]!.closes_loops = ["loop 1", "???"];
+    const issues: LintIssue[] = [];
+    const o = outlineFromWire(bad, { lang: "en", budget, budgets: {}, shapeId: "rise-fall", avgCharsPerWord: 5.6, generatedBy: "llm", now: "2026-10-02T00:00:00.000Z", issues });
+    expect(o.hookTeasers[0]!.paidOffIn).toBe(UNKNOWN_CHAPTER);
+    expect(o.chapters[0]!.eventIds).toEqual(["E4"]);
+    expect(o.chapters[1]!.closesLoops).toEqual(["L1"]);
+    expect(issues.map((x) => [x.rule, x.where])).toEqual([
+      ["OUTLINE_BAD_REF", "chapters[0].event_ids"], ["OUTLINE_BAD_REF", "chapters[1].closes_loops"],
+      ["OUTLINE_UNKNOWN_CHAPTER", "loops[0].closed_in"], ["OUTLINE_UNKNOWN_CHAPTER", "hook_teasers[0].paid_off_in"],
+    ]);
+    const errs = validateOutline(o, TEST_STYLE).filter((x) => x.level === "error").map((x) => x.rule);
+    expect(errs).toEqual(expect.arrayContaining(["teaser-unpaid", "loop-unpaid"]));
   });
 });
 
@@ -154,6 +168,15 @@ describe("chapterFromWire", () => {
     expect(c!).toMatchObject({ displayText: "", breathMs: 2000, subtitleTranslation: "" });
     expect(r.chapter.loopsOpened).toEqual(["L2"]);
     expect(r.issues.map((x) => x.rule)).toContain("UNKNOWN_FACT_REF");
+  });
+  it("garbage fact/quote ids are dropped with a warning instead of throwing", () => {
+    const bad = w();
+    bad.segments[0]!.fact_ids = ["N/A", "S1", "Act 3"];
+    bad.segments[1]!.quote_id = "the quote";
+    const r = chapterFromWire(bad, { chapterId: "CH3", lang: "fr", primaryLang: "en", knownFacts: new Set(["S1", "Q1"]), skeleton: null, fallbackTitle: "x" });
+    expect(r.chapter.segments[0]!.factIds).toEqual(["S1"]);
+    expect(r.chapter.segments[1]!.quoteId).toBeNull();
+    expect(r.issues.filter((x) => x.rule === "UNKNOWN_FACT_REF").map((x) => x.where)).toEqual(["CH3-S01", "CH3-S02"]);
   });
   it("secondary languages take the skeleton's ids and primaryHash", () => {
     const skeleton = [{ id: "CH3-S01", primaryHash: "a".repeat(64) }, { id: "CH3-S02", primaryHash: "b".repeat(64) }, { id: "CH3-S04", primaryHash: "c".repeat(64) }];

@@ -6,7 +6,7 @@ import {
 } from "@docmaker/core";
 import { maskPersons, sharedNameTokens } from "../text";
 import { applyFrTypography } from "./typography";
-import { normChapterId, normLoopId, normRef, normRefs, normSegmentId, schemaError } from "./ids";
+import { normChapterId, normLoopId, normRef, normRefs, normRefsLenient, normSegmentId } from "./ids";
 import type {
   ChapterScriptWire, FactCheckWire, FactSheetWire, OutlineWire, PassageWire, RerankWire, StyleSuggestionWire, TranscreateWire,
 } from "./schemas";
@@ -211,10 +211,22 @@ export function styleSuggestionFromWire(
 }
 
 // ---------------------------------------------------------------- outline
+/**
+ * Placeholder for a chapter reference the model got wrong ("Act 3", "the end"): a valid id that is never a chapter of
+ * the outline, so validateOutline reports teaser-unpaid / loop-unpaid and the repair round fixes it (no throw after a
+ * paid call — a throw would replay identically on a plain retry, the parsed output being reused from its receipt).
+ */
+export const UNKNOWN_CHAPTER = "CH99";
+
 export function outlineFromWire(
   w: OutlineWire,
-  o: { lang: Lang; budget: Budget; budgets: Partial<Record<Lang, Budget>>; shapeId: string; avgCharsPerWord: number; generatedBy: "llm" | "fixture"; now: string },
+  o: {
+    lang: Lang; budget: Budget; budgets: Partial<Record<Lang, Budget>>; shapeId: string; avgCharsPerWord: number; generatedBy: "llm" | "fixture"; now: string;
+    /** Receives a warning per dropped or unresolved reference. */
+    issues?: LintIssue[];
+  },
 ): Outline {
+  const issues = o.issues ?? [];
   // chapter ids are positional (CH1..CHn); the model's ids only serve to remap its own references
   const remap = new Map<string, string>();
   w.chapters.forEach((c, i) => {
@@ -225,33 +237,50 @@ export function outlineFromWire(
   });
   const ch = (raw: string, path: string): string => {
     const v = remap.get(raw.trim()) ?? remap.get(normChapterId(raw) ?? "\u0000");
-    if (!v) throw schemaError(path, `unknown chapter "${raw}"`);
-    return v;
+    if (v) return v;
+    issues.push(warn("OUTLINE_UNKNOWN_CHAPTER", path, `unknown chapter "${raw}" (left unresolved for the repair round)`));
+    return UNKNOWN_CHAPTER;
   };
   const cps = o.budget.charsPerSec;
-  const loopId = (raw: string, path: string) => {
-    const v = normLoopId(raw);
-    if (!v) throw schemaError(path, `invalid loop id "${raw}"`);
-    return v;
+  const refs = (raw: readonly string[], path: string, prefix: string): string[] => {
+    const r = normRefsLenient(raw, prefix);
+    if (r.dropped.length > 0) issues.push(warn("OUTLINE_BAD_REF", path, `dropped invalid ids ${r.dropped.map((d) => JSON.stringify(d)).join(", ")} (expected ${prefix}<n>)`));
+    return r.ids;
+  };
+  const loops = (raw: readonly string[], path: string): string[] => {
+    const out: string[] = [];
+    for (const l of raw) {
+      const v = normLoopId(l);
+      if (v) {
+        if (!out.includes(v)) out.push(v);
+      } else if (l.trim() !== "") {
+        issues.push(warn("OUTLINE_BAD_REF", path, `dropped invalid loop id "${l}"`));
+      }
+    }
+    return out;
   };
   const chapters = w.chapters.map((c, i) => {
     const targetWords = Math.max(1, Math.round(c.target_words));
     return {
       id: ids.chapter(i + 1), act: c.act, title: c.title.trim(), targetSec: Math.max(0.1, round1((targetWords * o.avgCharsPerWord) / cps)), targetWords,
-      purpose: c.purpose.trim(), eventIds: normRefs(c.event_ids, `chapters[${i}].event_ids`, "E"), claimIds: normRefs(c.claim_ids, `chapters[${i}].claim_ids`, "C"),
-      quoteIds: normRefs(c.quote_ids, `chapters[${i}].quote_ids`, "Q"),
-      opensLoops: c.opens_loops.map((l, k) => loopId(l, `chapters[${i}].opens_loops[${k}]`)),
-      closesLoops: c.closes_loops.map((l, k) => loopId(l, `chapters[${i}].closes_loops[${k}]`)),
+      purpose: c.purpose.trim(), eventIds: refs(c.event_ids, `chapters[${i}].event_ids`, "E"), claimIds: refs(c.claim_ids, `chapters[${i}].claim_ids`, "C"),
+      quoteIds: refs(c.quote_ids, `chapters[${i}].quote_ids`, "Q"),
+      opensLoops: loops(c.opens_loops, `chapters[${i}].opens_loops`), closesLoops: loops(c.closes_loops, `chapters[${i}].closes_loops`),
       exitHook: c.exit_hook.trim(), adBreakAfter: c.ad_break_after,
     };
+  });
+  const loopDefs = w.loops.flatMap((l, i) => {
+    const id = normLoopId(l.id);
+    if (!id) {
+      issues.push(warn("OUTLINE_BAD_REF", `loops[${i}].id`, `dropped loop with invalid id "${l.id}"`));
+      return [];
+    }
+    return [{ id, question: l.question.trim(), openedIn: ch(l.opened_in, `loops[${i}].opened_in`), closedIn: ch(l.closed_in, `loops[${i}].closed_in`) }];
   });
   return Outline.parse({
     schemaVersion: 1, lang: o.lang, title: w.title.trim(), thesis: w.thesis.trim(), thesisConfirmed: false, storyShape: o.shapeId,
     hookTeasers: w.hook_teasers.map((h, i) => ({ id: h.id.trim() || `T${i + 1}`, teaser: h.teaser.trim(), paidOffIn: ch(h.paid_off_in, `hook_teasers[${i}].paid_off_in`) })),
-    loops: w.loops.map((l, i) => ({
-      id: loopId(l.id, `loops[${i}].id`), question: l.question.trim(),
-      openedIn: ch(l.opened_in, `loops[${i}].opened_in`), closedIn: ch(l.closed_in, `loops[${i}].closed_in`),
-    })),
+    loops: loopDefs,
     chapters, callbackPlan: w.callback_plan.map((c) => c.trim()).filter((c) => c !== ""), nextVideoBridge: w.next_video_bridge.trim(),
     budget: o.budget, budgets: o.budgets, generatedBy: o.generatedBy, updatedAt: o.now,
   });
@@ -296,12 +325,16 @@ export function chapterFromWire(
     const isClip = s.type === "clip";
     let text = isNarr || isClip ? s.text.trim().replace(/[ \t]+/g, " ") : "";
     if (isNarr && o.lang === "fr") text = applyFrTypography(text);
-    const facts = normRefs(s.fact_ids, `segments[${i}].fact_ids`);
+    const lenient = normRefsLenient(s.fact_ids);
+    if (lenient.dropped.length > 0) issues.push(warn("UNKNOWN_FACT_REF", id, `dropped invalid fact ids ${lenient.dropped.map((d) => JSON.stringify(d)).join(", ")}`));
+    const facts = lenient.ids;
     const factIds = o.knownFacts ? facts.filter((f) => o.knownFacts!.has(f)) : facts;
     if (factIds.length !== facts.length) {
       issues.push(warn("UNKNOWN_FACT_REF", id, `dropped unknown fact ids ${facts.filter((f) => !factIds.includes(f)).join(", ")}`));
     }
-    const quoteId = isClip ? normRef(s.quote_id, `segments[${i}].quote_id`, "Q") : null;
+    const quoteRef = isClip ? normRefsLenient([s.quote_id], "Q") : { ids: [], dropped: [] };
+    if (quoteRef.dropped.length > 0) issues.push(warn("UNKNOWN_FACT_REF", id, `invalid clip quote id ${JSON.stringify(s.quote_id)}`));
+    const quoteId = quoteRef.ids[0] ?? null;
     if (isClip && quoteId && !factIds.includes(quoteId)) factIds.push(quoteId);
     const skel = secondary && o.skeleton && o.skeleton.length === w.segments.length ? o.skeleton[i] : undefined;
     return {

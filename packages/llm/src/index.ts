@@ -48,7 +48,7 @@ export { ACCUSATORY, ATTRIBUTION, BANNED_OPENERS, AND_THEN, DENIAL, splitSentenc
 export * from "./wire/schemas";
 export {
   factSheetFromWire, factSheetToWire, styleSuggestionFromWire, outlineFromWire, outlineToWire, chapterFromWire, resolveAnchors, resolveEmphasis,
-  factCheckItemsFromWire, rerankFromWire, passageFromWire, transcreateFromWire,
+  factCheckItemsFromWire, rerankFromWire, passageFromWire, transcreateFromWire, UNKNOWN_CHAPTER,
 } from "./wire/map";
 export { normRef, normRefs, normChapterId, normSegmentId, normBeatId, normLoopId } from "./wire/ids";
 export { EDITORIAL_RULES, SAFE_MESSAGING } from "./prompts/rules";
