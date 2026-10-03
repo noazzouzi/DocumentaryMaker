@@ -10,33 +10,58 @@ export function alignKey(s: string): string {
 
 const MATCH = 2, MISMATCH = -1, GAP = -1;
 
-/** Matched index pairs [i, j] (a[i] ≡ b[j]) of the optimal global alignment, increasing in both. */
-export function nwPairs(a: readonly string[], b: readonly string[]): [number, number][] {
+/** Above this many cells the alignment is restricted to a band around the diagonal (both sequences are monotonic). */
+export const NW_FULL_CELLS = 4_000_000;
+const NEG = -(2 ** 30);
+const DIAG = 0, UP = 1, LEFT = 2;
+
+/**
+ * Matched index pairs [i, j] (a[i] ≡ b[j]) of the optimal global alignment, increasing in both.
+ * Memory: two score rows + one traceback byte per cell. Large inputs (a 60-min recording vs its script) are aligned in
+ * a band of half-width |n − m| + max(256, 5 %) around the scaled diagonal, so the traceback stays a few tens of MB.
+ */
+export function nwPairs(a: readonly string[], b: readonly string[], o: { fullCells?: number } = {}): [number, number][] {
   const A = a.map(alignKey), B = b.map(alignKey);
   const n = A.length, m = B.length;
   if (n === 0 || m === 0) return [];
-  const W = m + 1;
-  const score = new Int32Array((n + 1) * W);
-  for (let i = 1; i <= n; i++) score[i * W] = i * GAP;
-  for (let j = 1; j <= m; j++) score[j] = j * GAP;
+  const full = n * m <= (o.fullCells ?? NW_FULL_CELLS);
+  const half = full ? m + 1 : Math.abs(n - m) + Math.max(256, Math.ceil(0.05 * Math.max(n, m))) + Math.ceil(m / n) + 1;
+  // row i covers columns [lo[i], hi[i]] (inclusive); both bounds are non-decreasing in i
+  const lo = new Int32Array(n + 1), hi = new Int32Array(n + 1), off = new Float64Array(n + 2);
+  for (let i = 0; i <= n; i++) {
+    const c = Math.round((i * m) / n);
+    lo[i] = full ? 0 : Math.max(0, c - half);
+    hi[i] = full ? m : Math.min(m, c + half);
+    off[i + 1] = off[i]! + (hi[i]! - lo[i]! + 1);
+  }
+  const dir = new Uint8Array(off[n + 1]!);
+  let prev = new Int32Array(m + 1).fill(NEG), cur = new Int32Array(m + 1).fill(NEG);
+  for (let j = 0; j <= hi[0]!; j++) { prev[j] = j * GAP; dir[j] = LEFT; }
   for (let i = 1; i <= n; i++) {
     const ai = A[i - 1]!;
-    const row = i * W, prev = (i - 1) * W;
-    for (let j = 1; j <= m; j++) {
+    const l0 = lo[i]!, h0 = hi[i]!, base = off[i]! - l0;
+    // this buffer still holds row i − 2: reset its band so every cell outside row i's band reads NEG
+    if (i >= 2) cur.fill(NEG, lo[i - 2]!, hi[i - 2]! + 1);
+    for (let j = l0; j <= h0; j++) {
+      if (j === 0) { cur[0] = i * GAP; dir[base] = UP; continue; }
       const s = ai !== "" && ai === B[j - 1] ? MATCH : MISMATCH;
-      const d = score[prev + j - 1]! + s, u = score[prev + j]! + GAP, l = score[row + j - 1]! + GAP;
-      score[row + j] = d >= u ? (d >= l ? d : l) : u >= l ? u : l;
+      const d = prev[j - 1]! + s, u = prev[j]! + GAP, l = cur[j - 1]! + GAP;
+      let best = d, k = DIAG;
+      if (u > best) { best = u; k = UP; }
+      if (l > best) { best = l; k = LEFT; }
+      cur[j] = best;
+      dir[base + j] = k;
     }
+    [prev, cur] = [cur, prev];
   }
   const pairs: [number, number][] = [];
   let i = n, j = m;
   while (i > 0 && j > 0) {
-    const s = score[i * W + j]!;
-    const eq = A[i - 1] !== "" && A[i - 1] === B[j - 1];
-    if (s === score[(i - 1) * W + j - 1]! + (eq ? MATCH : MISMATCH)) {
-      if (eq) pairs.push([i - 1, j - 1]);
+    const k = dir[off[i]! - lo[i]! + j]!;
+    if (k === DIAG) {
+      if (A[i - 1] !== "" && A[i - 1] === B[j - 1]) pairs.push([i - 1, j - 1]);
       i--; j--;
-    } else if (s === score[(i - 1) * W + j]! + GAP) i--;
+    } else if (k === UP) i--;
     else j--;
   }
   return pairs.reverse();

@@ -18,6 +18,13 @@ const CURRENCY: Record<Cur, Record<Lang, readonly [string, string]>> = {
   "£": { en: ["pound", "pounds"], fr: ["livre", "livres"] },
   ƒ: { en: ["guilder", "guilders"], fr: ["florin", "florins"] },
 };
+/** Sub-unit words, used when the amount is below one unit ("$0.50" → "fifty cents"). */
+const SUBUNIT: Record<Cur, Record<Lang, readonly [string, string]>> = {
+  "€": { en: ["cent", "cents"], fr: ["centime", "centimes"] },
+  $: { en: ["cent", "cents"], fr: ["cent", "cents"] },
+  "£": { en: ["penny", "pence"], fr: ["penny", "pence"] },
+  ƒ: { en: ["cent", "cents"], fr: ["cent", "cents"] },
+};
 const CUR_RE = "[€$£ƒ]";
 const SCALE_WORDS = new Set(["thousand", "million", "millions", "billion", "billions", "trillion", "trillions", "mille", "milliard", "milliards"]);
 const MONTHS = [
@@ -33,6 +40,12 @@ const YEAR_CONTEXT = new Set([
   "durant", "fin", "début", "milieu", "été", "hiver", "printemps", "automne", "entre",
 ]);
 
+/** Words after which a 4-digit number is a cardinal even when it ends a sentence ("page 2017.", "n° 1234"). */
+const CARDINAL_CONTEXT = new Set([
+  "page", "pages", "p", "pp", "no", "nos", "n", "nº", "number", "numbers", "numéro", "numéros", "num", "room", "chambre", "article", "art",
+  "line", "lines", "ligne", "lignes", "vol", "volume", "tome", "issue", "item", "lot", "code", "folio", "fol", "plate", "planche", "figure",
+  "fig", "note", "footnote", "verse", "verset", "box", "carton", "dossier", "file", "inv", "inventory", "inventaire", "cote", "ms",
+]);
 const CONTENT = /[\p{L}\p{N}%€$£]/u;
 const CORE_START = /[\p{L}\p{N}€$£%]/u;
 const CORE_END = /[\p{L}\p{N}€$£%]/u;
@@ -140,13 +153,29 @@ export function buildTtsText(spoken: string, lang: Lang, opts: TtsTextOptions): 
   };
 
   const curWord = (c: Cur, plural: boolean) => CURRENCY[c][lang][plural ? 1 : 0];
-  const amountPlural = (t: NumTok) => (lang === "fr" ? Number(`${t.int}.${t.frac ?? 0}`) >= 2 : !(t.int.replace(/^0+/, "") === "1" && !t.frac));
+  /** Plural of the currency word. With cents read after it ("one euro twenty") only the integer part counts. */
+  const amountPlural = (t: NumTok, cents: boolean) => {
+    const int = Number(t.int);
+    if (lang === "fr") return (cents ? int : Number(`${t.int}.${t.frac ?? 0}`)) >= 2;
+    return cents ? int !== 1 : !(int === 1 && !t.frac);
+  };
 
   const tryNumber = (i: number): number => {
     const first = splitCore(src[i]!);
     const tok = parseNumber(first.core, lang, neighbourCore(src, i, 1));
     if (!tok) return 0;
     const W = LANG_WORDS[lang];
+    // a minus sign glued to a cardinal: "-5", "−12,5 %" → "minus five", "moins douze virgule cinq pour cent"
+    const neg = /[-\u2212]$/u.test(first.pre) && !tok.ordinal && tok.decade === null && !tok.range;
+    const numberWord = lang === "fr" ? "numéro" : "number";
+    const hash = /#$/u.test(first.pre) && !tok.ordinal && tok.decade === null;
+    const lead = neg ? `${first.pre.slice(0, -1)}${W.minus} ` : hash ? `${first.pre.slice(0, -1)}${numberWord} ` : first.pre;
+    // "No. 12", "n° 12" → "number twelve", "numéro douze" (abbreviations TTS engines misread)
+    if (i > 0 && src[i - 1] !== "" && !done[i - 1] && /^(?:no\.|n[°º]\.?)$/iu.test(splitCore(src[i - 1]!).core + splitCore(src[i - 1]!).post)) {
+      const pp = splitCore(src[i - 1]!);
+      out[i - 1] = `${pp.pre}${pp.core[0] === "N" ? numberWord[0]!.toUpperCase() + numberWord.slice(1) : numberWord}`;
+      done[i - 1] = 1;
+    }
     // ordinals, decades, ranges: single token
     if (tok.ordinal) {
       out[i] = first.pre + ordinalWords(tok.ordinal.n, lang, tok.ordinal) + first.post;
@@ -198,12 +227,14 @@ export function buildTtsText(spoken: string, lang: Lang, opts: TtsTextOptions): 
     const unit: Cur | "%" | null = pre ?? post ?? sepUnit;
     // year vs cardinal for a bare 4-digit integer
     let groupWords: string[];
-    const bare = span.length === 1 && !unit && frac === null && isYearValue(intDigits) && /^\d{4}$/.test(first.core);
+    const bare = span.length === 1 && !unit && frac === null && !neg && isYearValue(intDigits) && /^\d{4}$/.test(first.core);
     if (bare) {
       const prev = neighbourCore(src, i, -1)?.toLocaleLowerCase(lang) ?? null;
       const next = neighbourCore(src, i, 1);
       const standalone = next === null || first.post !== "" || /^[\p{Lu}\p{N}]/u.test(next);
-      groupWords = [(prev !== null && YEAR_CONTEXT.has(prev)) || standalone ? yearWords(Number(intDigits), lang) : cardinalFromDigits(intDigits, lang)];
+      const cardinalCtx = first.pre.endsWith("#") || (prev !== null && CARDINAL_CONTEXT.has(prev));
+      const year = !cardinalCtx && ((prev !== null && YEAR_CONTEXT.has(prev)) || standalone);
+      groupWords = [year ? yearWords(Number(intDigits), lang) : cardinalFromDigits(intDigits, lang)];
     } else if (span.length > 1) {
       groupWords = cardinalGroupWords(digitGroups(intDigits), lang);
       // groups beyond the written ones (cannot happen: each written group is one display word)
@@ -216,21 +247,27 @@ export function buildTtsText(spoken: string, lang: Lang, opts: TtsTextOptions): 
     let scaleIdx = -1;
     const nx = after + (sepUnit ? 1 : 0);
     if (pre && nx < src.length && src[nx] !== "" && !done[nx] && SCALE_WORDS.has(splitCore(src[nx]!).core.toLocaleLowerCase(lang))) scaleIdx = nx;
+    // cents read after the currency word ("twelve euros fifty", ".00" silent); other fractions are decimals
+    const centsMode = isCur && frac !== null && frac.length === 2 && scaleIdx < 0;
+    let cents = centsMode && frac !== "00" ? cardinalFromDigits(frac, lang) : "";
+    const decimal = frac !== null && !centsMode ? `${W.point} ${fractionWords(frac, lang)}` : "";
     let unitText = "";
     if (unit === "%") unitText = W.percent;
-    else if (unit) {
-      const w = curWord(unit, scaleIdx >= 0 || amountPlural(value));
+    else if (unit && centsMode && Number(intDigits) === 0 && cents !== "") {
+      // below one unit: "$0.50" → "fifty cents", "0,01 €" → "un centime"
+      groupWords = [cents];
+      unitText = SUBUNIT[unit as Cur][lang][Number(frac) === 1 ? 0 : 1];
+      cents = "";
+    } else if (unit) {
+      const w = curWord(unit, scaleIdx >= 0 || amountPlural(value, centsMode));
       unitText = scaleIdx >= 0 && lang === "fr" ? (/^[aeiouyé]/.test(w) ? `d'${w}` : `de ${w}`) : w;
     }
-    // cents read after the currency word ("twelve euros fifty"); other fractions are decimals
-    const cents = isCur && frac !== null && frac.length === 2 && scaleIdx < 0 ? cardinalFromDigits(frac, lang) : "";
-    const decimal = frac !== null && cents === "" ? `${W.point} ${fractionWords(frac, lang)}` : "";
     span.forEach((k, n) => {
       const parts = splitCore(src[k]!);
       const isLast = n === span.length - 1;
       const words = [groupWords[n] ?? "", isLast ? decimal : "", isLast && !sepUnit && scaleIdx < 0 ? unitText : "", isLast && !sepUnit ? cents : ""]
         .filter((x) => x !== "").join(" ");
-      out[k] = words === "" ? "" : `${n === 0 ? parts.pre : ""}${words}${isLast ? parts.post : ""}`;
+      out[k] = words === "" ? "" : `${n === 0 ? lead : ""}${words}${isLast ? parts.post : ""}`;
       done[k] = 1;
     });
     if (sepUnit) {

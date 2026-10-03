@@ -8,7 +8,7 @@ import { alignScriptToTranscript } from "./nw";
 
 export interface AsrOutput { words: { text: string; startMs: number; endMs: number; p: number | null }[]; durationSec: number; rtf: number }
 export interface AsrBatchOutput { results: AsrOutput[] }
-export type SidecarRunner = <T>(cmd: "asr", input: unknown, opts: { config: RuntimeConfig; signal: AbortSignal; timeoutMs?: number }) => Promise<T>;
+export type SidecarRunner = <T>(cmd: "asr", input: unknown, opts: { config: RuntimeConfig; signal: AbortSignal; timeoutMs?: number; onProgress?: (pct: number, msg: string) => void }) => Promise<T>;
 
 export const FW_MODEL = "large-v3-turbo";
 
@@ -137,4 +137,19 @@ export async function transcribeMany(asr: Aligner, audioPaths: string[], lang: L
   const out: WordTiming[][] = [];
   for (const p of audioPaths) out.push(await asr.transcribe(p, lang, namesPrompt, signal));
   return out;
+}
+
+/** setup helper: downloads (or verifies) the faster-whisper model into <models>/whisper/fw through the sidecar. */
+export async function ensureFasterWhisperModel(
+  config: RuntimeConfig, signal: AbortSignal, o: { model?: string; run?: SidecarRunner; onProgress?: (pct: number, msg: string) => void } = {},
+): Promise<string> {
+  const model = o.model ?? FW_MODEL;
+  const dir = path.join(config.paths.models, "whisper", "fw");
+  if (fasterWhisperModelPresent(dir, model)) return dir;
+  if (config.offline) throw new DocmakerError("OFFLINE", `cannot download the faster-whisper ${model} model in offline mode`);
+  const run = o.run ?? (runSidecar as SidecarRunner);
+  await run("asr", { downloadOnly: true, model, modelsDir: dir, computeType: "int8", threads: 4, localFilesOnly: false }, {
+    config, signal, timeoutMs: 6 * 3600_000, ...(o.onProgress ? { onProgress: o.onProgress } : {}),
+  }).catch((e: unknown) => { throw sidecarError(e); });
+  return dir;
 }

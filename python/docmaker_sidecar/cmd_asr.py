@@ -3,6 +3,7 @@
 in:  {audio | audios: [path], lang, model, initialPrompt, vad, beamSize, computeType, threads, modelsDir, localFilesOnly}
 out: {words: [{text, startMs, endMs, p}], durationSec, rtf}  — or {results: [that, ...]} for ``audios`` (one model load)
 
+downloadOnly: fetch/verify the model into modelsDir and exit (``docmaker setup``).
 localFilesOnly: never download (HF_HUB_OFFLINE=1 + local_files_only); a missing model is MODEL_MISSING.
 
 Word texts keep faster-whisper's leading space (" word"); a piece without one continues the previous word
@@ -45,7 +46,10 @@ def _transcribe(model, audio: str, inp: dict, frac0: float, frac1: float) -> dic
 
 def run(inp: dict) -> dict:
     batch = inp.get("audios")
-    if batch is not None:
+    download_only = bool(inp.get("downloadOnly", False))
+    if download_only:
+        audios = []
+    elif batch is not None:
         if not isinstance(batch, list) or not batch:
             raise SidecarError("VALIDATION", "audios must be a non-empty list of paths")
         audios = batch
@@ -79,6 +83,9 @@ def run(inp: dict) -> dict:
         where = " (not downloaded; local files only)" if local_only else ""
         raise SidecarError("MODEL_MISSING", f"cannot load the faster-whisper model {model_name!r}{where}: {e}") from e
     load = time.time() - t0
+    if download_only:
+        progress(1.0, f"model {model_name} ready (load {load:.1f}s)")
+        return {"words": [], "durationSec": 0.0, "rtf": 0.0}
     results = []
     n = len(audios)
     for k, audio in enumerate(audios):

@@ -94,7 +94,7 @@ export type { ElevenLabsLike } from "./providers/elevenlabs";
 export { SherpaProvider, loadSherpa } from "./providers/sherpa";
 export { RecordingProvider, firstAsrAligner } from "./providers/registry";
 export { EstimatedAligner, estimateTimings } from "./align/estimated";
-export { FasterWhisperAligner } from "./align/faster-whisper";
+export { FasterWhisperAligner, ensureFasterWhisperModel, fasterWhisperModelPresent, type FasterWhisperOptions } from "./align/faster-whisper";
 export { WhisperCppAligner, installWhisperCppRuntime, WHISPER_CPP_VERSION } from "./align/whisper-cpp";
 export { ElevenLabsForcedAligner } from "./align/elevenlabs-forced";
 export { wordErrorRate, nwPairs } from "./align/nw";

@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { DocmakerError, VoiceSettings } from "@docmaker/core";
 import { readWav, readWavHeader, runSidecar } from "@docmaker/core/node";
 import { makeScript } from "@docmaker/core/testing";
-import { FasterWhisperAligner, SherpaProvider, calibrateVoice, createTtsProvider, synthesizeTrack, teleprompterHtml } from "../src/index";
+import { FasterWhisperAligner, SherpaProvider, ensureFasterWhisperModel, calibrateVoice, createTtsProvider, synthesizeTrack, teleprompterHtml } from "../src/index";
 import { fasterWhisperModelPresent, mergeAsrWords, sidecarError } from "../src/align/faster-whisper";
 import { firstAsrAligner } from "../src/providers/registry";
 import { tokensToWords } from "../src/align/whisper-cpp";
@@ -358,6 +358,22 @@ describe("synthesizeTrack — ASR QA is optional and degrades", () => {
     expect(out).toEqual([[{ text: "Hi", startMs: 0, endMs: 100, confidence: 0.9 }], [{ text: "Hi", startMs: 0, endMs: 100, confidence: 0.9 }]]);
     expect(inputs[0]).toMatchObject({ localFilesOnly: true, audios: [path.resolve("a.wav"), path.resolve("b.wav")] });
     expect(inputs[0]).not.toHaveProperty("audio");
+  });
+  it("ensureFasterWhisperModel downloads through the sidecar once, and refuses offline", async () => {
+    const online = makeCtx({ offline: false });
+    const inputs: Record<string, unknown>[] = [];
+    const dir = path.join(online.config.paths.models, "whisper", "fw");
+    const run = (async (_cmd: string, input: Record<string, unknown>) => {
+      inputs.push(input);
+      mkdirSync(path.join(dir, "large-v3-turbo"), { recursive: true });
+      writeFileSync(path.join(dir, "large-v3-turbo", "model.bin"), "x");
+      return { words: [], durationSec: 0, rtf: 0 };
+    }) as unknown as ConstructorParameters<typeof FasterWhisperAligner>[1];
+    expect(await ensureFasterWhisperModel(online.config, online.signal, { run })).toBe(dir);
+    expect(await ensureFasterWhisperModel(online.config, online.signal, { run })).toBe(dir);
+    expect(inputs).toEqual([expect.objectContaining({ downloadOnly: true, model: "large-v3-turbo", modelsDir: dir, localFilesOnly: false })]);
+    const off = makeCtx();
+    await expect(ensureFasterWhisperModel(off.config, off.signal, { run })).rejects.toMatchObject({ code: "OFFLINE" });
   });
 });
 

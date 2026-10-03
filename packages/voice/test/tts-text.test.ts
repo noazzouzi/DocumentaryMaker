@@ -39,6 +39,15 @@ describe("buildTtsText — passthrough", () => {
 });
 
 describe("buildTtsText — numbers (FR)", () => {
+  it("FR cents, centimes, minus and n°", () => {
+    const s = "1,20 € et 0,50 € puis 0,01 €, 2,00 € ; il faisait -5 degrés, −12,5 % ; voir page 2017, le n° 1999 et en 1999.";
+    const r = buildTtsText(s, "fr", NUM);
+    checkSpans(s, r);
+    expect(r.ttsText).toBe(
+      "un euro vingt et cinquante centimes puis un centime, deux euros ; il faisait moins cinq degrés, moins douze virgule cinq pour cent ; " +
+      "voir page deux mille dix-sept, le numéro mille neuf cent quatre-vingt-dix-neuf et en mille neuf cent quatre-vingt-dix-neuf.",
+    );
+  });
   it("years after « en », grouped thousands split over their display words, florins", () => {
     const s = "En 1637, un seul bulbe de tulipe s’est vendu 5 500 florins à Haarlem.";
     const r = buildTtsText(s, "fr", NUM);
@@ -92,6 +101,23 @@ describe("buildTtsText — numbers (EN)", () => {
     expect(buildTtsText("It ended in 2005.", "en", NUM).ttsText).toBe("It ended in two thousand five.");
     expect(buildTtsText("By 1066 England had changed.", "en", NUM).ttsText).toBe("By ten sixty-six England had changed.");
     expect(buildTtsText("One dollar: $1.", "en", NUM).ttsText).toBe("One dollar: one dollar.");
+  });
+  it("currency with cents: the plural follows the integer part; below one unit → sub-units; .00 is silent", () => {
+    const s = "€1.20 each, $1.05, $2.50, $0.50, $0.01, £0.75 and $5.00.";
+    const r = buildTtsText(s, "en", NUM);
+    checkSpans(s, r);
+    expect(r.ttsText).toBe("one euro twenty each, one dollar five, two dollars fifty, fifty cents, one cent, seventy-five pence and five dollars.");
+    expect(buildTtsText("$1.5 and $1.", "en", NUM).ttsText).toBe("one point five dollars and one dollar.");
+  });
+  it("negative numbers, and 4-digit numbers after page/No./# stay cardinals", () => {
+    const s = "It was -5 degrees, (−12.5%) and -$3; see page 2017. No. 1999, #2017 and in 1999.";
+    const r = buildTtsText(s, "en", NUM);
+    checkSpans(s, r);
+    expect(r.ttsText).toBe(
+      "It was minus five degrees, (minus twelve point five percent) and minus three dollars; see page two thousand seventeen. " +
+      "Number one thousand nine hundred ninety-nine, number two thousand seventeen and in nineteen ninety-nine.",
+    );
+    expect(buildTtsText("The war of 1914-1918 and pre-1914 maps.", "en", NUM).ttsText).toBe("The war of nineteen fourteen to nineteen eighteen and pre-1914 maps.");
   });
   it("Roman regnal numbers after a capitalised name", () => {
     expect(buildTtsText("Henry VIII and Elizabeth II.", "en", NUM).ttsText).toBe("Henry the eighth and Elizabeth the second.");

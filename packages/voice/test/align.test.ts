@@ -8,6 +8,7 @@ import { anchorSpans, mapDisplayToTts, shiftTimings, toTimedWords } from "../src
 import { tokensToWords, type WhisperItem } from "../src/align/whisper-cpp";
 import { regionsFromAudio } from "../src/align/estimated";
 import { mergeAsrWords } from "../src/align/faster-whisper";
+import { alignKey, nwPairs } from "../src/align/nw";
 import { DATA } from "./helpers";
 
 const read = <T>(f: string) => JSON.parse(readFileSync(path.join(DATA, f), "utf8")) as T;
@@ -87,6 +88,73 @@ describe("alignScriptToTranscript (Needleman–Wunsch)", () => {
     expect(mae).toBeLessThan(150);
     expect(al.filter((w) => !w.matched).map((w) => w.text)).toEqual(["bankable", "d'Hollywood,"]);
   });
+});
+
+/** The original full-matrix NW (score matrix + recomputed traceback), kept as the reference. */
+function nwReference(a: readonly string[], b: readonly string[]): [number, number][] {
+  const A = a.map(alignKey), B = b.map(alignKey);
+  const n = A.length, m = B.length, W = m + 1;
+  if (!n || !m) return [];
+  const sc = new Int32Array((n + 1) * W);
+  for (let i = 1; i <= n; i++) sc[i * W] = -i;
+  for (let j = 1; j <= m; j++) sc[j] = -j;
+  for (let i = 1; i <= n; i++) for (let j = 1; j <= m; j++) {
+    const d = sc[(i - 1) * W + j - 1]! + (A[i - 1] !== "" && A[i - 1] === B[j - 1] ? 2 : -1);
+    sc[i * W + j] = Math.max(d, sc[(i - 1) * W + j]! - 1, sc[i * W + j - 1]! - 1);
+  }
+  const out: [number, number][] = [];
+  let i = n, j = m;
+  while (i > 0 && j > 0) {
+    const eq = A[i - 1] !== "" && A[i - 1] === B[j - 1];
+    if (sc[i * W + j] === sc[(i - 1) * W + j - 1]! + (eq ? 2 : -1)) { if (eq) out.push([i - 1, j - 1]); i--; j--; }
+    else if (sc[i * W + j] === sc[(i - 1) * W + j]! - 1) i--;
+    else j--;
+  }
+  return out.reverse();
+}
+
+/** Seeded word sequence + an "ASR" copy with substitutions, deletions, insertions and a repeated phrase (a retake). */
+function noisyPair(n: number, seed: number): [string[], string[]] {
+  let x = seed >>> 0;
+  const rnd = () => ((x = (Math.imul(x, 1664525) + 1013904223) >>> 0) / 2 ** 32);
+  const vocab = Array.from({ length: 400 }, (_, k) => `w${k}`);
+  const a = Array.from({ length: n }, () => vocab[Math.floor(rnd() * vocab.length)]!);
+  const b: string[] = [];
+  for (let k = 0; k < n; k++) {
+    const r = rnd();
+    if (r < 0.03) continue; // deletion
+    if (r < 0.06) { b.push("zz"); continue; } // substitution
+    b.push(a[k]!);
+    if (r > 0.97) b.push("uh"); // insertion
+    if (k % 997 === 500) b.push(...a.slice(k - 8, k + 1)); // retake of the last phrase
+  }
+  return [a, b];
+}
+
+describe("nwPairs", () => {
+  it("matches the full-matrix reference (ties included) on small inputs", () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const [a, b] = noisyPair(30 + seed * 7, seed);
+      expect(nwPairs(a, b)).toEqual(nwReference(a, b));
+    }
+    expect(nwPairs(["a", "b"], ["b", "a"])).toEqual(nwReference(["a", "b"], ["b", "a"]));
+    expect(nwPairs([], ["a"])).toEqual([]);
+  });
+  it("the banded alignment of a long recording equals the full one", () => {
+    const [a, b] = noisyPair(2500, 7);
+    expect(nwPairs(a, b, { fullCells: 0 })).toEqual(nwReference(a, b));
+  });
+  it("a 60-minute import (≈ 9k × 9k words) aligns in a band without a gigabyte matrix", () => {
+    const [a, b] = noisyPair(9000, 3);
+    const before = process.memoryUsage().arrayBuffers;
+    const t0 = performance.now();
+    const pairs = nwPairs(a, b);
+    const ms = performance.now() - t0;
+    expect(process.memoryUsage().arrayBuffers - before).toBeLessThan(120 * 2 ** 20);
+    expect(pairs.length).toBeGreaterThan(9000 * 0.9);
+    for (const [i, j] of pairs) expect(a[i]).toBe(b[j]);
+    expect(ms).toBeLessThan(10_000);
+  }, 30_000);
 });
 
 describe("wordErrorRate", () => {
