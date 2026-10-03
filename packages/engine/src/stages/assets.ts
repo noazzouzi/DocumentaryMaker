@@ -63,10 +63,17 @@ export async function prepareMusic(ctx: StageCtx, plans: readonly BeatPlan[]): P
       return { tracks, frozen };
     }
     const lib = await e.rt.deps.audio.scanMusicLibrary(p.audio.musicLibraryDir, actx);
+    // declared licences go through the §7.4 policy like every visual (NC on a monetized project, ND, SA without allowShareAlike)
+    const policy = new e.rt.deps.assets.LicensePolicyEngine(p.assets.licensePolicy, { monetized: p.editorial.monetized, fairUseAcknowledged: p.editorial.fairUseAcknowledged });
     for (const t of lib) {
       // undeclared library tracks are never used (no USER-OWNED default; the user declares a licence first)
       if (t.license.code === "UNKNOWN" || t.license.restrictions.includes("unknown-rights")) {
         emitLog(ctx, "assets", "warn", `music ${t.title}: no licence declared — skipped`);
+        continue;
+      }
+      const verdict = policy.evaluate(t.license, null);
+      if (!verdict.allowed) {
+        emitLog(ctx, "assets", "warn", `music ${t.title}: refused by the licence policy (${verdict.reasons.join("; ")}) — skipped`);
         continue;
       }
       // scanMusicLibrary already returns the normalised (-18 LUFS) copy

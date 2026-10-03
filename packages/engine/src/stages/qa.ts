@@ -1,7 +1,7 @@
 // qa[lang, preset] (App. D, §16.4): ffprobe, ebur128, blackdetect (pix_th=0.03, pic_th=0.99) + freezedetect in one decode,
 // contact sheets via renderClient.renderStills, audio.densityReport, director stats → qa/<lang>/<preset>/report.json.
 import path from "node:path";
-import { P, QaReport, Timeline, docHash, type Lang, type QaCheck, type RenderPresetId } from "@docmaker/core";
+import { P, QaReport, Timeline, docHash, type Lang, type LintIssue, type QaCheck, type RenderPresetId } from "@docmaker/core";
 import { ffprobeJson, measureEbur128, run } from "@docmaker/core/node";
 import type { StageCtx, StageDef } from "../types";
 import { docs, need } from "../docs";
@@ -91,6 +91,20 @@ async function renderContentHash(ctx: Pick<StageCtx, "store">, lang: Lang, prese
   return docHash({ ...doc, renderMs: 0, chunks: doc.chunks.map((c) => ({ ...c, cached: false, ms: 0 })) });
 }
 
+/**
+ * SFX density uses the director's definition (§9.5 step 4, lint DENSITY_MAX): roll-collapsed SFX events in a sliding 60 s
+ * window, capped at perMin[1] × the act intensity of the window. The director's lint already measures exactly that, so
+ * QA reports its verdict; the fixed per-minute bins of densityReport (raw cues, partial last minute extrapolated) are
+ * informative only and never warn on their own.
+ */
+export function sfxDensityCheck(lintIssues: readonly LintIssue[] | null, binsPerMin: readonly number[], perMinCap: number): QaCheck {
+  const maxBin = Math.max(0, ...binsPerMin);
+  if (lintIssues === null) return check("sfx-density", "info", true, `no director lint: max ${maxBin} SFX in a calendar minute (style cap ${perMinCap}/min × act intensity, not checked)`, maxBin, perMinCap);
+  const over = lintIssues.find((x) => x.rule === "DENSITY_MAX" && / SFX in /.test(x.msg));
+  if (over) return check("sfx-density", "warn", false, `SFX density over the style cap at ${over.where}: ${over.msg}`, maxBin, perMinCap);
+  return check("sfx-density", "warn", true, `SFX density within the style cap (${perMinCap}/min × act intensity, sliding 60 s window)`, maxBin, perMinCap);
+}
+
 export const qaStage: StageDef = {
   id: "qa",
   perLang: true,
@@ -158,9 +172,7 @@ export const qaStage: StageDef = {
     checks.push(check("timeline-lint", "error", lintErrors.length === 0, lintErrors.length ? `${lintErrors.length} timeline lint error(s): ${lintErrors.slice(0, 5).map((x) => x.rule).join(", ")}` : "timeline lint clean", lintErrors.length, 0));
     try {
       const d = e.rt.deps.audio.densityReport(t);
-      const maxSfx = Math.max(0, ...d.sfxPerMin);
-      const cap = ctx.style.data.sfxPolicy.perMin[1];
-      checks.push(check("sfx-density", "warn", maxSfx <= cap, `max ${maxSfx} SFX per minute (style cap ${cap})`, maxSfx, cap));
+      checks.push(sfxDensityCheck(lint?.issues ?? null, d.sfxPerMin, ctx.style.data.sfxPolicy.perMin[1]));
       checks.push(check("silent-cut-share", "info", true, `${Math.round(d.silentCutShare * 100)} % of cuts without a cut SFX`, d.silentCutShare, null));
     } catch (err) {
       emitLog(ctx, "qa", "warn", `density report unavailable: ${err instanceof Error ? err.message : String(err)}`);

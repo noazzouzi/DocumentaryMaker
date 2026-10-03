@@ -19,7 +19,8 @@ export type LlmApi = Pick<typeof llmPkg,
 export type FrozenCacheLike = assetsPkg.AssetsCtx["cache"];
 export type AssetsApi = Pick<typeof assetsPkg,
   | "createHttpClient" | "resolveAssets" | "freezeFile" | "conformAudio" | "validatePick" | "buildCredits" | "verifyQuotes" | "resolveEntity"
-  | "liveSearch" | "freezeCandidate" | "importUpload" | "importLocalDir" | "resolveManualClip" | "ytProbe" | "videoVerifiedQuotes" | "requireDeclaration" | "collectReferencedBlobs" | "readUserFrozen"> & {
+  | "liveSearch" | "freezeCandidate" | "importUpload" | "importLocalDir" | "resolveManualClip" | "ytProbe" | "videoVerifiedQuotes" | "requireDeclaration" | "collectReferencedBlobs" | "readUserFrozen"
+  | "LicensePolicyEngine"> & {
   createFrozenCache(o: { config: RuntimeConfig; logger: Logger }): FrozenCacheLike;
 };
 export type VoiceApi = Pick<typeof voicePkg,
