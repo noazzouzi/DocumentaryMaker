@@ -5,7 +5,7 @@ import { cleanAuthor, nowIso, stripHtml } from "../util";
 import { downloadOriginal, qs, yearOf, type SearchResult } from "./common";
 
 export const COMMONS_API = "https://commons.wikimedia.org/w/api.php";
-const EXT_FILTER = "LicenseShortName|UsageTerms|AttributionRequired|Artist|Credit|LicenseUrl|DateTimeOriginal|ImageDescription|Restrictions";
+const EXT_FILTER = "LicenseShortName|UsageTerms|AttributionRequired|Artist|Credit|LicenseUrl|DateTimeOriginal|ImageDescription|Restrictions|Categories";
 const OK_MIME = new Set(["image/jpeg", "image/png", "image/tiff", "image/webp"]);
 
 type Meta = Record<string, { value?: unknown } | undefined>;
@@ -65,6 +65,20 @@ export function commonsDownloadUrl(ii: { url?: string; width?: number; height?: 
   return commonsDownload(ii).url;
 }
 
+/** Visible Commons categories of a file (extmetadata "Categories", pipe-separated): its tags for ranking and identity checks.
+ *  Maintenance categories (licence, upload, quality, size and template bookkeeping) are dropped. */
+export function commonsCategories(raw: string): string[] {
+  const out: string[] = [];
+  for (const part of stripHtml(raw).split("|")) {
+    const t = part.replace(/_/g, " ").trim();
+    if (t === "" || t.length > 120) continue;
+    if (/^(?:CC[- ]|PD[- ]|Public domain|License|Licen[cs]e|Self-published|Uploaded|Files? (?:by|from|with|uploaded)|Pages? with|Media (?:needing|missing|lacking|with)|Images? (?:with|from|by|uploaded)|Photographs? taken on|Taken with|Supported by|Featured|Quality|Valued|Hidden|Template|Artworks? with|Artworks without|Works? by Unknown|Wikidata|GFDL|Attribution)/i.test(t)) continue;
+    if (!out.includes(t)) out.push(t);
+    if (out.length >= 20) break;
+  }
+  return out;
+}
+
 export function parseCommons(json: unknown): SearchResult[] {
   const pages = ((json as { query?: { pages?: CommonsPage[] } } | null)?.query?.pages ?? []).slice().sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
   const out: SearchResult[] = [];
@@ -85,7 +99,7 @@ export function parseCommons(json: unknown): SearchResult[] {
     if (lic && mv(m, "AttributionRequired") === "true") license.attributionRequired = true;
     const candidate: Candidate = {
       provider: "wikimedia", providerAssetId: String(p.pageid ?? p.title ?? ii.url), kind: "image", title,
-      description: stripHtml(mv(m, "ImageDescription")).slice(0, 500), tags: [], previewUrl: ii.thumburl ?? ii.url,
+      description: stripHtml(mv(m, "ImageDescription")).slice(0, 500), tags: commonsCategories(mv(m, "Categories")), previewUrl: ii.thumburl ?? ii.url,
       downloadUrl: dl.url, width: dl.width, height: dl.height, durationSec: null, license,
       author: artist ? { name: artist, url: null } : null, sourcePageUrl: ii.descriptionurl ?? "", retrievedAt: nowIso(), youtube: null,
     };

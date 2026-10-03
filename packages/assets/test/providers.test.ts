@@ -11,7 +11,7 @@ import {
 } from "../src/index";
 import { iaSearchUrl } from "../src/providers/archives";
 import { falGenerate } from "../src/providers/paid";
-import { commonsDownload, commonsDownloadUrl, commonsThumbStep } from "../src/providers/wikimedia";
+import { commonsCategories, commonsDownload, commonsDownloadUrl, commonsThumbStep } from "../src/providers/wikimedia";
 import { commonsViaOpenverse, openverseUrl } from "../src/providers/openverse";
 import { pexelsUrl, pickPexelsFile, pixabayUrl } from "../src/providers/stock";
 import { DATA, makeConfig, quietLogger } from "./helpers";
@@ -106,6 +106,14 @@ describe("Wikimedia Commons (recorded)", () => {
     expect(first.candidate.author?.name).not.toMatch(/</);
     expect((first.raw as { year: number }).year).toBe(2020);
     expect(first.candidate.title).not.toMatch(/^File:|_/);
+  });
+  it("Commons categories become tags (maintenance categories dropped); the search asks for them", () => {
+    expect(commonsCategories("Graves in Kensal Green Cemetery|Charles_Mackay|CC-BY-SA-4.0|Self-published work|Uploaded with UploadWizard|Media needing categories|Charles Mackay"))
+      .toEqual(["Graves in Kensal Green Cemetery", "Charles Mackay"]);
+    expect(commonsCategories("")).toEqual([]);
+    const page = { query: { pages: [{ pageid: 1, title: "File:Two_20kr_gold_coins.png", index: 1, imageinfo: [{ url: "https://upload.wikimedia.org/wikipedia/commons/a/ab/X.png", width: 1000, height: 500, mime: "image/png", descriptionurl: "https://commons.wikimedia.org/wiki/File:X.png", extmetadata: { LicenseShortName: { value: "CC0" }, Categories: { value: "Gold coins of Denmark|CC-Zero" } } }] }] } };
+    expect(parseCommons(page)[0]!.candidate.tags).toEqual(["Gold coins of Denmark"]);
+    expect(decodeURIComponent(commonsUrl({ beatId: "B", kind: "image", role: "archival", text: "tulip", localText: null, entityQid: null, personIds: [], orientation: "any", minWidth: 0, durationSec: null, limit: 5, lang: null }))).toContain("|Categories");
   });
   it("never downloads originals: standard-step thumbnails only, with the real thumbnail size", () => {
     const rs = parseCommons(j("commons-search.json"));
