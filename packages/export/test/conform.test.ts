@@ -17,12 +17,12 @@ import { HAS_FFMPEG, HAS_XMLLINT, xmllint } from "./helpers";
 const touched = vi.hoisted(() => [] as string[]);
 vi.mock("node:fs/promises", async (importOriginal) => {
   const orig = await importOriginal<typeof import("node:fs/promises")>();
-  const spy = <F extends (...a: any[]) => any>(fn: F) => ((...a: Parameters<F>) => { touched.push(String(a[0])); return fn(...a); }) as F;
+  const spy = <F extends (...a: never[]) => unknown>(fn: F) => ((...a: Parameters<F>) => { touched.push(String(a[0])); return fn(...a); }) as F;
   return { ...orig, default: orig, readFile: spy(orig.readFile), open: spy(orig.open), stat: spy(orig.stat), copyFile: spy(orig.copyFile), link: spy(orig.link), readdir: spy(orig.readdir) };
 });
 vi.mock("node:fs", async (importOriginal) => {
   const orig = await importOriginal<typeof import("node:fs")>();
-  const spy = <F extends (...a: any[]) => any>(fn: F) => ((...a: Parameters<F>) => { touched.push(String(a[0])); return fn(...a); }) as F;
+  const spy = <F extends (...a: never[]) => unknown>(fn: F) => ((...a: Parameters<F>) => { touched.push(String(a[0])); return fn(...a); }) as F;
   return { ...orig, default: orig, readFileSync: spy(orig.readFileSync), openSync: spy(orig.openSync), createReadStream: spy(orig.createReadStream) };
 });
 

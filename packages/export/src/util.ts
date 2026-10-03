@@ -43,7 +43,6 @@ export const OTIO_COLOR: Record<MarkerColor, string> = {
 
 /** Removes control characters (XML 1.0 forbids most of them; NLE marker fields are single-line). */
 export function cleanText(s: string, singleLine = true): string {
-  // eslint-disable-next-line no-control-regex
   const t = s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
   return singleLine ? t.replace(/\s*[\r\n]+\s*/g, " ").trim() : t;
 }

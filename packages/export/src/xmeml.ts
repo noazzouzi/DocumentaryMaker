@@ -3,7 +3,7 @@
 // transitionitems (outgoing end=-1 / out+d/2, incoming start=-1 / in−d/2), keyframe `when` in source frames.
 import { create } from "xmlbuilder2";
 import type { XMLBuilder } from "xmlbuilder2/lib/interfaces";
-import type { ExportAudioClip, ExportAudioTrack, ExportClip, ExportMarker, ExportMedia, ExportTimeline, ExportTransition, Keyframe } from "@docmaker/core";
+import type { ExportAudioClip, ExportClip, ExportMarker, ExportMedia, ExportTimeline, ExportTransition, Keyframe } from "@docmaker/core";
 import { xmemlPathUrl } from "./paths";
 import { XMEML_MAX_LEVEL, cleanText, dbToLevel, fmt, tcNdf, timebase } from "./util";
 

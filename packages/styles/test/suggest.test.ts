@@ -109,7 +109,10 @@ describe("suggestStyleOffline", () => {
     expect(s.topicType).toBe("history");
     expect(s.recommendedStyleId).toBe("quiet-essay");
     expect(s.ranked.map((r) => r.styleId)).toEqual(["quiet-essay", "drama-commentary"]);
-    for (const r of s.ranked) expect(r.score).toBeGreaterThanOrEqual(0), expect(r.score).toBeLessThanOrEqual(1);
+    for (const r of s.ranked) {
+      expect(r.score).toBeGreaterThanOrEqual(0);
+      expect(r.score).toBeLessThanOrEqual(1);
+    }
   });
 
   it("is deterministic and fills offline title/thumbnail options from the idea", () => {

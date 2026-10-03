@@ -12,6 +12,10 @@ import { toExportTimeline, writeFcpxml, writeMarkersEdl, writeOtio, writeSrt, wr
 import { GOLDEN_DIR, HAS_XMLLINT, expectGolden, fakeConform, normXml, xmllint } from "./helpers";
 import { scenario } from "./scenario";
 
+interface OtioRange { start_time: { value: number }; duration: { value: number } }
+interface OtioItem { OTIO_SCHEMA: string; in_offset: { value: number }; out_offset: { value: number }; source_range: OtioRange; media_references?: { DEFAULT_MEDIA: { target_url: string } } }
+interface OtioMarker { name: string; marked_range: OtioRange; color: string }
+
 const ref = (name: string) => readFileSync(path.join(GOLDEN_DIR, "reference", name), "utf8");
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "", isArray: (n) => ["asset", "keyframe", "asset-clip", "marker", "clipitem", "track", "transitionitem", "parameter", "link"].includes(n) });
 
@@ -73,11 +77,11 @@ describe("parity with the validated prototypes", () => {
   it("OTIO: same tracks, ranges, transition and markers as the prototype", () => {
     const facts = (s: string) => {
       const d = JSON.parse(s);
-      const tracks = d.tracks.children.map((t: { kind: string; children: Record<string, any>[] }) => ({
+      const tracks = d.tracks.children.map((t: { kind: string; children: OtioItem[] }) => ({
         kind: t.kind,
         items: t.children.map((c) => c.OTIO_SCHEMA === "Transition.1" ? `T${c.in_offset.value}/${c.out_offset.value}` : `${c.OTIO_SCHEMA}:${c.source_range.start_time.value}+${c.source_range.duration.value}${c.media_references ? `@${c.media_references.DEFAULT_MEDIA.target_url}` : ""}`),
       }));
-      return { tracks, markers: d.tracks.markers.map((m: any) => `${m.name}@${m.marked_range.start_time.value}+${m.marked_range.duration.value}:${m.color}`), start: d.global_start_time.value };
+      return { tracks, markers: d.tracks.markers.map((m: OtioMarker) => `${m.name}@${m.marked_range.start_time.value}+${m.marked_range.duration.value}:${m.color}`), start: d.global_start_time.value };
     };
     expect(facts(writeOtio(et, { premiereMetadata: true }))).toEqual(facts(ref("demo.otio")));
   });
