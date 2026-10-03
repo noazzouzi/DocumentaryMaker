@@ -13,11 +13,11 @@
     "test:e2e": "vitest run --project e2e",
     "test:watch": "vitest --project '!e2e' --project '!render-int'",
     "smoke": "tsx scripts/smoke.ts",
-    "docmaker": "tsx apps/cli/src/main.ts",
-    "demo": "tsx apps/cli/src/main.ts demo --offline",
+    "docmaker": "node apps/cli/bin/docmaker.js",
+    "demo": "node apps/cli/bin/docmaker.js demo --offline",
     "dev:web": "pnpm --filter @docmaker/web dev",
-    "setup": "tsx apps/cli/src/main.ts setup",
-    "doctor": "tsx apps/cli/src/main.ts doctor",
+    "setup": "node apps/cli/bin/docmaker.js setup",
+    "doctor": "node apps/cli/bin/docmaker.js doctor",
     "check:deps": "node scripts/check-remotion-versions.mjs && node scripts/check-forbidden-deps.mjs && node scripts/check-deps-graph.mjs"
   },
   "devDependencies": {

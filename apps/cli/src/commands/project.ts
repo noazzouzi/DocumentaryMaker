@@ -5,7 +5,7 @@ import { copyFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Command } from "commander";
 import {
-  ApprovalsDoc, FactCheck, GateId, LicenseCode, Outline, P, StyleSuggestion, docHash, type FactCheckItem, type JobOptions, type JobRequest, type Lang,
+  ApprovalsDoc, FactCheck, GateId, LicenseCode, Outline, P, ProgramLayout, StyleSuggestion, docHash, type FactCheckItem, type JobOptions, type JobRequest, type Lang,
   type Project, type StageId, type UploadDeclaration,
 } from "@docmaker/core";
 import { NOTE_MIN, ackCoverage, changedSinceAck, gatingItems, fixOnly } from "@docmaker/engine";
@@ -25,6 +25,26 @@ export function stageJob(ctx: CliContext, slug: string, stage: StageId, o: { lan
 }
 const pipelineJob = (ctx: CliContext, slug: string, from: StageId, to: StageId, o: { langs?: Lang[]; options?: JobOptions; preset?: JobRequest["preset"] } = {}): JobRequest =>
   ({ ...stageJob(ctx, slug, from, o), kind: "pipeline", stage: null, from, to });
+
+/**
+ * Chapter selection of a stage downstream of layout (direct, mix, render) when `--chapters` is not given: the selection
+ * the existing layout of every requested language was built with (e.g. a `demo --only-chapters CH1,CH2` project), so
+ * `docmaker direct <slug>` re-directs what is laid out instead of failing on a chapter mismatch. No layout, or layouts
+ * that disagree → all chapters (the engine then reports the mismatch). `layout` itself always defaults to all chapters.
+ */
+export async function laidOutChapters(ctx: CliContext, slug: string, langs: Lang[]): Promise<string[] | null> {
+  const engine = await ctx.engine();
+  const project = await engine.getProject(slug);
+  const sel = new Set<string>();
+  for (const lang of langs.length ? langs : project.languages) {
+    const layout = await engine.readDoc(slug, P.layout(lang), ProgramLayout).catch(() => null);
+    if (!layout) return null;
+    sel.add(JSON.stringify(layout.value.onlyChapters ?? null));
+  }
+  const only = sel.size === 1 ? (JSON.parse([...sel][0]!) as string[] | null) : null;
+  if (only && !ctx.globals().json) ctx.io.err(`(chapters ${only.join(",")} as laid out; pass --chapters to choose, or run \`docmaker layout ${slug}\` for all chapters)\n`);
+  return only;
+}
 
 /** "own-work" | "licensed:<CODE>:<author>:<url>" | "third-party:<url>" | "ai-generated" */
 export function parseDeclaration(v: string | undefined): UploadDeclaration {
@@ -293,8 +313,9 @@ export function registerProject(program: Command, ctx: CliContext): void {
       .option("--lang <langs>")
       .option("--chapters <ids>", "only these chapters (onlyChapters)")
       .action(async (slug: string, o: Opts) => {
-        const only = parseChapters(str(o.chapters));
-        process.exitCode = await runJob(ctx, stageJob(ctx, slug, stage, { langs: parseLangs(str(o.lang)), options: only ? { onlyChapters: only } : {} }));
+        const langs = parseLangs(str(o.lang));
+        const only = parseChapters(str(o.chapters)) ?? (stage === "layout" ? null : await laidOutChapters(ctx, slug, langs));
+        process.exitCode = await runJob(ctx, stageJob(ctx, slug, stage, { langs, options: only ? { onlyChapters: only } : {} }));
       });
   }
   program
@@ -676,10 +697,11 @@ export function registerProject(program: Command, ctx: CliContext): void {
         render.chunkSeconds = n;
       }
       if (JSON.stringify(render) !== JSON.stringify(p.render)) await engine.updateProject(slug, { render });
-      const only = parseChapters(str(o.chapters));
+      const langs = parseLangs(str(o.lang));
+      const only = parseChapters(str(o.chapters)) ?? (await laidOutChapters(ctx, slug, langs));
       const range = parseRange(str(o.range));
       process.exitCode = await runJob(ctx, stageJob(ctx, slug, "render", {
-        langs: parseLangs(str(o.lang)), preset: parsePreset(str(o.preset)), options: { ...(only ? { onlyChapters: only } : {}), ...(range ? { frameRange: range } : {}) },
+        langs, preset: parsePreset(str(o.preset)), options: { ...(only ? { onlyChapters: only } : {}), ...(range ? { frameRange: range } : {}) },
       }));
     });
   program
