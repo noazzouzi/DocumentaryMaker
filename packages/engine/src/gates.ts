@@ -75,7 +75,13 @@ export async function factcheckGate(store: ProjectStore, project: Project, lang:
   }
   if (st.gating.length === 0) return null;
   const approvals = await docs.approvals(store);
-  if (st.open.length === 0 && hasApproval(approvals, "factcheck-ack", lang, st.planHash)) return null;
+  if (st.open.length === 0) {
+    if (hasApproval(approvals, "factcheck-ack", lang, st.planHash)) return null;
+    // every acknowledged/dismissed blocking item was approved through engine.approve (notes validated there); resolutions
+    // carry over by stable id when the fact-check re-runs, so an item that disappeared does not void the others
+    const approved = new Set(approvals.approvals.filter((a) => a.gate === "factcheck-ack" && (a.lang === lang || a.lang === null)).flatMap((a) => a.items));
+    if (st.gating.every((i) => i.resolution === "rewritten" || approved.has(i.id))) return null;
+  }
   const fixes = st.open.filter(fixOnly).length;
   return {
     gate: "factcheck-ack", reason: "unmet", planHash: st.planHash,
@@ -130,7 +136,8 @@ export async function pendingClaims(store: ProjectStore, project: Project, now =
     for (const ch of s?.chapters ?? []) for (const seg of ch.segments) for (const f of seg.factIds) cited.add(f);
   }
   for (const p of (await docs.plans(store))?.plans ?? []) for (const f of p.factIds) cited.add(f);
-  const acked = new Set((await docs.approvals(store)).approvals.filter((a) => a.gate === "recheck").flatMap((a) => a.items));
+  // a recheck acknowledgement (or an unchanged re-check) is itself valid for RECHECK_MAX_AGE_DAYS
+  const acked = new Set((await docs.approvals(store)).approvals.filter((a) => a.gate === "recheck" && daysBetween(a.approvedAt, now) <= RECHECK_MAX_AGE_DAYS).flatMap((a) => a.items));
   return fs.claims
     .filter((c) => cited.has(c.id) && PENDING_STATUSES.includes(c.status) && !acked.has(c.id) && daysBetween(c.asOf || fs.asOf, now) > RECHECK_MAX_AGE_DAYS)
     .map((c) => ({ id: c.id, status: c.status, asOf: c.asOf || fs.asOf }))

@@ -37,7 +37,8 @@ export const directStage: StageDef = {
     return {
       layout: await ctx.store.docHashOf(P.layout(lang)), plans: await ctx.store.docHashOf(P.beatPlans), slices: await ctx.store.docHashOf(P.beatSlices(lang)),
       script: await ctx.store.docHashOf(P.script(lang)), outline: await ctx.store.docHashOf(P.outline),
-      picks: await ctx.store.docHashOf(P.picks), frozen: await ctx.store.docHashOf(P.frozen), clipWords, factsheet: await ctx.store.docHashOf(P.factsheet),
+      picks: await ctx.store.docHashOf(P.picks), frozen: await ctx.store.docHashOf(P.frozen), clipWords,
+      userFrozen: Object.keys(await e.rt.deps.assets.readUserFrozen(ctx.store.dir)).sort(), factsheet: await ctx.store.docHashOf(P.factsheet),
       factcheck: await ctx.store.docHashOf(P.factcheck(lang)), riskFlags: await e.riskFlags(),
       pickups: take ? take.segments.filter((s) => s.pickup).map((s) => s.segmentId).sort() : [], takeKind: take?.kind ?? null, provider: take?.provider ?? null,
       styleHash: ctx.style.dataHash, seed: p.seed, captions: p.captions, captionsVariant: p.captionsVariant, video: p.video, themeOverride: p.themeOverride,
@@ -63,7 +64,8 @@ export const directStage: StageDef = {
     const facts = need(await docs.factsheet(ctx.store), "research/factsheet.json", "research");
     const take = need(await activeTakeOf(ctx.store, lang), `voice/${lang}/active.json`, `voice (${lang})`);
     const picks = (await docs.picks(ctx.store)) ?? { schemaVersion: 1 as const, plansHash: docHash(plansDoc), picks: [], clips: [], portraits: [], orphans: [], updatedAt: new Date(0).toISOString() };
-    const frozen: Record<string, FrozenAsset> = (await docs.frozen(ctx.store))?.assets ?? {};
+    // assets frozen outside the assets stage (uploads, scene-board freezes) are usable by overrides before the next assets run
+    const frozen: Record<string, FrozenAsset> = { ...(await e.rt.deps.assets.readUserFrozen(ctx.store.dir)), ...((await docs.frozen(ctx.store))?.assets ?? {}) };
     const music = (await docs.music(ctx.store))?.tracks ?? [];
     const sfx = (await sfxEntriesOrNull(ctx)) ?? [];
     const outline = await docs.outline(ctx.store);

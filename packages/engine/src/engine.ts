@@ -571,8 +571,12 @@ class EngineImpl implements Engine {
     return this.rt.deps.assets.buildCredits({ ledger, usage, lang, voice, music, sfx: sfx.filter((x) => used.has(x.assetId)) });
   }
 
-  /** `factcheck --recheck`: re-research pending claims (LLM, receipts recorded) and refresh their status/asOf in the fact sheet. */
-  async recheckClaims(slug: string): Promise<{ changed: string[]; checked: string[] }> {
+  /**
+   * `factcheck --recheck`: re-research pending claims (LLM, receipts recorded). A claim whose status changed is updated in the
+   * fact sheet (asOf = today; the script and fact-check become stale, as they should). Unchanged claims leave the fact sheet
+   * untouched (no needless re-outlining) and are recorded as a dated recheck approval, valid for 30 days.
+   */
+  async recheckClaims(slug: string, by: "cli" | "web" = "cli"): Promise<{ changed: string[]; checked: string[] }> {
     const store = await this.open(slug);
     const project = await readProject(store);
     const facts = await docs.factsheet(store);
@@ -583,11 +587,18 @@ class EngineImpl implements Engine {
     this.rt.refresh();
     const costs = await ProjectCosts.open(store, project, null, () => {});
     const llm = this.rt.llmFor(project);
-    const r = await this.rt.deps.llm.recheck({ llm, signal: new AbortController().signal, costs, logger: this.rt.logger, progress: () => {}, newRequest: false }, { factSheet: facts, claimIds: ids, asOf: new Date().toISOString().slice(0, 10) });
-    // the re-check itself refreshes asOf of every checked claim (status changed or confirmed unchanged)
     const today = new Date().toISOString().slice(0, 10);
-    const next = { ...r.factSheet, claims: r.factSheet.claims.map((c) => (ids.includes(c.id) ? { ...c, asOf: today } : c)) };
-    await store.writeJson(P.factsheet, FactSheetSchema, next, { writer: "user" });
+    const r = await this.rt.deps.llm.recheck({ llm, signal: new AbortController().signal, costs, logger: this.rt.logger, progress: () => {}, newRequest: false }, { factSheet: facts, claimIds: ids, asOf: today });
+    if (r.changed.length) {
+      const next = { ...r.factSheet, claims: r.factSheet.claims.map((c) => (r.changed.includes(c.id) ? { ...c, asOf: today } : c)) };
+      await store.writeJson(P.factsheet, FactSheetSchema, next, { writer: "user" });
+    }
+    const unchanged = ids.filter((id) => !r.changed.includes(id));
+    if (unchanged.length) {
+      await persistApproval(this.rt, store, "recheck", {
+        stage: "render", lang: null, planHash: "", by, note: `re-checked on ${today}: status unchanged`, items: unchanged, itemNotes: {},
+      }, { fixtureAllowed: false, stage: "render" });
+    }
     return { changed: r.changed, checked: ids };
   }
 
@@ -673,7 +684,7 @@ export type EngineExt = Engine & {
   teleprompter(slug: string, lang: Lang, o: { mirror: boolean }): Promise<string>;
   costReport(slug: string): Promise<{ receipts: { stage: StageId; lang: Lang | null; usd: number; calls: number }[]; totalUsd: number; maxUsdTotal: number; maxUsdPerStage: number; estimates: CostEstimate[] }>;
   credits(slug: string, lang: Lang): Promise<string>;
-  recheckClaims(slug: string): Promise<{ changed: string[]; checked: string[] }>;
+  recheckClaims(slug: string, by?: "cli" | "web"): Promise<{ changed: string[]; checked: string[] }>;
   cacheGc(o: { dryRun: boolean }): Promise<{ removed: number; freedBytes: number; totalBytes: number; capBytes: number }>;
   setupComponent(what: SetupComponent, arg: string | null, o: { signal: AbortSignal; progress: (pct: number, msg: string) => void }): Promise<string>;
   readonly rt: Runtime; readonly jobs: JobManager;

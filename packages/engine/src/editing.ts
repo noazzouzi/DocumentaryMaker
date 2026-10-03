@@ -134,7 +134,7 @@ export async function writeUserDoc<S extends z.ZodType>(
       const next = doc as UserPicksDoc;
       const prev = await docs.userPicks(store);
       const prevKey = new Set((prev?.picks ?? []).map((p) => JSON.stringify(p)));
-      const frozen = (await docs.frozen(store))?.assets ?? {};
+      const frozen = { ...(await rt.deps.assets.readUserFrozen(store.dir)), ...((await docs.frozen(store))?.assets ?? {}) };
       const plans = await docs.plans(store);
       const facts = await docs.factsheet(store);
       const acks = personAcksOf(await docs.approvals(store));
