@@ -11,7 +11,8 @@ import {
   buildCredits, buildLedger, freezeCandidate, importLocalDir, importUpload, ledgerEntryFor, licenseInfo, liveSearch, requireDeclaration,
   resolveAssets,
 } from "../src/index";
-import { cleanAuthor } from "../src/util";
+import { cleanAuthor, stripHtml } from "../src/util";
+import { licenseUrl } from "../src/ledger";
 import { createLocalProvider } from "../src/providers/local";
 import { cleanup, fakeFetch, makeConfig, makeCtx, publicLookup, quietLogger, tmpDir } from "./helpers";
 import { createHttpClient } from "../src/index";
@@ -186,8 +187,8 @@ describe("buildCredits", () => {
     const order = ["## Archival", "## Stock", "## Clips", "## Music", "## Sound effects", "## Voice", "## AI-generated", "## Fonts", "## YouTube description"].map((h) => md.indexOf(h));
     expect(order.every((x) => x >= 0)).toBe(true);
     expect([...order].sort((x, y) => x - y)).toEqual(order);
-    // CC BY*: the licence link and the modification notice (every still is cropped and animated); a ShareAlike note.
-    expect(md).toContain('"Title a" by Author a — CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/) — https://example.org/a — cropped and animated');
+    // The licence link and the modification notice (every still is cropped, graded and animated); a ShareAlike note.
+    expect(md).toContain('"Title a" by Author a — CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/) — https://example.org/a — cropped, colour-graded and animated');
     expect(md).toMatch(/> ShareAlike: works marked CC BY-SA/);
     expect(md).not.toContain("Title d");
     expect(md).toContain("CBS News — https://www.youtube.com/watch?v=AAAAAAAAAAA [01:05–01:13]");
@@ -201,15 +202,35 @@ describe("buildCredits", () => {
     const md = buildCredits({ ledger: l2, usage: { schemaVersion: 1, lang: "en", usage: [messy, twice].map((a) => ({ assetId: a.id, itemIds: ["v1"] })) }, lang: "en", voice: null, music: { schemaVersion: 1, tracks: [] }, sfx: [] });
     expect(md).toContain('"Title f" by Donald Trung Quoc Don — CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/)');
     expect(md).not.toMatch(/Want to use|💬|Fake News/);
-    expect(md).toContain('"Title 9" by Unknown artist — Public Domain — https://example.org/9');
-    expect(md).not.toMatch(/Public Domain[^\n]*cropped/); // the modification notice is for attribution licences
+    expect(md).toContain('"Title 9" by Unknown artist — Public Domain (https://creativecommons.org/publicdomain/mark/1.0/) — https://example.org/9 — cropped, colour-graded and animated');
     const fr = buildCredits({ ledger: l2, usage: { schemaVersion: 1, lang: "fr", usage: [messy].map((a) => ({ assetId: a.id, itemIds: ["v1"] })) }, lang: "fr", voice: null, music: { schemaVersion: 1, tracks: [] }, sfx: [] });
     expect(fr).toContain("par Donald Trung Quoc Don");
-    expect(fr).toContain("recadré et animé");
+    expect(fr).toContain("recadré, étalonné et animé");
     expect(fr).toContain("Partage dans les mêmes conditions");
     expect(cleanAuthor("by Rembrandt van Rijn")).toBe("Rembrandt van Rijn");
+    // Raw Commons Artist fields seen in the online demo: user links, derivative-work chains, stacked placeholder templates.
+    expect(cleanAuthor("User:Amada44 // cropped by user:Retired electrician for the article")).toBe("Amada44");
+    expect(cleanAuthor("Amada44, cropped by Someone else")).toBe("Amada44");
+    expect(cleanAuthor("Anonymous Unknown author")).toBe("Anonymous");
+    expect(cleanAuthor("Jan Steen, Jan Steen")).toBe("Jan Steen");
+    expect(cleanAuthor("Jan Steen and Jan Steen")).toBe("Jan Steen");
+    expect(cleanAuthor("Unidentified painter")).toBe("Unidentified painter");
+    expect(cleanAuthor(stripHtml('<div class="fn value"><a href="//commons.wikimedia.org/wiki/Creator:Hendrik_Gerritsz_Pot" title="Creator:Hendrik Gerritsz Pot">Hendrik Gerritsz Pot</a>&nbsp;(circa 1580&ndash;1657)</div>'))).toBe("Hendrik Gerritsz Pot");
     expect(cleanAuthor("  ")).toBeNull();
     expect(cleanAuthor("A".repeat(30) + " " + "B".repeat(40))!.length).toBeLessThanOrEqual(61);
+  });
+  it("licence links are canonical deeds (built from code + version when missing); videos are 'trimmed and colour-graded'", () => {
+    expect(licenseUrl({ code: "CC0", version: "1.0", url: "http://creativecommons.org/publicdomain/zero/1.0/deed.en" })).toBe("https://creativecommons.org/publicdomain/zero/1.0/");
+    expect(licenseUrl({ code: "CC-BY-SA", version: "4.0", url: "https://creativecommons.org/licenses/by-sa/4.0" })).toBe("https://creativecommons.org/licenses/by-sa/4.0/");
+    expect(licenseUrl({ code: "CC-BY", version: "2.0", url: null })).toBe("https://creativecommons.org/licenses/by/2.0/");
+    expect(licenseUrl({ code: "PDM", version: null, url: null })).toBe("https://creativecommons.org/publicdomain/mark/1.0/");
+    expect(licenseUrl({ code: "PEXELS", version: null, url: null })).toBeNull();
+    const cc0 = asset("7", { provider: "wikimedia", license: licenseInfo("CC0", { version: "1.0", url: "http://creativecommons.org/publicdomain/zero/1.0/deed.en" }) });
+    const vid = FrozenAsset.parse({ ...asset("8", { provider: "internet-archive", license: licenseInfo("PDM"), kind: "video" }), kind: "video", mime: "video/mp4", ext: "mp4", durationMs: 9000, fps: 30, conform: { recipe: "video-v1", sourceInMs: 0, sourceOutMs: 9000, handleHeadMs: 0, handleTailMs: 0 } });
+    const l3 = buildLedger([cc0, vid]);
+    const md = buildCredits({ ledger: l3, usage: { schemaVersion: 1, lang: "en", usage: [cc0, vid].map((a) => ({ assetId: a.id, itemIds: ["v1"] })) }, lang: "en", voice: null, music: { schemaVersion: 1, tracks: [] }, sfx: [] });
+    expect(md).toContain('"Title 7" by Author 7 — CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/) — https://example.org/7 — cropped, colour-graded and animated');
+    expect(md).toContain('"Title 8" by Author 8 — Public Domain (https://creativecommons.org/publicdomain/mark/1.0/) — https://example.org/8 — trimmed and colour-graded');
   });
   it("warns about the ElevenLabs free tier; French headings", () => {
     const md = buildCredits({ ledger, usage: { ...usage, lang: "fr" }, lang: "fr", voice: eleven, music: { schemaVersion: 1, tracks: [] }, sfx: [] });

@@ -158,18 +158,32 @@ export function stripHtml(s: string): string {
     .trim();
 }
 
+/** Placeholder names Commons templates emit ({{Anonymous}}, {{Unknown|author}}, "Unidentified painter"…). */
+const PLACEHOLDER_AUTHOR = /^(?:anonymous|anonyme|anonym|anoniem|unknown(?:\s+(?:author|artist|painter|photographer|engraver))?|unidentified(?:\s+\p{L}+)?|auteur inconnu|inconnu|unbekannt|onbekend)$/iu;
+
 /**
  * A printable author for credit lines from free-form provider text (Commons "Artist" is often a whole wiki template):
- * the first name-like part (before " - ", " (", " | ", "©"…), no emoji, a repeated phrase collapsed ("Unknown artist Unknown
- * artist"), at most ~60 characters. null when nothing usable is left.
+ * the first name-like part (before " - ", " (", " | ", " // ", "©"…), no emoji, no "User:" prefix, a repeated name
+ * collapsed ("Unknown artist Unknown artist", "Jan Steen, Jan Steen", "Anonymous Unknown author"), at most ~60 characters.
+ * null when nothing usable is left.
  */
 export function cleanAuthor(raw: string | null | undefined): string | null {
   if (!raw) return null;
   let s = raw.replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, " ").replace(/\s+/g, " ").trim();
-  s = s.split(/\s+[-–—|]\s+|\s*\(|\s*©|\s*;\s+|\s+\/\s+/u)[0] ?? "";
-  s = s.replace(/^(?:by|par)\s+/i, "").replace(/[\s,.:;·•-]+$/u, "").trim();
-  const rep = /^(.+?)(?:\s+\1)+$/iu.exec(s);
+  s = s.split(/\s+[-–—|]\s+|\s*\(|\s*©|\s*;\s+|\s*\/{2,}\s*|\s+\/\s+|,?\s+(?:cropped|edited|modified|retouched|derivative work)\s+by\s+/iu)[0] ?? "";
+  s = s.replace(/^(?:by|par|von|door)\s+/i, "").replace(/\b(?:user|utilisateur|benutzer|gebruiker)\s*:\s*/giu, "").replace(/[\s,.:;·•-]+$/u, "").trim();
+  // A repeated name, side by side or separated by a comma/ampersand/"and".
+  const rep = /^(.+?)(?:\s*(?:,|&|\band\b|\bet\b|\bund\b|\ben\b)?\s+\1)+$/iu.exec(s);
   if (rep) s = rep[1]!;
+  // Two placeholder templates in a row ("Anonymous Unknown author") → the first one.
+  const words = s.split(" ");
+  for (let k = 1; k < words.length; k++) {
+    const a = words.slice(0, k).join(" ");
+    if (PLACEHOLDER_AUTHOR.test(a) && PLACEHOLDER_AUTHOR.test(words.slice(k).join(" "))) {
+      s = a;
+      break;
+    }
+  }
   if (s.length > 60) {
     const cut = s.slice(0, 60);
     s = `${cut.slice(0, Math.max(cut.lastIndexOf(" "), 40))}…`;
