@@ -294,6 +294,24 @@ describe("yt-dlp wrapper and clip resolution (fake binary)", () => {
     expect(fake.calls().slice(n).some((a) => a.includes("-f"))).toBe(false);
   });
 
+  it("a tie between two noisy matches goes to the injected passage picker", async () => {
+    const noisy = path.join(projectDir, "noisy.json3");
+    writeFileSync(noisy, JSON.stringify({ events: [{ tStartMs: 4000, dDurationMs: 2400, segs: ["it", " is", " all", " a", " river", " and", " rivers", " brake"].map((u, k) => ({ utf8: u, tOffsetMs: k * 300 })) }] }));
+    const two = [search[0], { ...search[0], id: "BBBBBBBBBBB", channel: "Other Channel" }];
+    fake.setMode({ search: two, json3: noisy, duration: 12 });
+    const project: Project = makeProject();
+    project.assets = { ...project.assets, offline: false, licensePolicy: { ...project.assets.licensePolicy, allowYoutubeFairUse: true } };
+    const args = { project, script: makeScript({ chapters: 1, segmentsPerChapter: 2, withClip: true }), facts: makeFactSheet(), skipSegments: new Set<string>(), projectDir };
+    const first = await resolveClips(args, ctx);
+    expect(first.clips[0]!.youtube).toMatchObject({ videoId: "AAAAAAAAAAA", matchScore: 0.625 });
+    expect(first.clips[0]!.reason).toContain("close alternative");
+    const seen: number[] = [];
+    const picked = await resolveClips({ ...args, passagePicker: async (i) => { seen.push(i.windows.length); return { bestIndex: 1, confidence: 0.9 }; } }, ctx);
+    expect(seen).toEqual([2]);
+    expect(picked.clips[0]!.youtube?.videoId).toBe("BBBBBBBBBBB");
+    expect(picked.clips[0]!.status).toBe("skipped-policy"); // no fair-use acknowledgement: nothing downloaded
+  });
+
   it("manual clips: URL (yt-dlp) and local file, both behind the fair-use gate", async () => {
     fake.setMode({ search, json3: transcript, duration: 12 });
     const project: Project = makeProject();

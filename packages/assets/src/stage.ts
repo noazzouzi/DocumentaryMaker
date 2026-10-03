@@ -26,7 +26,7 @@ import type { AssetsCtx } from "./types";
 import { readUserFrozen } from "./userfrozen";
 import { peopleRuleBlocks, validatePick } from "./validate";
 import { errMsg, makeTmpDir, nowIso, rmrf } from "./util";
-import { resolveClips } from "./youtube/clips";
+import { resolveClips, type PassagePicker } from "./youtube/clips";
 import { providerContext } from "./materialize";
 
 export interface AssetsStageInput {
@@ -36,6 +36,8 @@ export interface AssetsStageInput {
   /** JobOptions.allowPaid (hashed option key of the stage). false → paid providers (Brave, fal) are skipped; the engine passes
    *  `reranker: null` for the same reason. Undefined → the engine's cost gate already approved paid work. */
   allowPaid?: boolean;
+  /** Optional LLM tie-breaker for clip passages (engine binds llm.pickPassage); null → the first match ≥ 0.6 wins. */
+  passagePicker?: PassagePicker | null;
 }
 export interface AssetsStageOutput { picks: PicksDocT; frozen: FrozenDoc; ledger: Ledger; candidates: CandidatesDoc[]; clipWords: ClipWordsDoc[] }
 
@@ -357,7 +359,7 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
   // ---- clips (primary clip segments); manual resolutions from user-picks win per segment
   const userClipSegs = new Set(i.userPicks.clips.map((c) => c.segmentId));
   ctx.progress(0.9, "clips");
-  const clipRes = await resolveClips({ project, script: i.primaryScript, facts, skipSegments: userClipSegs, projectDir: i.projectDir }, ctx);
+  const clipRes = await resolveClips({ project, script: i.primaryScript, facts, skipSegments: userClipSegs, projectDir: i.projectDir, passagePicker: i.passagePicker ?? null }, ctx);
   for (const a of clipRes.frozen) frozen.set(a.id, a);
   const clips: ClipResolution[] = [...clipRes.clips];
   const clipWords: ClipWordsDoc[] = [...clipRes.clipWords];

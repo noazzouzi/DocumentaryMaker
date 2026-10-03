@@ -108,4 +108,5 @@ export function ytProbe(ctx: AssetsCtx): Promise<"ok" | "bot-check" | "403" | "m
 }
 export { parseYtSearch, ytBaseFlags, parseYoutubeId } from "./youtube/ytdlp";
 export { resolveClips } from "./youtube/clips";
+export type { PassagePicker } from "./youtube/clips";
 export { loadClip, clipSimTo01 } from "./clipsim";

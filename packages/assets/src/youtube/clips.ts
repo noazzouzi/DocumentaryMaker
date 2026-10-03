@@ -44,7 +44,10 @@ export function rebaseWords(words: readonly WordTiming[], fromMs: number, toMs: 
 
 export interface ClipsResult { clips: ClipResolution[]; frozen: FrozenAsset[]; clipWords: ClipWordsDoc[]; upgradedQuotes: string[] }
 
-export async function resolveClips(i: { project: Project; script: Script; facts: FactSheet; skipSegments: ReadonlySet<string>; projectDir: string }, ctx: AssetsCtx): Promise<ClipsResult> {
+/** Optional LLM tie-breaker (llm.pickPassage bound by the engine): chooses among candidate windows of one quote. */
+export type PassagePicker = (i: { verbatim: string; windows: { index: number; text: string; startMs: number; endMs: number }[] }) => Promise<{ bestIndex: number; confidence: number }>;
+
+export async function resolveClips(i: { project: Project; script: Script; facts: FactSheet; skipSegments: ReadonlySet<string>; projectDir: string; passagePicker?: PassagePicker | null }, ctx: AssetsCtx): Promise<ClipsResult> {
   const out: ClipsResult = { clips: [], frozen: [], clipWords: [], upgradedQuotes: [] };
   const offline = ctx.config.offline || i.project.assets.offline;
   const policy = i.project.assets.licensePolicy;
@@ -81,7 +84,7 @@ export async function resolveClips(i: { project: Project; script: Script; facts:
   return out;
 }
 
-async function resolveOne(segmentId: string, quote: Quote, i: { project: Project; facts: FactSheet; projectDir: string }, ctx: AssetsCtx): Promise<{ clip: ClipResolution; frozen: FrozenAsset | null; words: ClipWordsDoc | null }> {
+async function resolveOne(segmentId: string, quote: Quote, i: { project: Project; facts: FactSheet; projectDir: string; passagePicker?: PassagePicker | null }, ctx: AssetsCtx): Promise<{ clip: ClipResolution; frozen: FrozenAsset | null; words: ClipWordsDoc | null }> {
   const speaker = i.facts.people.find((p) => p.id === quote.speakerId)?.name ?? "";
   const q = quote.youtubeSearchQuery.trim() || `${speaker} ${quote.verbatim.split(/\s+/).slice(0, 12).join(" ")}`.trim();
   const maxClipMs = Math.round(i.project.assets.maxClipSeconds * 1000);
@@ -100,13 +103,24 @@ async function resolveOne(segmentId: string, quote: Quote, i: { project: Project
   if (found.length === 0) {
     return { clip: { ...base, assetId: null, status: "not-found", youtube: null, passageInMs: null, passageOutMs: null, reason: `no passage ≥ ${PASSAGE_ACCEPT} in the top ${hits.length} results for "${q}"` }, frozen: null, words: null };
   }
-  // First ≥ 0.6 wins; when the top two are within 0.05 the better-ranked hit is kept (an LLM pickPassage may refine it upstream).
-  const best = found[0]!;
+  // First ≥ 0.6 wins; when the two best scores are within 0.05 the injected picker (llm.pickPassage) decides between the windows.
+  let best = found[0]!;
+  const byScore = [...found].sort((a, b) => b.p.score - a.p.score);
+  const tie = byScore.length > 1 && byScore[0]!.p.score - byScore[1]!.p.score <= 0.05;
+  if (tie && i.passagePicker) {
+    try {
+      const r = await i.passagePicker({ verbatim: quote.verbatim, windows: found.map((f, index) => ({ index, text: f.p.matchedText, startMs: f.p.startMs, endMs: f.p.endMs })) });
+      if (r.bestIndex >= 0 && r.bestIndex < found.length) best = found[r.bestIndex]!;
+    } catch (e) {
+      if (isDocmakerError(e) && e.code === "CANCELED") throw e;
+      ctx.logger.warn("passage tie-break failed; first match kept", { segmentId, error: errMsg(e) });
+    }
+  }
   const ref: YoutubeRef = {
     videoId: best.hit.id, channel: best.hit.channel, channelVerified: best.hit.channelVerified, publishedAt: "", url: ytUrl(best.hit.id),
     startMs: best.p.startMs, endMs: best.p.endMs, transcriptLang: best.lang, transcriptKind: best.kind, matchScore: best.p.score, matchedText: best.p.matchedText,
   };
-  const ambiguity = found.length > 1 && Math.abs(found[0]!.p.score - found[1]!.p.score) <= 0.05 ? " (close alternative found)" : "";
+  const ambiguity = tie ? (i.passagePicker ? " (tie broken by the passage picker)" : " (close alternative found)") : "";
   if (!i.project.editorial.fairUseAcknowledged) {
     return { clip: { ...base, assetId: null, status: "skipped-policy", youtube: ref, passageInMs: null, passageOutMs: null, reason: `passage found${ambiguity}; download waits for the fair-use acknowledgement` }, frozen: null, words: null };
   }
