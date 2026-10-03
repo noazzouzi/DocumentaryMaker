@@ -104,6 +104,29 @@ describe("parsing and exit codes", () => {
     expect(io.stderr).toMatch(/docmaker run p --resume job-/);
   });
 
+  it("jobs --cancel: an ended job is reported (exit 1), a running one is canceled through the engine", async () => {
+    const rec = (id: string, status: JobRecord["status"]): JobRecord => ({ id, request: { slug: "p", kind: "stage", stage: "render", from: null, to: null, langs: [], force: false, options: {}, preset: null }, status, createdAt: NOW, startedAt: NOW, endedAt: null, error: null, coalescedInto: null, resumeOf: null });
+    const jobs = new Map([["job-20261003-000000-aaaaa0", rec("job-20261003-000000-aaaaa0", "failed")], ["job-20261003-000001-aaaaa1", rec("job-20261003-000001-aaaaa1", "running")]]);
+    const canceled: string[] = [];
+    const m = mockEngine([{ status: "succeeded", events: [] }], {
+      getJob: (async (id: string) => jobs.get(id) ?? null) as EngineExt["getJob"],
+      cancel: (async (id: string) => {
+        canceled.push(id);
+        jobs.set(id, { ...jobs.get(id)!, status: "canceled" });
+      }) as EngineExt["cancel"],
+    });
+    let io = memIo();
+    expect(await runCli(argv("jobs", "p", "--cancel", "job-20261003-000000-aaaaa0"), { io, factory: m.factory })).toBe(1);
+    expect(io.stderr).toMatch(/already ended \(failed\)/);
+    expect(io.stdout).toBe("");
+    expect(canceled).toEqual([]);
+    io = memIo();
+    expect(await runCli(argv("jobs", "p", "--cancel", "job-20261003-000001-aaaaa1"), { io, factory: m.factory })).toBe(0);
+    expect(io.stdout).toBe("canceled job-20261003-000001-aaaaa1\n");
+    expect(canceled).toEqual(["job-20261003-000001-aaaaa1"]);
+    expect(await runCli(argv("jobs", "p", "--cancel", "job-20261003-000009-aaaaa9"), { io: memIo(), factory: m.factory })).toBe(2);
+  });
+
   it("builds the pipeline request from the flags", async () => {
     const m = mockEngine([{ status: "succeeded", events: [] }]);
     expect(await runCli(argv("run", "p", "--from", "layout", "--to", "render", "--lang", "fr", "--preset", "master", "--chapters", "ch1,CH2", "--force", "--new-request"), { io: memIo(), factory: m.factory })).toBe(0);
