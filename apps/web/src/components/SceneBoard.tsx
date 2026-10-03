@@ -269,6 +269,34 @@ export function SceneBoard(d: SceneData) {
   );
 }
 
+type CandidateItem = { candidate: CandidateRecord["candidate"]; score: CandidateScore | null };
+
+function CandidateGrid({ items, slot, busy, onChoose }: { items: CandidateItem[]; slot: number; busy: string | null; onChoose: (c: CandidateItem["candidate"], s: CandidateScore | null) => void }) {
+  const { t } = useI18n();
+  return (
+    <ul className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
+      {items.map(({ candidate: c, score }) => (
+        <li key={`${c.provider}:${c.providerAssetId}`} className="space-y-1 text-xs">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {c.previewUrl ? <img src={c.previewUrl} alt={c.title} className="aspect-video w-full rounded bg-black object-cover" loading="lazy" referrerPolicy="no-referrer" /> : <div className="aspect-video rounded bg-neutral-800" />}
+          <p className="line-clamp-2 text-neutral-300" title={c.description}>
+            {c.title}
+          </p>
+          <div className="flex flex-wrap items-center gap-1">
+            <Badge>{c.provider}</Badge>
+            <LicenseBadge license={c.license} />
+            {score ? <span className="text-neutral-500">{Math.round(score.total * 100)}%</span> : null}
+            {c.width ? <span className="text-neutral-600">{c.width}×{c.height}</span> : null}
+          </div>
+          <Button size="sm" variant="primary" busy={busy === `${c.provider}:${c.providerAssetId}`} disabled={busy !== null} onClick={() => onChoose(c, score)}>
+            {t("scenes.useAsSlot", { n: slot })}
+          </Button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function AssetPicker({ slug, plan, slot, onClose, onPicked }: { slug: string; plan: BeatPlan; slot: number; onClose: () => void; onPicked: (plan: BeatPlan, slot: number, asset: FrozenAsset, score: CandidateScore | null, issues: LintIssueLike[]) => Promise<void> }) {
   const { t } = useI18n();
   const [tab, setTab] = useState<"stored" | "live" | "upload">("stored");
@@ -322,33 +350,11 @@ function AssetPicker({ slug, plan, slot, onClose, onPicked }: { slug: string; pl
       setBusy(null);
     }
   };
-  const Grid = ({ items }: { items: { candidate: CandidateRecord["candidate"]; score: CandidateScore | null }[] }) => (
-    <ul className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
-      {items.map(({ candidate: c, score }) => (
-        <li key={`${c.provider}:${c.providerAssetId}`} className="space-y-1 text-xs">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          {c.previewUrl ? <img src={c.previewUrl} alt={c.title} className="aspect-video w-full rounded bg-black object-cover" loading="lazy" referrerPolicy="no-referrer" /> : <div className="aspect-video rounded bg-neutral-800" />}
-          <p className="line-clamp-2 text-neutral-300" title={c.description}>
-            {c.title}
-          </p>
-          <div className="flex flex-wrap items-center gap-1">
-            <Badge>{c.provider}</Badge>
-            <LicenseBadge license={c.license} />
-            {score ? <span className="text-neutral-500">{Math.round(score.total * 100)}%</span> : null}
-            {c.width ? <span className="text-neutral-600">{c.width}×{c.height}</span> : null}
-          </div>
-          <Button size="sm" variant="primary" busy={busy === `${c.provider}:${c.providerAssetId}`} disabled={busy !== null} onClick={() => void choose(c, score)}>
-            {t("scenes.useAsSlot", { n: slot })}
-          </Button>
-        </li>
-      ))}
-    </ul>
-  );
   return (
     <Modal open onClose={onClose} title={`${t("scenes.picker")} — ${plan.id} · ${t("scenes.slot", { n: slot })}`}>
       <Tabs tabs={[{ key: "stored", label: t("scenes.stored") }, { key: "live", label: t("scenes.live") }, { key: "upload", label: t("scenes.upload") }]} value={tab} onChange={setTab} />
       <div className="mt-3 space-y-3">
-        {tab === "stored" ? (stored === null ? <p className="text-sm text-neutral-500">{t("common.loading")}</p> : stored.length ? <Grid items={stored} /> : <p className="text-sm text-neutral-500">{storedErr ?? t("common.none")}</p>) : null}
+        {tab === "stored" ? (stored === null ? <p className="text-sm text-neutral-500">{t("common.loading")}</p> : stored.length ? <CandidateGrid items={stored} slot={slot} busy={busy} onChoose={(c, sc) => void choose(c, sc)} /> : <p className="text-sm text-neutral-500">{storedErr ?? t("common.none")}</p>) : null}
         {tab === "live" ? (
           <>
             <div className="flex flex-wrap gap-2">
@@ -376,7 +382,7 @@ function AssetPicker({ slug, plan, slot, onClose, onPicked }: { slug: string; pl
               <input type="checkbox" className="accent-amber-500" checked={allowPaid} onChange={(e) => { setAllowPaid(e.target.checked); if (!e.target.checked) setProviders((cur) => cur.filter((p) => !PAID_PROVIDERS.includes(p))); }} />
               {t("scenes.allowPaid")}
             </label>
-            {results ? results.length ? <Grid items={results} /> : <p className="text-sm text-neutral-500">{t("common.none")}</p> : null}
+            {results ? results.length ? <CandidateGrid items={results} slot={slot} busy={busy} onChoose={(c, sc) => void choose(c, sc)} /> : <p className="text-sm text-neutral-500">{t("common.none")}</p> : null}
           </>
         ) : null}
         {tab === "upload" ? (

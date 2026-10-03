@@ -19,7 +19,10 @@ function body(parts: { name: string; filename?: string; data: Uint8Array | strin
   const total = out.reduce((n, c) => n + c.length, 0);
   const b = new Uint8Array(total);
   let off = 0;
-  for (const c of out) (b.set(c, off), (off += c.length));
+  for (const c of out) {
+    b.set(c, off);
+    off += c.length;
+  }
   return b;
 }
 function stream(b: Uint8Array, chunk: number): ReadableStream<Uint8Array> {

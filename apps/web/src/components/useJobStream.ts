@@ -94,7 +94,9 @@ const TYPES = ["job-start", "stage-start", "progress", "log", "estimate", "cost"
 export function useJobStream(jobId: string | null, onEnd?: (status: JobStatus) => void): JobStreamState {
   const [state, dispatch] = useReducer(jobReducer, jobId, initialJobState);
   const onEndRef = useRef(onEnd);
-  onEndRef.current = onEnd;
+  useEffect(() => {
+    onEndRef.current = onEnd;
+  });
   useEffect(() => {
     dispatch({ type: "reset", jobId });
     if (!jobId || typeof EventSource === "undefined") return;

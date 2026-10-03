@@ -2,7 +2,7 @@
 // /p/[slug]/research: dossier; fact-sheet tabs (sources, people + person approvals, timeline, claims, quotes, figures,
 // gaps); style card (refined ranking, titles, thumbnail texts, risk flags, theme override) with "Use this style".
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { BUILTIN_FONT_FAMILIES, PENDING_STATUSES, type FactSheet, type Project, type ResearchDossier, type StyleSuggestion, type ThemeOverride } from "@docmaker/core";
 import type { StyleSummary } from "@docmaker/styles";
 import { api, errorText } from "@/lib/api";
@@ -10,7 +10,6 @@ import { useI18n } from "./I18nProvider";
 import { ImpactDialog } from "./ImpactDialog";
 import { Badge, Banner, Button, Card, ErrorText, Field, Tabs, cx, inputCls } from "./ui";
 
-type Tab = "dossier" | "sources" | "people" | "timeline" | "claims" | "quotes" | "figures" | "gaps";
 
 function PersonApproval({ slug, personId, onDone }: { slug: string; personId: string; onDone: () => void }) {
   const { t } = useI18n();
@@ -106,21 +105,22 @@ function ThemeEditor({ project, suggested }: { project: Project; suggested: Them
   );
 }
 
-export function ResearchView({ project, dossier, facts, suggestion, styles, approvedPersons }: {
-  project: Project; dossier: ResearchDossier | null; facts: FactSheet | null; suggestion: StyleSuggestion | null; styles: StyleSummary[]; approvedPersons: string[];
+export type ResearchTab = "dossier" | "sources" | "people" | "timeline" | "claims" | "quotes" | "figures" | "gaps";
+
+export function ResearchView({ project, dossier, facts, suggestion, styles, approvedPersons, initialTab = "dossier" }: {
+  project: Project; dossier: ResearchDossier | null; facts: FactSheet | null; suggestion: StyleSuggestion | null; styles: StyleSummary[]; approvedPersons: string[]; initialTab?: ResearchTab;
 }) {
   const { t, lang } = useI18n();
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("dossier");
+  const [tab, setTab] = useState<ResearchTab>(initialTab);
   const [impactFor, setImpactFor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    if (typeof window !== "undefined" && window.location.hash === "#people") setTab("people");
-  }, []);
   const slug = project.slug;
+  // stable identity: the dialog refetches the impact report whenever the request object changes
+  const impactRequest = useMemo(() => (impactFor === null ? null : impactFor !== project.styleId ? { styleId: impactFor } : {}), [impactFor, project.styleId]);
   const styleName = (id: string) => styles.find((s) => s.id === id)?.names[lang] ?? id;
 
-  const useStyle = async (styleId: string) => {
+  const applyStyle = async (styleId: string) => {
     setError(null);
     try {
       if (styleId !== project.styleId) await api(`/api/projects/${slug}`, { method: "PATCH", json: { styleId } });
@@ -132,7 +132,7 @@ export function ResearchView({ project, dossier, facts, suggestion, styles, appr
     }
   };
 
-  const tabs: { key: Tab; label: string; badge?: React.ReactNode }[] = [
+  const tabs: { key: ResearchTab; label: string; badge?: React.ReactNode }[] = [
     { key: "dossier", label: t("research.dossier") },
     { key: "sources", label: t("research.sources"), badge: facts ? <Badge>{facts.sources.length}</Badge> : null },
     { key: "people", label: t("research.people"), badge: facts ? <Badge tone={facts.people.some((p) => !p.publicFigure && !p.isMinorOrPrivateVictim && !approvedPersons.includes(p.id)) ? "amber" : "neutral"}>{facts.people.length}</Badge> : null },
@@ -346,7 +346,7 @@ export function ResearchView({ project, dossier, facts, suggestion, styles, appr
           <ThemeEditor project={project} suggested={suggestion?.themeOverride ?? null} />
         </Card>
       </div>
-      <ImpactDialog slug={slug} request={impactFor && impactFor !== project.styleId ? { styleId: impactFor } : impactFor ? {} : null} onCancel={() => setImpactFor(null)} onProceed={() => useStyle(impactFor!)} />
+      <ImpactDialog slug={slug} request={impactRequest} onCancel={() => setImpactFor(null)} onProceed={() => applyStyle(impactFor!)} />
     </div>
   );
 }

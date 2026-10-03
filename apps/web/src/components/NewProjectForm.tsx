@@ -54,9 +54,7 @@ export function NewProjectForm({ home, styles }: { home: HomeConfig; styles: Sty
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idea]);
 
-  useEffect(() => {
-    if (!langs.includes(primary) && langs[0]) setPrimary(langs[0]);
-  }, [langs, primary]);
+  const primaryLang: Lang = langs.includes(primary) ? primary : langs[0] ?? "en";
 
   const ranked = suggestion?.ranked ?? styles.map((s) => ({ styleId: s.id, score: 0, why: "" }));
   const styleName = (id: string) => styles.find((s) => s.id === id)?.names[lang] ?? id;
@@ -67,7 +65,7 @@ export function NewProjectForm({ home, styles }: { home: HomeConfig; styles: Sty
     try {
       const project = await api<Project>("/api/projects", {
         method: "POST",
-        json: { idea: idea.trim(), languages: langs, primaryLang: primary, targetMinutes: minutes, styleId, llm, fixtureId: llm === "fixture" ? fixtureId : null },
+        json: { idea: idea.trim(), languages: langs, primaryLang, targetMinutes: minutes, styleId, llm, fixtureId: llm === "fixture" ? fixtureId : null },
       });
       const q = (to: string) => `/api/projects/${project.slug}/estimate-pipeline?from=research&to=${to}&langs=${langs.join(",")}`;
       const [toOutline, whole] = await Promise.all([api<PipelineEstimate>(q("outline")).catch(() => null), api<PipelineEstimate>(q("export")).catch(() => null)]);
@@ -194,7 +192,7 @@ export function NewProjectForm({ home, styles }: { home: HomeConfig; styles: Sty
               </div>
             </Field>
             <Field label={t("new.primary")}>
-              <select className={inputCls} value={primary} onChange={(e) => setPrimary(e.target.value as Lang)}>
+              <select className={inputCls} value={primaryLang} onChange={(e) => setPrimary(e.target.value as Lang)}>
                 {langs.map((l) => (
                   <option key={l} value={l}>
                     {l.toUpperCase()}

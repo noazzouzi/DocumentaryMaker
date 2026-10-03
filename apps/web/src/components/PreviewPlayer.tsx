@@ -22,37 +22,36 @@ export interface PreviewPlayerProps {
 // DocProps is an interface (no index signature): the Player's generic wants Record<string, unknown>
 const DocumentaryLoose = Documentary as unknown as React.ComponentType<Record<string, unknown>>;
 
-function PreviewPlayerImpl(p: PreviewPlayerProps) {
-  const ct = useMemo(() => computeTimeline(p.timeline), [p.timeline]);
+function PreviewPlayerImpl({ slug, timeline, range, licenseAcknowledged, onFrame, playerRef }: PreviewPlayerProps) {
+  const ct = useMemo(() => computeTimeline(timeline), [timeline]);
   const inputProps = useMemo<DocProps>(
     () => ({
-      timeline: p.timeline, timelineUrl: null, assetBaseUrl: `/api/projects/${p.slug}/media`, mode: "preview",
+      timeline, timelineUrl: null, assetBaseUrl: `/api/projects/${slug}/media`, mode: "preview",
       layers: { picture: true, graphics: true, captions: true, hud: true, covers: true, audio: true }, itemId: null,
-      scratchBanner: p.timeline.takeKind === "scratch",
+      scratchBanner: timeline.takeKind === "scratch",
     }),
-    [p.timeline, p.slug],
+    [timeline, slug],
   );
-  const { onFrame, playerRef, licenseAcknowledged } = p;
   useEffect(() => {
     const player = playerRef.current;
     if (!player || !licenseAcknowledged) return;
     const emit = throttle((f: number) => onFrame(f), 100);
     const h = (e: { detail: { frame: number } }) => emit(e.detail.frame);
-    player.addEventListener("frameupdate", h);
     const s = (e: { detail: { frame: number } }) => onFrame(e.detail.frame);
+    player.addEventListener("frameupdate", h);
     player.addEventListener("seeked", s);
     return () => {
       player.removeEventListener("frameupdate", h);
       player.removeEventListener("seeked", s);
     };
   }, [onFrame, playerRef, licenseAcknowledged]);
-  if (!p.licenseAcknowledged) return <RemotionLicenseCard />; // §17.4 — never acknowledge on the user's behalf
+  if (!licenseAcknowledged) return <RemotionLicenseCard />; // §17.4 — never acknowledge on the user's behalf
   const lastFrame = ct.durationInFrames - 1;
-  const inF = p.range ? Math.max(0, Math.min(lastFrame, p.range[0])) : null;
-  const outF = p.range ? Math.max(inF ?? 0, Math.min(lastFrame, p.range[1])) : null;
+  const inF = range ? Math.max(0, Math.min(lastFrame, range[0])) : null;
+  const outF = range ? Math.max(inF ?? 0, Math.min(lastFrame, range[1])) : null;
   return (
     <Player
-      ref={p.playerRef}
+      ref={playerRef}
       component={DocumentaryLoose}
       inputProps={inputProps as unknown as Record<string, unknown>}
       durationInFrames={ct.durationInFrames}

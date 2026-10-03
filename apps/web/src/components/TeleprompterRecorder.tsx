@@ -9,6 +9,18 @@ import { Badge, Button, Card, ErrorText, cx } from "./ui";
 
 const DEFAULT_CPS = 15;
 
+/** Scrolls `el` from top to bottom over `secs` while `active()`; reports each animation-frame id. */
+function autoScroll(el: HTMLElement, secs: number, active: () => boolean, onFrame: (id: number) => void): number {
+  const t0 = performance.now();
+  el.scrollTop = 0;
+  const step = () => {
+    const k = Math.min(1, (performance.now() - t0) / 1000 / Math.max(0.5, secs));
+    el.scrollTop = k * (el.scrollHeight - el.clientHeight);
+    if (k < 1 && active()) onFrame(requestAnimationFrame(step));
+  };
+  return requestAnimationFrame(step);
+}
+
 function pickMime(): string {
   const MR = typeof MediaRecorder !== "undefined" ? MediaRecorder : null;
   if (!MR) return "";
@@ -45,19 +57,8 @@ export function TeleprompterRecorder({ slug, lang, script, cps }: { slug: string
   );
 
   const scrollAlong = (chars: number) => {
-    const el = textRef.current;
-    if (!el) return;
-    const t0 = performance.now();
-    const secs = chars / (cps ?? DEFAULT_CPS);
-    el.scrollTop = 0;
-    const step = () => {
-      const k = Math.min(1, (performance.now() - t0) / 1000 / secs);
-      el.scrollTop = k * (el.scrollHeight - el.clientHeight);
-      if (k < 1 && recRef.current?.state === "recording") rafRef.current = requestAnimationFrame(step);
-    };
-    rafRef.current = requestAnimationFrame(step);
+    if (textRef.current) rafRef.current = autoScroll(textRef.current, chars / (cps ?? DEFAULT_CPS), () => recRef.current?.state === "recording", (id) => (rafRef.current = id));
   };
-
   const start = async () => {
     setError(null);
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {

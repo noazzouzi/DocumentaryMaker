@@ -37,7 +37,7 @@ export function gateHref(slug: string, gate: string, lang: Lang | null, primary:
     case "recheck":
       return `/p/${slug}/script/${l}#factcheck`;
     case "person-ack":
-      return `/p/${slug}/research#people`;
+      return `/p/${slug}/research?tab=people`;
     case "style-confirm":
       return `/p/${slug}/research#style`;
     default:

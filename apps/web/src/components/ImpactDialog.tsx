@@ -9,21 +9,21 @@ import { Button, ErrorText, Modal } from "./ui";
 
 export function ImpactDialog({ slug, request, onCancel, onProceed }: { slug: string; request: Record<string, unknown> | null; onCancel: () => void; onProceed: () => void | Promise<void> }) {
   const { t, lang } = useI18n();
-  const [report, setReport] = useState<ImpactReport | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [res, setRes] = useState<{ for: Record<string, unknown> | null; report: ImpactReport | null; error: string | null }>({ for: null, report: null, error: null });
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    setReport(null);
-    setError(null);
     if (!request) return;
     let alive = true;
     api<ImpactReport>(`/api/projects/${slug}/impact`, { method: "POST", json: request })
-      .then((r) => alive && setReport(r))
-      .catch((e) => alive && setError(errorText(e)));
+      .then((r) => alive && setRes({ for: request, report: r, error: null }))
+      .catch((e: unknown) => alive && setRes({ for: request, report: null, error: errorText(e) }));
     return () => {
       alive = false;
     };
   }, [slug, request]);
+  // only results computed for the current request count
+  const report = res.for === request ? res.report : null;
+  const error = res.for === request ? res.error : null;
   const nothing = report && report.staleStages.length === 0 && report.lostUserEdits.length === 0;
   return (
     <Modal

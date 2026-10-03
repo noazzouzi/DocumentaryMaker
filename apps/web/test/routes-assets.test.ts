@@ -68,7 +68,10 @@ function multipart(parts: { name: string; filename?: string; type?: string; data
   const total = chunks.reduce((n, c) => n + c.length, 0);
   const body = new Uint8Array(total);
   let o = 0;
-  for (const c of chunks) (body.set(c, o), (o += c.length));
+  for (const c of chunks) {
+    body.set(c, o);
+    o += c.length;
+  }
   return { body, type: `multipart/form-data; boundary=${boundary}` };
 }
 

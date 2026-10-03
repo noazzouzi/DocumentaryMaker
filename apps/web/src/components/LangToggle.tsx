@@ -2,7 +2,8 @@
 // EN/FR toggle: sets the cookie immediately and persists HomeConfig.uiLang (best effort).
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
-import { UI_LANG_COOKIE, type UiLang } from "@/i18n";
+import type { UiLang } from "@/i18n";
+import { setUiLangCookie } from "@/lib/cookies";
 import { api } from "@/lib/api";
 import { useI18n } from "./I18nProvider";
 import { cx } from "./ui";
@@ -13,7 +14,7 @@ export function LangToggle() {
   const [pending, start] = useTransition();
   const set = (l: UiLang) => {
     if (l === lang) return;
-    document.cookie = `${UI_LANG_COOKIE}=${l}; path=/; max-age=31536000; samesite=strict`;
+    setUiLangCookie(l);
     void api("/api/home", { method: "PATCH", json: { uiLang: l } }).catch(() => undefined);
     start(() => router.refresh());
   };

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { ENV_KEYS, type HomeConfig, type Lang, type SecretName } from "@docmaker/core";
 import type { StyleSummary } from "@docmaker/styles";
 import { api, errorText } from "@/lib/api";
+import { setUiLangCookie } from "@/lib/cookies";
 import { useI18n } from "./I18nProvider";
 import { useDoctor } from "./useDoctor";
 import { DoctorList } from "./DoctorList";
@@ -104,8 +105,7 @@ export function SettingsPanel({ home, styles, paths }: { home: HomeConfig; style
         method: "PATCH",
         json: { contact: contact.trim() || null, uiLang, defaults: { languages: langs.length ? langs : ["en"], targetMinutes: Math.min(60, Math.max(1, minutes)), styleId } },
       });
-      if (uiLang === "en" || uiLang === "fr") document.cookie = `docmaker-ui-lang=${uiLang}; path=/; max-age=31536000; samesite=strict`;
-      else document.cookie = "docmaker-ui-lang=; path=/; max-age=0";
+      setUiLangCookie(uiLang === "en" || uiLang === "fr" ? uiLang : null);
       setSaved(true);
       router.refresh();
     } catch (e) {
