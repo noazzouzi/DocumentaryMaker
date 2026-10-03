@@ -372,14 +372,15 @@ export class RenderService {
         let loudness: RenderResult["loudness"] = null;
         if (mixAbs) {
           progress.update("mux", 0.6, "true-peak gate", {}, true);
-          const g = await loudnessGate(outAbs, { gateDbtp: targets.gateDbtp, targetLufs: targets.targetLufs, config, signal });
+          const g = await loudnessGate(outAbs, { gateDbtp: targets.gateDbtp, targetLufs: targets.targetLufs, config, signal, durationSec: total / fps });
           loudness = { integratedLufs: g.integratedLufs, truePeakDbtp: g.truePeakDbtp, gateAttempts: g.attempts };
           if (!g.ok) {
             emit({ type: "log", level: "warn", message: `LOUDNESS_GATE: ${g.integratedLufs.toFixed(1)} LUFS / ${g.truePeakDbtp.toFixed(1)} dBTP after ${g.attempts} attempt(s) (target ${targets.targetLufs} LUFS, gate ${targets.gateDbtp} dBTP)`, stage: "render" });
           }
         }
         for (const f of intermediates) await rm(f, { force: true });
-        if (!req.frameRange) await this.pruneChunks(chunkDir, new Set(chunks.map((c) => path.basename(c.file))));
+        // only a whole-programme render prunes: a frame range or an onlyChapters preview must not evict the full render's chunks
+        if (!req.frameRange && timeline.onlyChapters === null) await this.pruneChunks(chunkDir, new Set(chunks.map((c) => path.basename(c.file))));
 
         const result: RenderResult = {
           outFile: req.outRel, durationInFrames: N, frames: total, chunks, renderMs: Date.now() - t0, gl, codeHash, loudness,

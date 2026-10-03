@@ -18,7 +18,7 @@ export function gateGainDb(truePeakDbtp: number, gateDbtp: number): number {
 export const gatePasses = (m: { integratedLufs: number; truePeakDbtp: number }, gateDbtp: number, targetLufs: number): boolean =>
   m.truePeakDbtp <= gateDbtp && Math.abs(m.integratedLufs - targetLufs) <= LUFS_TOLERANCE;
 
-export async function loudnessGate(mp4: string, o: { gateDbtp: number; targetLufs: number; config: RuntimeConfig; signal: AbortSignal }): Promise<{ integratedLufs: number; truePeakDbtp: number; attempts: number; ok: boolean }> {
+export async function loudnessGate(mp4: string, o: { gateDbtp: number; targetLufs: number; config: RuntimeConfig; signal: AbortSignal; /** exact programme length: the AAC re-encode keeps it */ durationSec?: number }): Promise<{ integratedLufs: number; truePeakDbtp: number; attempts: number; ok: boolean }> {
   let m = await measureEbur128(mp4, { config: o.config, signal: o.signal });
   let attempts = 0;
   while (m.truePeakDbtp > o.gateDbtp && attempts < GATE_MAX_ATTEMPTS) {
@@ -26,7 +26,7 @@ export async function loudnessGate(mp4: string, o: { gateDbtp: number; targetLuf
     const gain = gateGainDb(m.truePeakDbtp, o.gateDbtp);
     await ffAtomic([
       "-i", mp4, "-map", "0:v?", "-map", "0:a:0", "-c:v", "copy", "-af", `volume=${gain.toFixed(2)}dB`,
-      "-c:a", "aac", "-b:a", "256k", "-ar", "48000", "-movflags", "+faststart", "-f", "mp4",
+      "-c:a", "aac", "-b:a", "256k", "-ar", "48000", ...(o.durationSec ? ["-t", o.durationSec.toFixed(6)] : []), "-movflags", "+faststart", "-f", "mp4",
     ], mp4, { config: o.config, signal: o.signal });
     m = await measureEbur128(mp4, { config: o.config, signal: o.signal });
   }
