@@ -90,6 +90,17 @@ export function isBlockedAddress(ip: string): boolean {
   return blockList.check(norm, "ipv6");
 }
 
+/** Hosts whose 429 without a wait hint gets a fixed back-off (§7.2: Wikimedia 20 s). */
+export const FIXED_429_BACKOFF_MS: readonly [RegExp, number][] = [[/(^|\.)(wikimedia|wikipedia|wikidata)\.org$/, 20_000]];
+function fixedBackoffMs(url: string): number | null {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return FIXED_429_BACKOFF_MS.find(([re]) => re.test(host))?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function hasProxy(env: NodeJS.ProcessEnv): boolean {
   return ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"].some((k) => (env[k] ?? "") !== "");
 }
@@ -238,7 +249,7 @@ export function createHttpClient(o: { config: RuntimeConfig; logger: Logger } & 
       if (res.status < 200 || res.status >= 300) {
         // Retry-After, else (429 only) the RateLimit reset hint some APIs send instead (Wikimedia: x-ratelimit-reset, seconds).
         const retryAfterMs = parseRetryAfter(res.headers.get("retry-after"))
-          ?? (res.status === 429 ? parseRetryAfter(res.headers.get("x-ratelimit-reset") ?? res.headers.get("ratelimit-reset")) : null);
+          ?? (res.status === 429 ? parseRetryAfter(res.headers.get("x-ratelimit-reset") ?? res.headers.get("ratelimit-reset")) ?? fixedBackoffMs(url) : null);
         let snippet = "";
         try {
           snippet = (await res.text()).slice(0, 300);

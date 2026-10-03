@@ -1,5 +1,5 @@
 // Provider parsers on recorded/documented JSON (§16.1), URL builders, search through a stub HttpClient, quota buckets, entities.
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { Candidate, DocmakerError } from "@docmaker/core";
@@ -249,6 +249,20 @@ describe("quota buckets", () => {
     await expect(b.acquire("openverse", { perDay: 3, concurrency: 1 }, signal)).rejects.toMatchObject({ code: "PROVIDER_RATE_LIMIT" });
     now += 86_400_000;
     await expect(b.acquire("openverse", { perDay: 3, concurrency: 1 }, signal)).resolves.toBeUndefined();
+  });
+  it("enforces the Pexels monthly cap (20k) on top of its hourly limit", async () => {
+    const config = makeConfig();
+    let now = 5_000_000;
+    const signal = new AbortController().signal;
+    const qb = new QuotaBuckets(config, { now: () => now });
+    await qb.acquire("pexels", { perHour: 200, concurrency: 1 }, signal);
+    // Simulate a month nearly used up, then check the refusal and the reset after 30 days.
+    const st = JSON.parse(readFileSync(qb.file, "utf8")) as Record<string, { month: { start: number; count: number } }>;
+    st.pexels!.month.count = 20_000;
+    writeFileSync(qb.file, JSON.stringify(st));
+    await expect(qb.acquire("pexels", { perHour: 200, concurrency: 1 }, signal)).rejects.toMatchObject({ code: "PROVIDER_RATE_LIMIT", message: expect.stringContaining("per month") });
+    now += 30 * 86_400_000;
+    await expect(qb.acquire("pexels", { perHour: 200, concurrency: 1 }, signal)).resolves.toBeUndefined();
   });
   it("waits for the minute window instead of failing (cancellable)", async () => {
     const config = makeConfig();

@@ -189,6 +189,16 @@ describe("retries, caps, cache, timeouts", () => {
     expect(n).toBe(1); // 120 s > the 60 s cap: give up at once, the stage moves on
   });
 
+  it("Wikimedia: a 429 without any wait hint backs off 20 s; other hosts fall back to exponential back-off", async () => {
+    const config = makeConfig({ offline: false });
+    const f = fakeFetch(() => new Response("", { status: 429 }));
+    const http = createHttpClient({ config, logger: quietLogger(), fetchImpl: f.impl, lookup: publicLookup, retries: 0 });
+    const signal = new AbortController().signal;
+    await expect(http.getJson("https://commons.wikimedia.org/w/api.php", { signal })).rejects.toMatchObject({ code: "PROVIDER_RATE_LIMIT", details: { retryAfterMs: 20_000 } });
+    await expect(http.getJson("https://www.wikidata.org/w/api.php", { signal })).rejects.toMatchObject({ details: { retryAfterMs: 20_000 } });
+    await expect(http.getJson("https://api.openverse.org/v1/images/", { signal })).rejects.toMatchObject({ details: { retryAfterMs: null } });
+  });
+
   it("enforces size caps (content-length and streamed)", async () => {
     const config = makeConfig({ offline: false });
     const big = new Uint8Array(4096);

@@ -8,8 +8,10 @@ import { withFileLock } from "@docmaker/core/node";
 import { writeFileAtomic } from "./util";
 
 type Win = { start: number; count: number };
-type State = Record<string, { min?: Win; hour?: Win; day?: Win }>;
-const SPAN = { min: 60_000, hour: 3_600_000, day: 86_400_000 } as const;
+type State = Record<string, { min?: Win; hour?: Win; day?: Win; month?: Win }>;
+const SPAN = { min: 60_000, hour: 3_600_000, day: 86_400_000, month: 30 * 86_400_000 } as const;
+/** Monthly caps the core ProviderLimits type cannot express (§7.2: Pexels 20k/month). */
+export const MONTHLY_CAPS: Readonly<Record<string, number>> = { pexels: 20_000 };
 const MAX_WAIT_MS = 65_000;
 
 export class QuotaBuckets {
@@ -43,7 +45,7 @@ export class QuotaBuckets {
           if (!w || t - w.start >= SPAN[k]) s[k] = { start: t, count: 0 };
           return s[k]!;
         };
-        const checks: [keyof typeof SPAN, number | undefined][] = [["day", limits.perDay], ["hour", limits.perHour], ["min", limits.perMin]];
+        const checks: [keyof typeof SPAN, number | undefined][] = [["month", MONTHLY_CAPS[provider]], ["day", limits.perDay], ["hour", limits.perHour], ["min", limits.perMin]];
         for (const [k, cap] of checks) {
           if (cap === undefined) continue;
           const w = roll(k);

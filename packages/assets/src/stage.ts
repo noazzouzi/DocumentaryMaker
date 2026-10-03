@@ -21,7 +21,7 @@ import { createLocalProvider } from "./providers/local";
 import { createProceduralProvider } from "./providers/procedural";
 import { FAL_COST_PER_IMAGE_USD, FAL_ENDPOINT, falRequest } from "./providers/paid";
 import { ConcurrencyGate, QuotaBuckets } from "./quota";
-import { dHash, dedupeRecords, keyOf, needsVisionRerank, rankCandidates } from "./rank";
+import { dHash, dedupeRecords, hamming, keyOf, needsVisionRerank, rankCandidates } from "./rank";
 import type { AssetsCtx } from "./types";
 import { readUserFrozen } from "./userfrozen";
 import { peopleRuleBlocks, validatePick } from "./validate";
@@ -316,11 +316,21 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
     // Greedy picks with fallback to the next candidate when a freeze or validatePick fails.
     const ordered = pickAssets({ plan, ranked, shots: ranked.length, recentUse: recent.map() });
     const chosen: AssetPick[] = [];
+    // Near-identical pictures from different providers (no thumbnails were hashed without a rerank): the frozen image decides.
+    const pickedHashes: bigint[] = [];
     for (const cand of ordered) {
       if (chosen.length >= shots) break;
       const rec = ranked.find((r) => keyOf(r.record.candidate) === keyOf(cand.candidate))!.record;
       const a = await freeze(plan, rec, roleOf(rec));
       if (!a || chosen.some((p) => p.assetId === a.id)) continue;
+      let hash: bigint | null = null;
+      if (a.kind === "image") {
+        hash = await dHash(path.join(i.projectDir, a.projectRel)).catch(() => null);
+        if (hash !== null && pickedHashes.some((x) => hamming(x, hash!) <= 6)) {
+          log.debug("near-duplicate picture skipped", { beatId: plan.id, candidate: keyOf(rec.candidate) });
+          continue;
+        }
+      }
       const pick = pickFor(plan, chosen.length, a, cand.score);
       const issues = validatePick({ pick, plan, asset: a, policy: project.assets.licensePolicy, editorial: project.editorial, facts, personAcks: i.personAcks });
       if (issues.some((x) => x.level === "error")) {
@@ -329,6 +339,7 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
       }
       chosen.push(pick);
       frozen.set(a.id, a);
+      if (hash !== null) pickedHashes.push(hash);
     }
     // Nothing usable → procedural (always succeeds). Graphics backgrounds stay empty: the director renders a generated backdrop.
     const procRecords: CandidateRecord[] = [];
