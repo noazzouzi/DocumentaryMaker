@@ -129,9 +129,9 @@ function policyChecks(ctx: Ctx, t: Timeline): LintIssue[] {
   return out;
 }
 
-/** project.assets.maxClipSeconds when the engine passes the whole Project (DirectorInput.project is a Pick without it). */
+/** project.assets.maxClipSeconds (DirectorInput.project.assets is optional). */
 function maxClipSecondsOf(I: DirectorInput): number | null {
-  const v = (I.project as { assets?: { maxClipSeconds?: unknown } }).assets?.maxClipSeconds;
+  const v: unknown = I.project.assets?.maxClipSeconds;
   return typeof v === "number" && v > 0 ? v : null;
 }
 
@@ -237,7 +237,10 @@ export function direct(I: DirectorInput): DirectorOutput {
     ...ctx.issues,
     ...policyChecks(ctx, timeline),
     ...lintTimeline(timeline, I.style, { layout: I.layout, layoutHash: I.layoutHash, frozen: I.frozen, maxClipSeconds: maxClipSecondsOf(I) }),
-    ...rejected.map((r) => ({ level: "warn" as const, rule: "OVERRIDE_REJECTED", where: r.id, msg: r.reason })),
+    // a replaceSource refused by validateAsset is a POLICY error (§7.4, §16.6); other refusals stay warnings
+    ...rejected.map((r) => (r.reason.startsWith("policy: ")
+      ? { level: "error" as const, rule: "POLICY", where: r.id, msg: `override rejected — ${r.reason}` }
+      : { level: "warn" as const, rule: "OVERRIDE_REJECTED", where: r.id, msg: r.reason })),
   ];
   const stats = computeStats(ctx, timeline, shots, { drops: arb.drops, cleanStretches: arb.cleanStretches, jl: ca.jl, keywordCaptions: caps.keywordCount, transitionCuts: sfx.transitionCuts, boundaries: sfx.boundaries });
   return { timeline, lint, stats, usage: buildUsage(timeline), rejectedOverrides: rejected };

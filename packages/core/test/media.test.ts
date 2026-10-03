@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -111,5 +111,17 @@ describe("proc", () => {
   }, 60_000);
   it("runSidecar without a venv → TOOL_MISSING", async () => {
     await expect(runSidecar("beats", {}, { config, signal })).rejects.toMatchObject({ code: "TOOL_MISSING" });
+  });
+  it("runSidecar keeps the dispatcher's error code from out.json (§8.8)", async () => {
+    const venv = path.join(dir, "venv");
+    const cfg = { ...config, paths: { ...config.paths, pyVenv: venv } } as RuntimeConfig;
+    await mkdir(path.join(venv, "bin"), { recursive: true });
+    const py = path.join(venv, "bin", "python");
+    // fake interpreter: argv = -m docmaker_sidecar <cmd> --in <in> --out <out>
+    await writeFile(py, `#!/bin/sh\nprintf '{"error":"MODEL_MISSING","message":"no model"}' > "$7"\necho "ERROR MODEL_MISSING: no model" >&2\nexit 3\n`);
+    await chmod(py, 0o755);
+    await expect(runSidecar("asr", {}, { config: cfg, signal })).rejects.toMatchObject({ code: "MODEL_MISSING", message: "no model" });
+    await writeFile(py, "#!/bin/sh\necho boom >&2\nexit 1\n");
+    await expect(runSidecar("asr", {}, { config: cfg, signal })).rejects.toMatchObject({ code: "INTERNAL" });
   });
 });

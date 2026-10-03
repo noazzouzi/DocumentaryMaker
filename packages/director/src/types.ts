@@ -17,7 +17,8 @@ export interface LayoutInput {
 }
 
 export interface DirectorInput {
-  project: Pick<Project, "slug" | "seed" | "captions" | "captionsVariant" | "video" | "themeOverride">;
+  /** `assets` (optional, I 2026-10-03): `assets.maxClipSeconds` feeds the CLIP_SHARE clip-length error. */
+  project: Pick<Project, "slug" | "seed" | "captions" | "captionsVariant" | "video" | "themeOverride"> & Partial<Pick<Project, "assets">>;
   lang: Lang;
   style: StyleData;
   renderTokens: StyleRenderTokens; // tokens merged with themeOverride, captionDNA variant resolved (engine builds it)
@@ -38,6 +39,8 @@ export interface DirectorInput {
   riskFlags: readonly RiskFlag[]; // from style/suggestion.json (safe-messaging end card, minors)
   factCheck: FactCheck | null; // markers for items not "rewritten"
   overrides: OverridesDoc | null;
+  /** Story shape, per-chapter plan and ad breaks (§9.3). null/absent → shape from style.scriptProfile by act names, ad breaks from the style schedule. */
+  outline?: Outline | null;
   /** Licence/AI/person re-check for replaceSource overrides (engine passes assets.validatePick bound to the project). */
   validateAsset: (assetId: string, beatId: string | null) => LintIssue[];
 }

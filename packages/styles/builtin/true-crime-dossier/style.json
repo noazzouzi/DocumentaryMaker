@@ -334,7 +334,7 @@
       "weight": 0.8
     },
     {
-      "enabled": true,
+      "enabled": false,
       "id": "Stamp",
       "triggers": [
         "REVEAL"

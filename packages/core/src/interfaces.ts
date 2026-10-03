@@ -53,7 +53,7 @@ export interface RuntimeConfig {
   renderLockFile: string; // machine-wide render lock (DOCMAKER_RENDER_LOCK ?? /tmp/docmaker-render.lock)
 }
 /** Hosts that receive `contact: …` in the User-Agent. Everything else gets userAgentBase only. */
-export const CONTACT_UA_HOSTS: readonly string[] = ["commons.wikimedia.org", "www.wikidata.org", "wikidata.org", "api.openverse.org"];
+export const CONTACT_UA_HOSTS: readonly string[] = ["commons.wikimedia.org", "upload.wikimedia.org", "www.wikidata.org", "wikidata.org", "api.openverse.org"];
 
 export type Progress = (pct: number, message: string, detail?: Record<string, unknown>) => void;
 

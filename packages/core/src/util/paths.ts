@@ -51,6 +51,10 @@ export const P = {
   entities: "research/entities.json", // personId → QID + aliases (resolved by the research stage)
   localIndex: "assets/local-index.json",
   clipWords: (segmentId: string) => `assets/clips/${segmentId}.json`,
+  // package-private records of @docmaker/assets (unversioned; not in DOC_REGISTRY): assets frozen outside the stage
+  // (uploads, scene-board freezes, manual clips; FrozenAsset) and the live-search cache ({cachedAt, record}, 7-day TTL)
+  userFrozen: (assetId: string) => `assets/user-frozen/${assetId}.json`,
+  liveCache: (provider: string, sha16: string) => `assets/live-cache/${provider}-${sha16}.json`,
   credits: (lang: Lang) => `assets/credits.${lang}.md`,
   media: (assetId: string, ext: string) => `media/${assetId}.${ext}`,
   uploads: "uploads/", // staging for web uploads (declaration required before import)

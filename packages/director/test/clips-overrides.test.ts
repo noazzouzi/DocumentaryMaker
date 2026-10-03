@@ -141,4 +141,17 @@ describe("applyOverrides", () => {
     expect(out.timeline.video.find((c) => c.id === clip.id)!.layout).toBe("card");
     expect(out.lint.some((l) => l.rule === "OVERRIDE_REJECTED" && l.where === "bad")).toBe(true);
   });
+
+  it("a replaceSource refused by validateAsset is a POLICY lint error (§16.6)", () => {
+    const imageId = (c: Timeline["video"][number]) => (c.source.kind === "image" ? c.source.assetId : null);
+    const other = base.video.map(imageId).find((id) => id !== null && id !== imageId(clip))!;
+    const out = direct({
+      ...sc.input,
+      // only the replacement fails the policy (every placed asset is re-checked too)
+      validateAsset: (id) => (id === other ? [{ level: "error", rule: "POLICY", where: "x", msg: "CC-BY-NC under monetized" }] : []),
+      overrides: doc([{ id: "nc", createdAt: TEST_NOW, target: target(clip.id), override: { op: "replaceSource", clipId: clip.id, source: { kind: "image", assetId: other, crop: null, focal: { x: 0.5, y: 0.5 } } } }]),
+    });
+    expect(out.rejectedOverrides.map((x) => x.id)).toEqual(["nc"]);
+    expect(out.lint.find((l) => l.where === "nc")).toMatchObject({ level: "error", rule: "POLICY" });
+  });
 });

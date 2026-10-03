@@ -199,6 +199,12 @@ export function lintStyleData(data: unknown, o: { fontFamilies: readonly string[
       out.push(warn(STYLE_RULES.overshoot, "motion.overshootAllowedIn", `${id} is not a whitelisted impact component; overshoot will be ignored`));
     }
   }
+  // an enabled impact component whose renderer always overshoots is never placed when the style forbids its overshoot
+  for (const [i, c] of d.components.entries()) {
+    if (c.enabled && COMPONENT_IDS.has(c.id) && COMPONENT_META[c.id].overshootAllowed && !d.motion.overshootAllowedIn.includes(c.id)) {
+      out.push(warn(STYLE_RULES.overshoot, `components[${i}]`, `${c.id} is enabled but missing from motion.overshootAllowedIn; the director never places it`));
+    }
+  }
 
   // ---- transitions
   const tp = d.transitionPolicy;

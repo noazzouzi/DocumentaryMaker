@@ -5,6 +5,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { FfprobeResult, FfprobeStream, RuntimeConfig } from "../interfaces";
+import { ErrorCode } from "../schema/ops";
 import { DocmakerError } from "../util/errors";
 import { pidAlive, sleep } from "./fsutil";
 
@@ -192,7 +193,7 @@ export async function runSidecar<T>(
       signal: opts.signal,
       cwd: pyRoot,
       timeoutMs: opts.timeoutMs,
-      env: { ...process.env, PYTHONPATH: pyRoot, PYTHONUNBUFFERED: "1" },
+      env: { ...process.env, PYTHONPATH: pyRoot, PYTHONUNBUFFERED: "1", PYTHONDONTWRITEBYTECODE: "1" },
       onStderrLine: opts.onProgress
         ? (l) => {
             const m = /^PROGRESS\s+([\d.]+)\s*(.*)$/.exec(l);
@@ -200,7 +201,23 @@ export async function runSidecar<T>(
           }
         : undefined,
     });
-    if (r.code !== 0) throw new DocmakerError("INTERNAL", `sidecar ${cmd} failed (code ${r.code}): ${tail(r.stderr)}`);
+    if (r.code !== 0) {
+      // the dispatcher writes {"error": <ErrorCode>, "message"} to out.json on a handled failure (§8.8): keep its code
+      let err: { error?: unknown; message?: unknown } | null = null;
+      try {
+        err = JSON.parse(await readFile(outFile, "utf8")) as { error?: unknown; message?: unknown };
+      } catch {
+        /* no error JSON */
+      }
+      const code = ErrorCode.safeParse(err?.error);
+      if (code.success) {
+        throw new DocmakerError(code.data, typeof err?.message === "string" ? err.message : `sidecar ${cmd} failed`, {
+          hint: code.data === "TOOL_MISSING" || code.data === "MODEL_MISSING" ? "run `docmaker setup --python`" : undefined,
+          details: { stderr: tail(r.stderr) },
+        });
+      }
+      throw new DocmakerError("INTERNAL", `sidecar ${cmd} failed (code ${r.code}): ${tail(r.stderr)}`);
+    }
     return JSON.parse(await readFile(outFile, "utf8")) as T;
   } finally {
     await rm(dir, { recursive: true, force: true });

@@ -95,8 +95,7 @@ export const directStage: StageDef = {
       project: p, lang, style: ctx.style.data, renderTokens: tokens, layout, layoutHash: docHash(layout), script: fscript, plans, texts, facts, picks, frozen,
       clipWords, sfx, music, voiceProvider: take.provider, takeKind: take.kind, pickupSegments: take.segments.filter((s) => s.pickup).map((s) => s.segmentId),
       personAcks, riskFlags: (await e.riskFlags()).filter((f) => f !== "none"), factCheck: await docs.factcheck(ctx.store, lang),
-      overrides: await docs.overrides(ctx.store, lang), validateAsset,
-      ...({ outline } as object),
+      overrides: await docs.overrides(ctx.store, lang), validateAsset, outline,
     });
     // SFX files referenced by the timeline → media/<assetId>.wav (hardlink into the project; the render asset server serves media/)
     const sfxById = new Map(sfx.map((x) => [x.assetId, x]));

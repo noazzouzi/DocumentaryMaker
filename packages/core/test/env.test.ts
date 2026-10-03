@@ -66,7 +66,7 @@ describe("userAgentFor", () => {
     const { root, home } = await fakeRepo();
     const { config } = loadRuntime({ cwd: root, env: { DOCMAKER_HOME: home, DOCMAKER_CONTACT: "me@example.org" } });
     for (const h of CONTACT_UA_HOSTS) expect(userAgentFor(`https://${h}/w/api.php`, config)).toBe("DocumentaryMaker/9.9.9; contact: me@example.org");
-    for (const u of ["https://api.pexels.com/v1", "https://evil.wikimedia.org.attacker.net/", "https://upload.wikimedia.org/x.jpg", "not a url"]) {
+    for (const u of ["https://api.pexels.com/v1", "https://evil.wikimedia.org.attacker.net/", "https://thumb.wikimedia.org/x.jpg", "https://en.wikipedia.org/wiki/X", "not a url"]) {
       expect(userAgentFor(u, config)).toBe("DocumentaryMaker/9.9.9");
     }
     const none = loadRuntime({ cwd: root, env: { DOCMAKER_HOME: home } }).config;

@@ -2263,10 +2263,8 @@ export const TransitionKey = z.enum([
   "dissolve", "blurDissolve", "push", "wipe",
 ]);
 export type TransitionKey = z.infer<typeof TransitionKey>;
-/** M2/R covers; until implemented, the director maps them: filmBurn|paperRip|whipStreaks → flash, dotWipe|iris → dipToBlack. */
-export const DEFERRED_TRANSITIONS: Partial<Record<TransitionKey, TransitionKey>> = {
-  filmBurn: "flash", paperRip: "flash", whipStreaks: "flash", dotWipe: "dipToBlack", iris: "dipToBlack",
-};
+/** Covers a renderer may not implement yet (the director applies the chain). Empty since P2: every §10.5 cover is implemented (P1 value: filmBurn|paperRip|whipStreaks → flash, dotWipe|iris → dipToBlack). */
+export const DEFERRED_TRANSITIONS: Partial<Record<TransitionKey, TransitionKey>> = {};
 
 export const MacroAct = z.enum(["setup", "confrontation", "resolution"]);
 export type MacroAct = z.infer<typeof MacroAct>;
@@ -3629,7 +3627,7 @@ export interface RuntimeConfig {
   renderLockFile: string; // machine-wide render lock (DOCMAKER_RENDER_LOCK ?? /tmp/docmaker-render.lock)
 }
 /** Hosts that receive `contact: …` in the User-Agent. Everything else gets userAgentBase only. */
-export const CONTACT_UA_HOSTS: readonly string[] = ["commons.wikimedia.org", "www.wikidata.org", "wikidata.org", "api.openverse.org"];
+export const CONTACT_UA_HOSTS: readonly string[] = ["commons.wikimedia.org", "upload.wikimedia.org", "www.wikidata.org", "wikidata.org", "api.openverse.org"];
 
 export type Progress = (pct: number, message: string, detail?: Record<string, unknown>) => void;
 
@@ -4427,7 +4425,8 @@ type Pauses2 = StyleData["pauses"];
 export declare function layoutProgram(i: LayoutInput): Omit<ProgramLayout, "voProgram">;
 
 export interface DirectorInput {
-  project: Pick<Project, "slug" | "seed" | "captions" | "captionsVariant" | "video" | "themeOverride">;
+  project: Pick<Project, "slug" | "seed" | "captions" | "captionsVariant" | "video" | "themeOverride"> & Partial<Pick<Project, "assets">>; // assets.maxClipSeconds → CLIP_SHARE
+  outline?: Outline | null; // story shape, chapter plan, ad breaks; null → style.scriptProfile by act names
   lang: Lang;
   style: StyleData;
   renderTokens: StyleRenderTokens; // tokens merged with themeOverride, captionDNA variant resolved (engine builds it)
@@ -6487,7 +6486,7 @@ The Next process only does cheap work (reads, writes, approvals, estimates, styl
 | POST | `/api/keys` · GET `/api/keys/test?name=` | `{name, value, consent:true}` → 204 · → `{ok, tier, message}` |
 | GET | `/api/doctor` | → `DoctorReport` |
 
-**Guards (middleware):** reject any request whose `Host` is not `127.0.0.1:<port>` or `localhost:<port>` (403; DNS-rebinding protection); mutations require an `Origin` matching the host; GETs of `docs`, `media`, `timeline`, `history` require `Sec-Fetch-Site ∈ {same-origin, none}` when the header is present; bodies > 5 MB rejected except uploads.
+**Guards (`src/proxy.ts`; Next 16 renamed `middleware` to `proxy`):** reject any request whose `Host` is not `127.0.0.1:<port>` or `localhost:<port>` (403; DNS-rebinding protection); mutations require an `Origin` matching the host; GETs of `docs`, `media`, `timeline`, `history` require `Sec-Fetch-Site ∈ {same-origin, none}` when the header is present; bodies > 5 MB rejected except uploads. The proxy buffers bodies, so `/api/projects/[slug]/upload` is excluded from its matcher and runs the same `checkRequest` (`src/server/guards.ts`) itself.
 
 ### 14.4 Player integration (client component, `src/components/PreviewPlayer.tsx`)
 
@@ -6686,7 +6685,7 @@ On the `gate-test` fixture (`autoApproveGates:false`): `--yes`/`--max-cost` neve
 - **User-Agent:** `userAgentBase` = `DocumentaryMaker/<version>` (+ ` (+<homepage>)` only when the root `package.json` declares a real `homepage`; no placeholder URLs). The contact (`DOCMAKER_CONTACT` ?? `HomeConfig.contact`) is appended **only** for `CONTACT_UA_HOSTS` (commons.wikimedia.org, www.wikidata.org, wikidata.org, api.openverse.org). Nothing is ever read from git config, the OS user, email or hostname (unit-tested). `doctor` warns when the contact is unset (Wikimedia etiquette).
 - SSRF guard and size caps on every asset fetch (§7.5); offline mode refuses before any socket.
 - Proxies via env (`NODE_USE_ENV_PROXY=1`); **TLS verification is never disabled**; `ignoreCertificateErrors` is never set in Chromium.
-- The web app binds to 127.0.0.1; middleware rejects foreign `Host` headers (DNS rebinding), checks `Origin` on mutations and `Sec-Fetch-Site` on document/media reads; media paths are allowlisted.
+- The web app binds to 127.0.0.1; the request proxy (`src/proxy.ts`) rejects foreign `Host` headers (DNS rebinding), checks `Origin` on mutations and `Sec-Fetch-Site` on document/media reads; media paths are allowlisted.
 - No telemetry anywhere. The HyperFrames CLI is not used; anyone experimenting must set `HYPERFRAMES_NO_TELEMETRY=1 HYPERFRAMES_SKIP_SKILLS=1 DO_NOT_TRACK=1` and use an isolated `HOME`.
 
 ### 17.3 Fair-use notice (shown before the first YouTube download; acknowledgement stored)

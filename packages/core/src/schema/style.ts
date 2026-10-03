@@ -14,10 +14,12 @@ export const TransitionKey = z.enum([
   "dissolve", "blurDissolve", "push", "wipe",
 ]);
 export type TransitionKey = z.infer<typeof TransitionKey>;
-/** M2/R covers; until implemented, the director maps them: filmBurn|paperRip|whipStreaks → flash, dotWipe|iris → dipToBlack. */
-export const DEFERRED_TRANSITIONS: Partial<Record<TransitionKey, TransitionKey>> = {
-  filmBurn: "flash", paperRip: "flash", whipStreaks: "flash", dotWipe: "dipToBlack", iris: "dipToBlack",
-};
+/**
+ * Covers a renderer may not implement yet map here (the director applies the chain; remotion's resolveCover too).
+ * All of §10.5 is implemented (W7, 2026-10-03), so the map is empty; it was
+ * `{ filmBurn|paperRip|whipStreaks → flash, dotWipe|iris → dipToBlack }` in P0/P1.
+ */
+export const DEFERRED_TRANSITIONS: Partial<Record<TransitionKey, TransitionKey>> = {};
 
 export const MacroAct = z.enum(["setup", "confrontation", "resolution"]);
 export type MacroAct = z.infer<typeof MacroAct>;

@@ -130,7 +130,7 @@ describe("resolveAssets (online, fake network)", () => {
   it("sends the contact User-Agent only to allowlisted hosts", () => {
     const commons = net.calls.find((c) => c.url.startsWith("https://commons.wikimedia.org/"))!;
     expect(commons.headers["user-agent"]).toContain("contact: https://example.org/contact");
-    const others = net.calls.filter((c) => !/^https:\/\/(commons\.wikimedia\.org|api\.openverse\.org)\//.test(c.url));
+    const others = net.calls.filter((c) => !/^https:\/\/(commons\.wikimedia\.org|upload\.wikimedia\.org|api\.openverse\.org)\//.test(c.url));
     expect(others.length).toBeGreaterThan(0);
     for (const c of others) expect(c.headers["user-agent"]).not.toContain("contact");
   });

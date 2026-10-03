@@ -92,7 +92,7 @@ export function buildCtx(I: DirectorInput): Ctx {
   const style = I.style;
   const issues: LintIssue[] = [];
   const warn = (rule: string, where: string, msg: string) => { issues.push({ level: "warn", rule, where, msg }); };
-  const outline = (I as DirectorInput & { outline?: Outline | null }).outline ?? null;
+  const outline = I.outline ?? null;
   const shape = shapeFor(style, layout.chapters.map((c) => c.act), outline);
   const planById = new Map(I.plans.map((p) => [p.id, p]));
   const textById = new Map(I.texts.map((t) => [t.beatId, t]));

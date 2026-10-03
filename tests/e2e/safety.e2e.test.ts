@@ -1,7 +1,7 @@
 // Safety suite (§16.6) on the gate-test fixture (autoApproveGates:false), through the CLI and the engine: editorial gates
 // never satisfied by --yes/--max-cost, confirmed thesis, fix-only quote_mismatch, stale re-arming, person-ack, recheck,
 // POLICY_DENIED user picks, NC replaceSource overrides, upload declarations, fal denylist, private persons, User-Agent,
-// freeze without client licence fields. Real styles/llm/voice/director/assets; fakes for audio, export and the render.
+// freeze without client licence fields. Real packages throughout; only the render client is fake (no Chrome).
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -12,7 +12,7 @@ import { loadRuntime, run, userAgentFor } from "@docmaker/core/node";
 import { REAL_DEPS, createEngineImpl, fixOnly, gatingItems, type EngineDeps, type EngineExt } from "@docmaker/engine";
 import { runCli } from "../../apps/cli/src/main";
 import type { EngineFactory, Io } from "../../apps/cli/src/context";
-import { FakeRenderClient, makeFakeAudio, makeFakeExporter } from "../../packages/engine/test/fakes/index";
+import { FakeRenderClient } from "../../packages/engine/test/fakes/index";
 import { buildAiDenylist, checkFalPrompt } from "../../packages/assets/src/index";
 import { offlineEnv, REPO_ROOT, type OfflineEnv } from "./helpers";
 
@@ -41,7 +41,7 @@ describe("safety suite (gate-test)", () => {
   beforeAll(async () => {
     env = await offlineEnv("safety");
     const deps: EngineDeps = {
-      ...REAL_DEPS, audio: makeFakeAudio(), exporter: makeFakeExporter(),
+      ...REAL_DEPS,
       assets: {
         ...REAL_DEPS.assets,
         liveSearch: (async (...a: Parameters<typeof REAL_DEPS.assets.liveSearch>) => {
@@ -182,8 +182,8 @@ describe("safety suite (gate-test)", () => {
     const lint = read(P.timelineLint("en"), TimelineLintDoc);
     const rejected = lint.rejectedOverrides.find((r) => r.id === "ov-nc");
     expect(rejected?.reason).toMatch(/policy|licen[cs]e/i);
-    // the director reports it as OVERRIDE_REJECTED (warn) with the policy reason (docs/ISSUES.md: spec asks for a POLICY lint error)
-    expect(lint.issues.some((i) => (i.rule === "POLICY" || i.rule === "POLICY_DENIED" || i.rule === "OVERRIDE_REJECTED") && /policy|licen[cs]e/i.test(i.msg))).toBe(true);
+    // the director reports the refused override as a POLICY lint error with the policy reason (§16.6)
+    expect(lint.issues.some((i) => i.rule === "POLICY" && i.level === "error" && /policy|licen[cs]e/i.test(i.msg))).toBe(true);
     const t2 = read(P.timeline("en"), Timeline);
     expect(t2.video.some((c) => c.source.kind === "image" && c.source.assetId === up.asset!.id)).toBe(false);
   }, 300_000);
