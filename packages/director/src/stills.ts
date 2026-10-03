@@ -48,7 +48,9 @@ export function applyStillLayout(ctx: Ctx, s: Shot, layout: ClipLayout, tiltSign
 
 function treatmentOf(ctx: Ctx, s: Shot): Shot["treatment"] {
   const a = s.src.assetId ? ctx.frozen[s.src.assetId] : undefined;
-  if (!a) return "none";
+  // a procedural fallback is a synthetic texture, not a historical document: the bw/archival looks only crushed its
+  // dark gradient toward black (a 1.1 s near-black shot mid-chapter, QA blackdetect)
+  if (!a || isProceduralStill(ctx, s)) return "none";
   if (a.analysis.grayscale) return "bw";
   if (a.analysis.year !== null && a.analysis.year < 1970) return "archival";
   return "none";

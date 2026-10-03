@@ -182,6 +182,15 @@ describe("procedural stills", () => {
     expect(images.length).toBeGreaterThan(0);
     for (const c of images) expect(c.layout, c.id).not.toBe("card");
   });
+  it("get no bw / archival treatment (a dark synthetic gradient under bw read as a near-black shot)", () => {
+    const sc = policyScenario({ seconds: 300, chapters: 3 });
+    const old = { grayscale: true, meanLuma: 0.12, year: 1637, lowRes: false };
+    const real = Object.fromEntries(Object.entries(sc.input.frozen).map(([id, a]) => [id, FrozenAsset.parse({ ...a, analysis: old })]));
+    const proc = Object.fromEntries(Object.entries(real).map(([id, a]) => [id, FrozenAsset.parse({ ...a, conform: { ...a.conform, recipe: `proc-${a.kind}-v1` } })]));
+    const treated = (fz: typeof real) => direct({ ...sc.input, frozen: fz }).timeline.video.filter((c) => c.source.kind === "image" || c.source.kind === "video");
+    expect(treated(real).some((c) => c.treatment === "bw")).toBe(true); // historical grayscale pictures do get the look
+    for (const c of treated(proc)) expect(c.treatment, c.id).toBe("none");
+  });
 });
 
 describe("generated keyword cards", () => {
