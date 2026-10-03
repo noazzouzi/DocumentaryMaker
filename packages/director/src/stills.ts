@@ -18,7 +18,7 @@ function forcedCard(ctx: Ctx, s: Shot, g: StillGeometry): boolean {
   return g.aspect < ctx.St.cardIfAspectBelow || g.w < ctx.St.cardIfWidthBelow || kind === "document_screenshot" || kind === "social_post" || g.maxCover < 1;
 }
 
-/** Applies a layout (and its parameters, scale caps) to an image shot. */
+/** Applies a layout (and its parameters, scale caps) to an image (or low-resolution video) shot. */
 export function applyStillLayout(ctx: Ctx, s: Shot, layout: ClipLayout, tiltSign: number): void {
   const g = geometryOf(ctx, s)!;
   s.layout = layout;
@@ -67,7 +67,11 @@ export function decideLayouts(ctx: Ctx, shots: Shot[]): void {
     } else if (s.src.kind === "generated" || !g) {
       s.layout = "cover"; s.layoutParams = null; s.baseUpscale = 1; s.maxCamScale = 2;
     } else if (s.src.kind === "video") {
-      s.layout = "cover"; s.layoutParams = null; s.baseUpscale = g.coverFactor; s.maxCamScale = Math.max(1, g.maxCover);
+      // upscale guard for video too: a low-resolution video is framed as a card instead of being blown up to cover
+      if (g.coverFactor > ctx.P.maxUpscale + 1e-9) {
+        applyStillLayout(ctx, s, "card", tiltSign);
+        tiltSign = -tiltSign;
+      } else { s.layout = "cover"; s.layoutParams = null; s.baseUpscale = g.coverFactor; s.maxCamScale = Math.max(1, g.maxCover); }
     } else {
       const forced = forcedCard(ctx, s, g);
       s.forcedCard = forced;

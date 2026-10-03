@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { FrozenAsset, type Timeline } from "@docmaker/core";
 import { direct } from "../src/index";
+import { effectiveUpscale } from "../src/stats";
 import { errorsOf, runs } from "./helpers";
 import { policyScenario } from "./scenario";
 
@@ -58,5 +59,35 @@ describe("programme ending and montage media", () => {
     const out = direct({ ...sc.input, plans });
     const N = out.timeline.durationInFrames;
     expect(out.timeline.audio.sfx.filter((s) => s.category === "riser" && s.eventFrame > N - 2 * out.timeline.fps)).toEqual([]);
+  });
+});
+
+describe("camera grammar (fewer static-then-punch openings, readable Ken Burns, video upscale guard)", () => {
+  it("stills rarely hold a static frame, and Ken Burns moves travel ≥ 6 % scale or ≥ 3 % of the axis unless the guard limits them", () => {
+    for (const out of [runs().policy, runs().tulip]) {
+      const t = out.timeline;
+      const stills = t.video.filter((c) => c.source.kind === "image");
+      const statics = stills.filter((c) => c.camera.keys.every((k) => k.scale === c.camera.keys[0]!.scale && k.x === c.camera.keys[0]!.x && k.y === c.camera.keys[0]!.y));
+      expect(statics.length / stills.length).toBeLessThan(0.1);
+      const kb = t.video.filter((c) => c.camera.kind === "kenBurns" && c.camera.keys.length === 2);
+      const travelled = kb.filter((c) => {
+        const [a, b] = c.camera.keys as [typeof c.camera.keys[0], typeof c.camera.keys[0]];
+        return Math.abs(b.scale - a.scale) >= 0.06 - 1e-3 || Math.abs(b.x - a.x) >= 0.03 * 1920 - 1 || Math.abs(b.y - a.y) >= 0.03 * 1080 - 1;
+      });
+      expect(travelled.length / kb.length).toBeGreaterThan(0.8);
+    }
+  });
+
+  it("a low-resolution video is framed as a card instead of being upscaled to cover", () => {
+    const sc = policyScenario({ seconds: 240, chapters: 3 });
+    const frozen = Object.fromEntries(Object.entries(sc.input.frozen).map(([id, a]) => [id, a.kind === "video" && a.role !== "clip" ? FrozenAsset.parse({ ...a, width: 640, height: 360 }) : a]));
+    const out = direct({ ...sc.input, frozen });
+    const vids = out.timeline.video.filter((c) => c.source.kind === "video" && !c.beatId?.endsWith("-CLIP"));
+    expect(vids.length).toBeGreaterThan(0);
+    for (const c of vids) expect(c.layout, c.id).toBe("card");
+    // cover would blow 640×360 up 3×; a card stays near the style's maxUpscale (camera/punch headroom may add a little)
+    const t = out.timeline;
+    for (const c of vids) expect(effectiveUpscale(t, t.video.indexOf(c))!, c.id).toBeLessThanOrEqual(sc.input.style.cameraPolicy.maxUpscale * 1.1);
+    expect(errorsOf(out)).toEqual([]);
   });
 });

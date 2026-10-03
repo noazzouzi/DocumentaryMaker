@@ -101,7 +101,12 @@ export function assignCameras(ctx: Ctx, shots: Shot[], o: CameraOptions): void {
         cam = kenBurns(ctx, s, i, shots, r, { base: reframe ? base : null, maxS, intensity, origin, coverLike, prevDir });
         if (reframe) cam.kind = "reframe";
       } else if (reframe) {
-        cam = { ...staticCam(base, origin), kind: "reframe" };
+        // a short reframe still drifts in a little (no frozen frame)
+        cam = maxS >= base + 0.015 ? { ...creep(base, Math.min(maxS, base + 0.03)), kind: "reframe" } : { ...staticCam(base, origin), kind: "reframe" };
+      } else if (maxS >= 1.035) {
+        // a short shot still moves (a static frame followed by a punch of the same picture reads as formulaic)
+        const travel = Math.max(0.03, lerp(kb.scaleRatePerSec, r()) * intensity * (dur / ctx.fps) * 1.5);
+        cam = creep(Math.min(1.02, maxS), Math.min(maxS, 1.02 + travel));
       } else cam = staticCam(Math.min(1.04, maxS), origin);
     }
     if (ctx.P.handheld) {
@@ -115,6 +120,10 @@ export function assignCameras(ctx: Ctx, shots: Shot[], o: CameraOptions): void {
     s.camera = cam;
   }
 }
+
+/** Minimum Ken Burns travel over a shot: scale (in/out moves) and lateral drift as a fraction of the axis. */
+export const KB_MIN_SCALE_TRAVEL = 0.06;
+export const KB_MIN_DRIFT_FRAC = 0.03;
 
 /** Largest camera scale on a generated keyword card (the word fills the safe width: 1650 of 1920 px). */
 export const KEYWORD_MAX_SCALE = 1.05;
@@ -144,13 +153,16 @@ function kenBurns(
   const nx = shots[i + 1]?.transition;
   const whip = nx && nx.kind === "cut" && nx.accent.type === "velocity" && nx.accent.preset === "whip" ? (nx.accent.direction as Dir) : null;
   const dir: Dir = whip && allowed.includes(whip) ? whip : allowed[0] ?? order[0]!;
-  let rate = lerp(kb.scaleRatePerSec, r()) * o.intensity;
+  // minimum travel so a move reads at YouTube viewing size: ≥ KB_MIN_SCALE_TRAVEL of scale, ≥ KB_MIN_DRIFT_FRAC of the
+  // axis laterally (both still bounded by the upscale guard and the cover room below)
+  let rate = Math.max(lerp(kb.scaleRatePerSec, r()) * o.intensity, KB_MIN_SCALE_TRAVEL / durSec);
   let drift = lerp(kb.driftPxPerSec, r());
   let s0 = o.base ?? lerp(kb.scaleStart, r());
   const lateral = dir === "left" || dir === "right" || dir === "up" || dir === "down";
   const ox = o.origin.x * W, oy = o.origin.y * H;
   const axisSize = dir === "up" || dir === "down" ? H : W;
   const axisOrigin = dir === "up" || dir === "down" ? oy : ox;
+  drift = Math.max(drift, (KB_MIN_DRIFT_FRAC * axisSize) / durSec);
   if (lateral && o.coverLike) {
     // overscan for the travel: start scale must cover half the drift on the side it starts from
     const halfD = (drift * durSec) / 2;

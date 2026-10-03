@@ -5553,6 +5553,8 @@ direct(I):
   make contiguous (shot[i].end = shot[i+1].from; first.from = 0; last.end = N); merge shots < minShotFrames into the longer neighbour;
   shots never straddle a chapter start (split at chapter.from)
 
+  same-picture camera-change cuts (shot k ≥ number of sources) on beats of energy < 4 are kept only on a cue / emphasis word or where the merged
+  shot would outlast visualChangeSec[1]; otherwise the picture holds with a Ken Burns move
   ── 2b. MONTAGE (breath beats, MONTAGE cues)
   ASL = lerp(P.montage.aslSec, R); cuts snapped to beatGrid within ±P.montage.snapFrames (every 4th cut on a downbeat when one is in range);
   sources = the beat's picks (4 slots) then picks of neighbouring beats of the chapter (as reframes); transitions T.montage.primary (pushCut) with
@@ -5571,7 +5573,8 @@ direct(I):
           tiltDeg = ±lerp(St.card.tiltDeg) (sign alternates card to card); shadow true; backdrop = theme.backdropRecipe ?? St.card.backdrops[R];
           backdropSeed = fnv1a32(shot.id)  → layoutParams
     cover: maxCamScale = P.maxUpscale / coverFactor; maxCamScale < 1.0 → card
-  video shots: cover (clip beats per step 2); maxCamScale from the video size
+  video shots: cover (clip beats per step 2); maxCamScale from the video size; a video whose coverFactor > P.maxUpscale is framed as a card
+  (upscale guard, same card parameters as stills)
   treatment = a.analysis.grayscale ? "bw" : (a.analysis.year < 1970 ? "archival" : "none")     ("bw" skips split-tone in the grade)
   asset reuse within St.assetReuseMinGapSec → must change layout or framing (flip layout or force a reframe), else ASSET_REUSE warning
 
@@ -5583,16 +5586,19 @@ direct(I):
       camera-change shot → kind "reframe": TIGHT = lerp(P.reframe.scale, r()) toward focal (origin = focal) when the previous shot of the asset was wide,
                            else WIDE = lerp(P.reframe.wideScale, r()); plus the Ken Burns motion below at the same rate
       s.dur ≥ S(P.kenBurns.minShotSec) → kenBurns (RATE-based, matched speed across cuts):
-          rate = lerp(P.kenBurns.scaleRatePerSec, r())·intensity; drift = lerp(P.kenBurns.driftPxPerSec, r()); durSec = s.dur/fps
+          rate = max(lerp(P.kenBurns.scaleRatePerSec, r())·intensity, 0.06/durSec); drift = max(lerp(P.kenBurns.driftPxPerSec, r()), 0.03·axis/durSec)
+              (minimum travel: ≥ 6 % scale or ≥ 3 % of the axis per shot, so a move reads at viewing size; the guard below still wins)
           dir ∈ {in, out, left, right, up, down} \ {prevDir, opposite(prevDir)} chosen by r; an outgoing shot before a velocity whip prefers
               the whip's direction (seam-direction ledger)
           s0 = lerp(P.kenBurns.scaleStart, r()); s1 = s0 + rate·durSec
           in: s0→s1 · out: s1→s0 · left/right/up/down: s0→s1 plus a translation of drift·durSec in that direction (full drift for up/down too)
           upscale guard: max key scale × (1 + planned punch amt) ≤ maxCamScale → reduce rate, then drift
           ease "kb" (MotionTokens.kbEase = [0.2, 0.12, 0.8, 0.88]: end slopes 0.6 × mean → never stalls at a cut); origin = focal
-      else → static(1.04) (overscan so shakes never show edges)
+      else → creep 1.02 → 1.02 + max(0.03, 1.5·rate·durSec) (a short shot still moves; static(1.04) only without headroom); a short reframe
+             creeps base → base + 0.03
+      generated keywordCard → creep 1.0 → ≤ 1.05 (camera-change shot: 1.05 → lower), never a reframe or punch (the word fills the safe width)
     TENSION_BUILD beats: creep lerp(P.creep.scale) across the beat's shots (linear, continuous); with aslMul ×1.6 it reads
-    P.handheld ≠ null → camera.handheld = P.handheld
+    P.handheld ≠ null → camera.handheld = P.handheld; cover-like shots: origin clamped to [0.1, 0.9] and every key scaled to cover |x|+amp, |y|+amp
     camera.direction = the Ken Burns direction (ledger)
 
   ── 5. TRANSITIONS

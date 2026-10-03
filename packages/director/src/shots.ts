@@ -98,6 +98,25 @@ function normalShots(ctx: Ctx, b: BeatCtx, bs: number, be: number): Shot[] {
     if (c.f - last >= minShot && be - c.f >= minShot) { kept.push(c); last = c.f; }
   }
   const srcs = sourcesFor(ctx, b);
+  // same-picture camera-change cuts (shot k ≥ number of sources) read as a formulaic "wide → punch" when every beat has
+  // them: below energy 4 they are kept only on a cue / emphasis word, or where the merged shot would outlast the
+  // visual-change limit; otherwise the picture holds with a Ken Burns move instead
+  const cueWords = new Set<string>();
+  b.cues.forEach((_, k) => { const a = b.text.cueAnchorIdx[k] ?? -1; if (a >= 0 && b.wordStart + a < b.wordEnd) cueWords.add(ctx.words[b.wordStart + a]!.id); });
+  for (const i of b.text.emphasisIdx) if (b.wordStart + i < b.wordEnd) cueWords.add(ctx.words[b.wordStart + i]!.id);
+  const vcMax = ctx.S(ctx.P.shots.visualChangeSec[1]);
+  const gated: { f: number; word: string | null }[] = [];
+  for (let j = 0; j < kept.length; j++) {
+    const c = kept[j]!;
+    const changeCut = gated.length + 1 >= srcs.length;
+    if (changeCut && b.energy < 4 && !(c.word && cueWords.has(c.word))) {
+      const prev = gated.length ? gated[gated.length - 1]!.f : bs;
+      const next = kept[j + 1]?.f ?? be;
+      if (next - prev <= vcMax) continue;
+    }
+    gated.push(c);
+  }
+  kept.splice(0, kept.length, ...gated);
   const cursor = new Map<string, number>(); // video source → next media frame
   const shots: Shot[] = [];
   const bounds = [{ f: bs, word: null as string | null }, ...kept, { f: be, word: null }];
