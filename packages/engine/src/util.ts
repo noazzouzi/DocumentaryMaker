@@ -1,5 +1,6 @@
 // Small engine helpers (no package logic here).
 import { randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile, stat, readdir } from "node:fs/promises";
 import path from "node:path";
 import { DocmakerError, isDocmakerError, type ErrorCode, type JobOptions, type Lang, type Logger, type Project } from "@docmaker/core";
@@ -130,3 +131,19 @@ export const daysBetween = (a: string, b: Date): number => {
   const t = Date.parse(a.length === 4 ? `${a}-01-01` : a.length === 7 ? `${a}-01` : a);
   return Number.isFinite(t) ? (b.getTime() - t) / 86_400_000 : Number.POSITIVE_INFINITY;
 };
+
+/** process.kill(pid, 0) liveness; zombies (state Z, never reaped in this container) count as dead. */
+export function pidAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "EPERM") return false;
+  }
+  try {
+    const st = readFileSync(`/proc/${pid}/stat`, "utf8");
+    const state = st.slice(st.lastIndexOf(")") + 2, st.lastIndexOf(")") + 3);
+    if (state === "Z" || state === "X") return false;
+  } catch { /* no procfs (macOS): trust kill(0) */ }
+  return true;
+}

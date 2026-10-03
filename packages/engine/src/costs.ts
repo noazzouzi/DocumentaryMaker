@@ -80,6 +80,8 @@ export class ProjectCosts implements CostTracker {
     this.receipts.push(full);
     this.jobSpend.set(k(full.stage, full.lang), (this.jobSpend.get(k(full.stage, full.lang)) ?? 0) + full.costUsd);
     this.emit({ type: "cost", receipt: full });
+    // overrun rule (§5.4): the stage stops on the paid call that crosses the limit
+    this.assertWithinBudget(full.stage, full.lang);
     return full;
   }
 

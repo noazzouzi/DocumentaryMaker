@@ -198,7 +198,7 @@ export const assetsStage: StageDef = {
     const out = await e.rt.deps.assets.resolveAssets({
       project: { ...p, assets: { ...p.assets, offline: e.offline } }, plans, facts, entities, style: ctx.style.data, primaryScript: primary, userPicks,
       previous: { picks: await docs.picks(ctx.store), frozen: frozenWithMusic, ledger: await docs.ledger(ctx.store) },
-      projectDir: ctx.store.dir, reranker, personAcks: await e.personAcks(),
+      projectDir: ctx.store.dir, reranker, personAcks: await e.personAcks(), allowPaid: ctx.options.allowPaid ?? false,
     }, { ...actx, progress: (pct, msg, d) => ctx.progress(0.12 + 0.86 * pct, msg, d) });
 
     const frozen: FrozenDoc = { schemaVersion: 1, assets: { ...out.frozen.assets, ...Object.fromEntries(music.frozen.map((a) => [a.id, a])) } };

@@ -1,10 +1,23 @@
 // factcheck[lang] (§6.3 step 6, App. D): llm.factCheck per chapter (receipt-cached) + deterministic rules a–h, resolutions
 // carried over by stable FC ids → script/<lang>/factcheck.json. The factcheck-ack gate is evaluated before final voice
 // takes, render and export (gates.ts), never here.
-import { FactCheck, P, docHash, hashJson } from "@docmaker/core";
-import type { StageDef } from "../types";
+import { FactCheck, P, docHash, hashJson, type FactSheet } from "@docmaker/core";
+import type { StageCtx, StageDef } from "../types";
 import { docs, effectivePublish, need } from "../docs";
 import { X, needLang, stepCtx, writeDoc } from "./common";
+
+/** Quote ids whose YouTube passage matched ≥ 0.8 in the assets stage (§6.3 1b). */
+async function videoQuotes(ctx: StageCtx): Promise<string[]> {
+  const picks = await docs.picks(ctx.store);
+  return picks ? X(ctx).rt.deps.assets.videoVerifiedQuotes(picks) : [];
+}
+
+/** The fact-check sees video-verified quotes as verbatim (the fact sheet itself is never rewritten here). */
+export function withVideoVerified(fs: FactSheet, ids: readonly string[]): FactSheet {
+  if (ids.length === 0) return fs;
+  const set = new Set(ids);
+  return { ...fs, quotes: fs.quotes.map((q) => (set.has(q.id) && q.verification !== "verbatim" ? { ...q, verification: "verbatim" as const, verifiedBy: "video" as const } : q)) };
+}
 
 export const factcheckStage: StageDef = {
   id: "factcheck",
@@ -18,7 +31,7 @@ export const factcheckStage: StageDef = {
     const suggestion = await docs.suggestion(ctx.store);
     return {
       script: await ctx.store.docHashOf(P.script(lang)), slices: await ctx.store.docHashOf(P.beatSlices(lang)),
-      plans: await ctx.store.docHashOf(P.beatPlans), factsheet: await ctx.store.docHashOf(P.factsheet),
+      plans: await ctx.store.docHashOf(P.beatPlans), factsheet: await ctx.store.docHashOf(P.factsheet), videoQuotes: await videoQuotes(ctx),
       publish: hashJson(effectivePublish(ctx.project, lang, script, suggestion)), riskFlags: await e.riskFlags(), personAcks: await e.personAcks(),
       llm: ctx.llm.kind,
     };
@@ -39,7 +52,7 @@ export const factcheckStage: StageDef = {
     const script = need(await docs.script(ctx.store, lang), `script/${lang}/script.json`, `script (${lang})`);
     const slices = need(await docs.slices(ctx.store, lang), `beats/${lang}.json`, `beatslice (${lang})`);
     const plans = need(await docs.plans(ctx.store), "beats/plans.json", "beats");
-    const facts = need(await docs.factsheet(ctx.store), "research/factsheet.json", "research");
+    const facts = withVideoVerified(need(await docs.factsheet(ctx.store), "research/factsheet.json", "research"), await videoQuotes(ctx));
     const suggestion = await docs.suggestion(ctx.store);
     const previous = await docs.factcheck(ctx.store, lang);
     const fc = await e.rt.deps.llm.factCheck(stepCtx(ctx), {
