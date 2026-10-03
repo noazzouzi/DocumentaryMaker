@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { DocmakerError, type Approval, type HomeConfig, type JobRequest } from "@docmaker/core";
-import { fakeEngine, params, req } from "./support/fake-engine";
+import { fakeEngine, params, req, tempProjects, writeProjectFile } from "./support/fake-engine";
 import { setEngineForTests } from "../src/server/runtime";
 import { errorBody } from "../src/server/http";
 import * as approvalsRoute from "../src/app/api/projects/[slug]/approvals/route";
@@ -10,6 +10,7 @@ import * as keysRoute from "../src/app/api/keys/route";
 import * as projectsRoute from "../src/app/api/projects/route";
 import * as projectRoute from "../src/app/api/projects/[slug]/route";
 import * as voicesRoute from "../src/app/api/voices/route";
+import * as teleprompterRoute from "../src/app/api/projects/[slug]/teleprompter/[lang]/route";
 
 afterEach(() => setEngineForTests(null));
 const slug = params({ slug: "my-film" });
@@ -97,5 +98,32 @@ describe("projects + errors", () => {
     const r = await voicesRoute.GET(req("/x?provider=kokoro&lang=fr"));
     expect(await r.json()).toEqual([]);
     expect(r.headers.get("x-docmaker-degraded")).toBe("voices-unavailable");
+  });
+});
+
+describe("teleprompter", () => {
+  it("generates the page through the engine and sends it as a sandboxed attachment", async () => {
+    const root = await tempProjects();
+    const calls: { slug: string; lang: string; mirror: boolean }[] = [];
+    fakeEngine({
+      async teleprompter(s, lang, o) {
+        calls.push({ slug: s, lang, mirror: o.mirror });
+        return writeProjectFile(root, s, `voice/${lang}/teleprompter.html`, "<!doctype html><title>t</title><script>scroll()</script>");
+      },
+    });
+    const ctx = params({ slug: "my-film", lang: "fr" });
+    const r = await teleprompterRoute.GET(req("/api/projects/my-film/teleprompter/fr?mirror=1"), ctx);
+    expect(r.status).toBe(200);
+    expect(r.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(r.headers.get("content-disposition")).toBe('attachment; filename="my-film-fr-teleprompter-mirror.html"');
+    expect(r.headers.get("content-security-policy")).toMatch(/^sandbox allow-scripts;.*frame-ancestors 'none'/);
+    expect(await r.text()).toContain("<script>scroll()</script>");
+    await teleprompterRoute.GET(req("/api/projects/my-film/teleprompter/fr"), ctx);
+    expect(calls).toEqual([{ slug: "my-film", lang: "fr", mirror: true }, { slug: "my-film", lang: "fr", mirror: false }]);
+  });
+  it("404 without a script; 400 on a bad language", async () => {
+    fakeEngine({ async teleprompter() { throw new DocmakerError("UPSTREAM_MISSING", "no en script yet"); } });
+    expect((await teleprompterRoute.GET(req("/x"), params({ slug: "my-film", lang: "en" }))).status).toBe(404);
+    expect((await teleprompterRoute.GET(req("/x"), params({ slug: "my-film", lang: "de" }))).status).toBe(400);
   });
 });

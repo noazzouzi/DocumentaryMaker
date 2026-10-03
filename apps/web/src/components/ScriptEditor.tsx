@@ -162,7 +162,7 @@ export function ScriptEditor(p: {
         <div className="flex flex-wrap items-center gap-2">
           <input className={cx(inputCls, "max-w-xl text-lg font-semibold")} value={script.title} disabled={ro} onChange={(e) => ed.update((s) => ({ ...s, title: e.target.value }))} />
           <div className="ml-auto flex items-center gap-2">
-            <a href={`/api/projects/${p.slug}/media/voice/${p.lang}/teleprompter.html?download=1`} className="text-xs text-neutral-400 hover:text-white">
+            <a href={`/api/projects/${p.slug}/teleprompter/${p.lang}`} download className="text-xs text-neutral-400 hover:text-white">
               {t("script.teleprompter")} ↓
             </a>
             <HistoryMenu slug={p.slug} rel={rel} onReverted={() => void ed.reload()} disabled={ro} />
