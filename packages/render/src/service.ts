@@ -324,6 +324,12 @@ export class RenderService {
               if (signal.aborted) throw abortError("render");
               lastErr = e;
               this.logger.warn("chunk render failed", { chunk: c.index, attempt, err: e instanceof Error ? e.message : String(e) });
+              if (attempt < 2) {
+                // the likeliest transient failure on a long master is a crashed/disconnected Chrome: retry on a fresh one
+                await this.closeBrowser(browser).catch(() => undefined);
+                browser = null;
+                browser = await this.browser(exe, gl);
+              }
             } finally {
               signal.removeEventListener("abort", onAbort);
             }
@@ -511,7 +517,9 @@ export class RenderService {
             layers: { ...OVERLAY_LAYERS }, itemId, scratchBanner: false,
           };
           const composition = await r.selectComposition({ ...common, serveUrl, id: COMPOSITIONS.item, inputProps, puppeteerInstance: browser, onBrowserLog });
-          const file = path.join(req.outDir, `${safeName(itemId)}.mov`);
+          // ids that sanitise to the same name (e.g. "a/b" and "a_b") get a short hash of the raw id
+          const clash = ids.some((other) => other !== itemId && safeName(other) === safeName(itemId));
+          const file = path.join(req.outDir, `${safeName(itemId)}${clash ? `-${sha12(itemId).slice(0, 6)}` : ""}.mov`);
           const tmp = file.replace(/\.mov$/, ".tmp.mov");
           const { cancelSignal, cancel } = r.makeCancelSignal();
           const onAbort = () => cancel();

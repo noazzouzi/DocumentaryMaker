@@ -70,7 +70,13 @@ async function probeOne(gl: GlMode, o: { serveUrl: string; exe: string; config: 
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error(`gl=${gl} timed out`)), GL_PROBE_TIMEOUT_MS + 5_000);
   });
-  const abort = new Promise<never>((_, reject) => o.signal.addEventListener("abort", () => reject(new Error("canceled")), { once: true }));
+  let onAbort: (() => void) | null = null;
+  const abort = new Promise<never>((_, reject) => {
+    onAbort = () => reject(new Error("canceled"));
+    o.signal.addEventListener("abort", onAbort, { once: true });
+  });
+  // the attempt closes its own Chrome when it settles: a timeout/abort while openChrome is pending must not leak it
+  const settled = attempt.then(() => undefined, () => undefined).then(() => closeChrome(browser));
   try {
     await Promise.race([attempt, timeout, abort]);
     return parseGlProbeLogs(lines);
@@ -79,7 +85,9 @@ async function probeOne(gl: GlMode, o: { serveUrl: string; exe: string; config: 
     return { ok: false, renderer: parseGlProbeLogs(lines).renderer };
   } finally {
     if (timer) clearTimeout(timer);
-    await closeChrome(browser);
+    if (onAbort) o.signal.removeEventListener("abort", onAbort);
+    await closeChrome(browser); // already open → close now; still opening → `settled` closes it
+    void settled;
   }
 }
 
