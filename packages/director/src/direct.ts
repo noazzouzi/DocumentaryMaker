@@ -20,7 +20,7 @@ import { applyOverrides } from "./overrides";
 import { placePunches, plannedReserve } from "./punch";
 import { planReveals, quietZones } from "./reveal";
 import { selectSfx, sfxCandidates } from "./sfx";
-import { applyHits, buildShots, numberShots, snapRevealCuts } from "./shots";
+import { applyHits, buildShots, numberShots, snapRevealCuts, textlessUnderText } from "./shots";
 import { effectiveUpscale, isImpact, maxGapFrames, punchEvents, sfxEvents, timelineVisualEvents } from "./stats";
 import { decideLayouts, relayoutChanges } from "./stills";
 import { assignTransitions, keyOf } from "./transitions";
@@ -155,6 +155,7 @@ export function direct(I: DirectorInput): DirectorOutput {
   assignCameras(ctx, shots, { reserve: plannedReserve(ctx, shots) });
   // 7. overlays
   const { st, bleeps } = buildOverlays(ctx, shots);
+  textlessUnderText(shots, st.items); // no keyword headline under a text overlay (the words would be drawn twice)
   // 6. reveals, shocks, fx, punches
   const book = new FxBook();
   climaxFx(ctx, book, reveals, snapped);

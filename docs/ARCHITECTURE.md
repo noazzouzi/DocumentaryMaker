@@ -2988,6 +2988,7 @@ Consequences: (1) **any layout change triggers a full re-direct** (the layout ha
 | `CLIP_SHARE` | error / warn | clip seconds > `maxClipShare.error` × runtime (error), > `warn` (warning); any clip > `maxClipSeconds` (error) |
 | `DENSITY_MAX` | warn | per 60 s: SFX ≤ `perMin[1]`, impacts ≤ `impactsPerMin[1]`, punches ≤ `punch.perMin[1]`, slams ≤ `keywordSlamPerMin` |
 | `DENSITY_MIN` | warn | per 60 s (acts ≥ 90 s only): SFX ≥ `perMin[0]`, punches ≥ `punch.perMin[0]` after the fill passes |
+| `TEXT_COLLISION` | warn | a generated `keywordCard` headline overlaps a centred non-full-frame text graphic (KineticText…); the director gives such shots the textless `darkNoise` base (step 7) |
 | `STATIC_HOLD` | warn | no picture or full-frame graphics hold > `maxStaticHoldSec` without camera motion, video motion or `continuousMotion` |
 | `NO_VISUAL_CHANGE` | warn | no window > `visualChangeSec[1] + 1 s` without a cut, punch, overlay entry or sub-beat (`stats.maxNoChangeSec`) |
 | `READABILITY` | warn | an overlay below its `ReadPolicy` hold (§4.11); caption groups < 0.5 s |

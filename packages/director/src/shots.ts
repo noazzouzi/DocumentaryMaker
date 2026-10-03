@@ -1,10 +1,11 @@
 // Step 2 — SHOTS (V1) (§9.3): ASL with aslMul, word-snapped cuts, camera-change shots, clip shots (+ hold shots),
 // beat starts with cut lead, contiguity and min-length merges. Also the shot-level edits of steps 6 (reveal cut snap)
 // and 11b (musicCue "hit" → nearest cut onto a downbeat).
-import { fnv1a32, ids, lerp, msToFrame, type ClipLayout, type LayoutParams, type VisualKind } from "@docmaker/core";
+import { COMPONENT_META, fnv1a32, ids, lerp, msToFrame, type ClipLayout, type LayoutParams, type OverlayComponentId, type VisualKind } from "@docmaker/core";
 import { clamp, type BeatCtx, type Ctx, type Shot, type Src } from "./ctx";
 import { montageShots } from "./montage";
 import { nearestIn, type MusicPlan } from "./music";
+import { readText } from "./overlays/hold";
 import type { RevealInfo } from "./reveal";
 
 const NO_CUT = { kind: "cut", accent: { type: "none" } } as const;
@@ -355,4 +356,28 @@ export function applyHits(ctx: Ctx, shots: Shot[], music: MusicPlan): { beatId: 
     } else out.push({ beatId: b.id, frame: s.from });
   }
   return out;
+}
+
+/**
+ * A keywordCard backdrop draws the beat's on-screen text as a full-width headline; a text overlay (KineticText and other
+ * centred, non-full-frame text graphics) on top of it would draw the same words twice. Such shots get the textless
+ * dark base instead (the overlay carries the words). Returns the ids of the shots changed.
+ */
+export function textlessUnderText(shots: Shot[], overlays: readonly { component: OverlayComponentId; from: number; dur: number; zone: string; props: Record<string, unknown>; dropped: boolean }[]): string[] {
+  const out: string[] = [];
+  const texty = overlays.filter((o) => !o.dropped && isCentredText(o.component, o.zone, o.props));
+  for (const s of shots) {
+    if (s.src.kind !== "generated" || s.src.recipe !== "keywordCard" || !s.src.text) continue;
+    if (!texty.some((o) => o.from < s.end && s.from < o.from + o.dur)) continue;
+    s.src = { ...s.src, recipe: "darkNoise", text: "" };
+    out.push(s.id);
+  }
+  return out;
+}
+
+/** Centred text graphics that would collide with a keywordCard headline. */
+export function isCentredText(component: OverlayComponentId, zone: string, props: Record<string, unknown>): boolean {
+  const m = COMPONENT_META[component];
+  if (m.band !== "graphics" || m.fullFrame || (zone !== "center" && zone !== "full")) return false;
+  return readText(component, props).some((t) => t.trim().length > 0);
 }

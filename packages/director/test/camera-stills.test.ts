@@ -191,3 +191,24 @@ describe("generated keyword cards", () => {
     }
   });
 });
+
+describe("text cards under text overlays", () => {
+  it("a keywordCard headline never sits under a centred text overlay (TEXT_COLLISION): the backdrop goes textless", () => {
+    // the demo's text_card beats (CH3-B004 "THE TWIST" gets a KineticText from its EMPHASIS cue) without picks → keywordCard
+    const input = tulipInputs().input;
+    const tc = new Set(input.plans.filter((p) => p.visualKind === "text_card").map((p) => p.id));
+    expect(tc.size).toBeGreaterThan(0);
+    const plans = input.plans;
+    const picks = { ...input.picks, picks: input.picks.picks.filter((p) => !tc.has(p.beatId)) };
+    const out = direct({ ...input, plans, picks });
+    const t = out.timeline;
+    const kt = t.overlays.filter((o) => o.component === "KineticText" && o.beatId && tc.has(o.beatId));
+    expect(kt.length).toBeGreaterThan(0);
+    for (const o of kt) {
+      const under = t.video.filter((c) => c.from < o.from + o.dur && o.from < c.from + c.dur);
+      for (const c of under) expect(c.source.kind === "generated" && c.source.recipe === "keywordCard" && c.source.text !== "", `${c.id} under ${o.id}`).toBe(false);
+    }
+    expect(out.lint.filter((l) => l.rule === "TEXT_COLLISION")).toEqual([]);
+    expect(t.video.some((c) => c.source.kind === "generated" && c.source.recipe === "keywordCard" && c.source.text !== "")).toBe(true); // cards without an overlay keep their headline
+  });
+});

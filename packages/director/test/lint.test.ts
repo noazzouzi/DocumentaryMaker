@@ -9,7 +9,7 @@ const TABLE: Record<string, "error" | "warn"> = {
   V_CONTIGUOUS: "error", V_BOUNDS: "error", IDS_UNIQUE: "error", ASSET_MISSING: "error", RESOLVE_MISMATCH: "error", T_OVERLAP: "error",
   MEDIA_RANGE: "error", ZONE_KEEPOUT: "error", OVERSHOOT: "error", FLASH_CAP: "error", TRANSITION_RUN: "error", POLICY: "error",
   AI_DISCLOSURE: "error", PRIVATE_PERSON: "error", CLIP_SHARE: "error", DENSITY_MAX: "warn", DENSITY_MIN: "warn", STATIC_HOLD: "warn", NO_VISUAL_CHANGE: "warn",
-  READABILITY: "warn", PRIMARY_SHARE: "warn", SILENT_CUT_SHARE: "warn", SFX_REPEAT: "warn", TECHNIQUE_FLOOR: "warn", UPSCALE: "warn", ASSET_REUSE: "warn",
+  READABILITY: "warn", PRIMARY_SHARE: "warn", SILENT_CUT_SHARE: "warn", SFX_REPEAT: "warn", TECHNIQUE_FLOOR: "warn", UPSCALE: "warn", ASSET_REUSE: "warn", TEXT_COLLISION: "warn",
 };
 
 describe("LINT_RULES", () => {

@@ -7,6 +7,7 @@ import { isAiAsset, rateCap } from "./ctx";
 import { aiRuns, uncoveredFrame } from "./disclosure";
 import { holdOf } from "./overlays/hold";
 import { cutsWithSfx, effectiveUpscale, isImpact, maxGapFrames, punchEvents, sfxEvents } from "./stats";
+import { isCentredText } from "./shots";
 import { OVERLAPS, keyOf } from "./transitions";
 
 /** Lint severities (§4.13 table): exported so the web app can render rule help. */
@@ -36,6 +37,7 @@ export const LINT_RULES: Readonly<Record<string, { level: "error" | "warn"; help
   SFX_REPEAT: { level: "warn", help: "The same SFX file plays twice in a row." },
   TECHNIQUE_FLOOR: { level: "warn", help: "Per-chapter or per-five-minute technique floors (punches, silences, J/L cuts) are unmet." },
   UPSCALE: { level: "warn", help: "A source is upscaled beyond maxUpscale after layout, camera and punch mitigation." },
+  TEXT_COLLISION: { level: "warn", help: "A keywordCard backdrop headline sits under a centred text overlay (the same words drawn twice)." },
   ASSET_REUSE: { level: "warn", help: "An asset is reused within assetReuseMinGapSec with the same layout and framing." },
 };
 
@@ -342,6 +344,12 @@ export function lintTimeline(
     const framing = (x: typeof c) => (x.camera.kind === "reframe" ? `r${Math.round(x.camera.keys[0]!.scale * 10)}` : "base");
     if (p.layout === c.layout && framing(p) === framing(c) && !c.beatId?.endsWith("-CLIP")) out.push(issue("warn", "ASSET_REUSE", c.id, `asset reused ${((c.from - p.from - p.dur) / fps).toFixed(1)} s after ${p.id} with the same layout and framing`));
   });
+  // TEXT_COLLISION
+  for (const c of t.video) {
+    if (c.source.kind !== "generated" || c.source.recipe !== "keywordCard" || !c.source.text) continue;
+    const o = t.overlays.find((x) => x.from < c.from + c.dur && c.from < x.from + x.dur && isCentredText(x.component, x.zone, x.props as Record<string, unknown>));
+    if (o) out.push(issue("warn", "TEXT_COLLISION", c.id, `keyword card "${c.source.text.slice(0, 30)}" under ${o.component} ${o.id}`));
+  }
   // AI_DISCLOSURE (§7.4: every AI image on screen gets SourceLabel{illustration}; none over real pictures)
   const isAi = (id: string) => isAiAsset(ctx.frozen[id]);
   const ill = t.overlays.filter((o) => o.component === "SourceLabel" && (o.props as { kind?: unknown }).kind === "illustration");
