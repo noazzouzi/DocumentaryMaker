@@ -1,0 +1,8 @@
+TITLE: Demo Markers
+FCM: NON-DROP FRAME
+
+001  001      V     C        00:00:00:00 00:00:00:01 00:00:00:00 00:00:00:01  
+ |C:ResolveColorRed |M:Hook |D:1
+
+002  001      V     C        00:00:07:00 00:00:07:01 00:00:07:00 00:00:07:01  
+ |C:ResolveColorBlue |M:Lower third |D:90
