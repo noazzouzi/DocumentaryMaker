@@ -15,7 +15,9 @@ export function blockedPersons(facts: Pick<FactSheet, "people"> | null | undefin
 const MIN_TOKEN = 2;
 /** Normalised word without a possessive suffix ("Minorly's" → "minorly"). */
 const tok = (w: string) => normWord(w).replace(/'s$/, "");
-const tokensOf = (s: string) => s.split(/\s+/).map(tok).filter((t) => t.length > 0);
+/** Word separators: whitespace and the punctuation that can glue a name to other text ("Lotte-Pauw", "Lotte/Adriaen"). */
+const SEP = /[\s\-\u2010-\u2014/&+_,.;:()]+/;
+const tokensOf = (s: string) => s.split(SEP).map(tok).filter((t) => t.length > 0);
 
 export interface NameStripper {
   /** Removes blocked names (full names/aliases first, then their single tokens). */
@@ -70,13 +72,13 @@ export function nameStripper(facts: Pick<FactSheet, "people"> | null | undefined
     blocked,
     strip(text: string): string {
       if (blocked.length === 0) return text;
-      const words = text.split(/\s+/).filter((w) => w.length > 0);
+      const words = text.split(SEP).filter((w) => w.length > 0);
       const keep = keepMask(words);
       return words.filter((_, i) => keep[i]).join(" ").trim();
     },
     mentions(text: string): boolean {
       if (blocked.length === 0) return false;
-      const words = text.split(/\s+/).filter((w) => w.length > 0);
+      const words = text.split(SEP).filter((w) => w.length > 0);
       return keepMask(words).some((k) => !k);
     },
   };

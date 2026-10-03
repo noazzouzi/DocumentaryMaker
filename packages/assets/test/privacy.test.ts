@@ -35,6 +35,16 @@ describe("nameStripper", () => {
     expect(s.mentions("tulip market")).toBe(false);
     expect(s.mentions("the jane street riot")).toBe(true);
   });
+  it("names glued to other text by punctuation are removed too", () => {
+    const s = nameStripper(facts, []);
+    expect(s.strip("Lotte-Pauw portrait")).toBe("portrait");
+    expect(s.strip("Lotte/Adriaen")).toBe("Adriaen");
+    expect(s.strip("photo of Lotte&Adriaen")).toBe("photo of Adriaen");
+    expect(s.mentions("Jane–Minorly")).toBe(true);
+    const hy = nameStripper({ people: [{ ...facts.people[0]!, id: "PX", name: "Jean-Pierre Dubois", aliases: [], publicFigure: false, isMinorOrPrivateVictim: false }] }, []);
+    expect(hy.strip("Jean Pierre Dubois at home")).toBe("at home");
+    expect(hy.strip("Jean-Pierre Dubois at home")).toBe("at home");
+  });
   it("a person-ack unblocks a non-public adult, never a minor", () => {
     const s = nameStripper(facts, ["P5", "P4"]);
     expect(s.strip("Hendrik Quietsma and Jane Minorly")).toBe("Hendrik Quietsma and");
