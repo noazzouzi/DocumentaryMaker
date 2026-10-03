@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import AnthropicSdk from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { isDocmakerError } from "@docmaker/core";
 import {
@@ -69,10 +70,10 @@ describe("FixtureLlm", () => {
 });
 
 // ---------------------------------------------------------------- mocked SDK
-type Call = { kind: "parse" | "betaParse" | "stream"; params: Record<string, unknown>; options: Record<string, unknown> | undefined };
-function mockSdk(queue: { parse?: unknown[]; betaParse?: unknown[]; stream?: unknown[] }) {
+type Call = { kind: "create" | "betaCreate" | "stream"; params: Record<string, unknown>; options: Record<string, unknown> | undefined };
+function mockSdk(queue: { create?: unknown[]; betaCreate?: unknown[]; stream?: unknown[] }) {
   const calls: Call[] = [];
-  const take = (k: "parse" | "betaParse" | "stream") => {
+  const take = (k: "create" | "betaCreate" | "stream") => {
     const q = queue[k] ?? [];
     if (q.length === 0) throw new Error(`unexpected ${k} call`);
     const next = q.shift();
@@ -81,16 +82,16 @@ function mockSdk(queue: { parse?: unknown[]; betaParse?: unknown[]; stream?: unk
   };
   const sdk = {
     messages: {
-      parse: async (params: Record<string, unknown>, options?: Record<string, unknown>) => {
-        calls.push({ kind: "parse", params, options });
-        return take("parse");
+      create: async (params: Record<string, unknown>, options?: Record<string, unknown>) => {
+        calls.push({ kind: "create", params, options });
+        return take("create");
       },
     },
     beta: {
       messages: {
-        parse: async (params: Record<string, unknown>, options?: Record<string, unknown>) => {
-          calls.push({ kind: "betaParse", params, options });
-          return take("betaParse");
+        create: async (params: Record<string, unknown>, options?: Record<string, unknown>) => {
+          calls.push({ kind: "betaCreate", params, options });
+          return take("betaCreate");
         },
         stream: (params: Record<string, unknown>, options?: Record<string, unknown>) => {
           calls.push({ kind: "stream", params: JSON.parse(JSON.stringify(params)) as Record<string, unknown>, options });
@@ -103,7 +104,7 @@ function mockSdk(queue: { parse?: unknown[]; betaParse?: unknown[]; stream?: unk
 }
 const usage = { input_tokens: 1000, output_tokens: 2000, cache_read_input_tokens: 500, cache_creation_input_tokens: 100, server_tool_use: null };
 const Out = z.object({ answer: z.string(), n: z.number() });
-const ok = (parsed: unknown) => ({ content: [{ type: "text", text: JSON.stringify(parsed) }], stop_reason: "end_turn", parsed_output: parsed, usage });
+const ok = (parsed: unknown) => ({ content: [{ type: "text", text: JSON.stringify(parsed) }], stop_reason: "end_turn", usage });
 const sreq = (o?: Partial<StructuredRequest<typeof Out>>): StructuredRequest<typeof Out> => ({
   step: "outline", key: "", schema: Out, system: [{ text: "rules", cache: false }, { text: "facts", cache: true }], user: "go", effort: "high",
   maxTokens: 16000, stage: "outline", lang: "en", ...o,
@@ -112,8 +113,8 @@ const client = (sdk: AnthropicLike, refusalFallback = true) =>
   new AnthropicLlm({ sdk, rawDir: mkdtempSync(join(tmpdir(), "llm-raw-")), refusalFallback, logger: silentLogger });
 
 describe("AnthropicLlm.structured (mocked SDK)", () => {
-  it("beta.messages.parse with refusal-fallback betas, explicit effort, cached last stable block, no thinking/tool_choice", async () => {
-    const { sdk, calls } = mockSdk({ betaParse: [ok({ answer: "yes", n: 1 })] });
+  it("beta.messages.create with refusal-fallback betas, explicit effort, cached last stable block, no thinking/tool_choice", async () => {
+    const { sdk, calls } = mockSdk({ betaCreate: [ok({ answer: "yes", n: 1 })] });
     const costs = new FakeCosts();
     await expect(client(sdk).structured(sreq(), h(costs))).resolves.toEqual({ answer: "yes", n: 1 });
     expect(calls).toHaveLength(1);
@@ -135,16 +136,16 @@ describe("AnthropicLlm.structured (mocked SDK)", () => {
     expect(costs.budgetChecks).toBe(1);
   });
 
-  it("refusalFallback off → messages.parse without betas", async () => {
-    const { sdk, calls } = mockSdk({ parse: [ok({ answer: "a", n: 2 })] });
+  it("refusalFallback off → messages.create without betas", async () => {
+    const { sdk, calls } = mockSdk({ create: [ok({ answer: "a", n: 2 })] });
     await client(sdk, false).structured(sreq(), h());
-    expect(calls[0]!.kind).toBe("parse");
+    expect(calls[0]!.kind).toBe("create");
     expect(calls[0]!.params).not.toHaveProperty("betas");
     expect(calls[0]!.params).not.toHaveProperty("fallbacks");
   });
 
   it("refusal → LLM_REFUSAL with the reframe hint (paid usage recorded)", async () => {
-    const { sdk } = mockSdk({ betaParse: [{ content: [], stop_reason: "refusal", parsed_output: null, usage, stop_details: { category: "cyber" } }] });
+    const { sdk } = mockSdk({ betaCreate: [{ content: [{ type: "text", text: '{"answer":"par' }], stop_reason: "refusal", usage, stop_details: { category: "cyber" } }] });
     const costs = new FakeCosts();
     const e = await rejects(client(sdk).structured(sreq(), h(costs)));
     expect(e.code).toBe("LLM_REFUSAL");
@@ -154,7 +155,7 @@ describe("AnthropicLlm.structured (mocked SDK)", () => {
   });
 
   it("max_tokens → one retry with max_tokens·1.5 (cap 64000)", async () => {
-    const { sdk, calls } = mockSdk({ betaParse: [{ content: [], stop_reason: "max_tokens", parsed_output: null, usage }, ok({ answer: "b", n: 3 })] });
+    const { sdk, calls } = mockSdk({ betaCreate: [{ content: [{ type: "text", text: '{"answer":"abc' }], stop_reason: "max_tokens", usage }, ok({ answer: "b", n: 3 })] });
     const costs = new FakeCosts();
     await expect(client(sdk).structured(sreq(), h(costs))).resolves.toEqual({ answer: "b", n: 3 });
     expect(calls.map((c) => c.params.max_tokens)).toEqual([16000, 24000]);
@@ -162,15 +163,18 @@ describe("AnthropicLlm.structured (mocked SDK)", () => {
     expect(costs.receipts[0]!.usage.input_tokens).toBe(2000); // both attempts billed on one receipt
   });
 
-  it("null parsed_output → one identical retry, then LLM_SCHEMA", async () => {
-    const bad = { content: [{ type: "text", text: "{}" }], stop_reason: "end_turn", parsed_output: null, usage };
-    const a = mockSdk({ betaParse: [bad, ok({ answer: "c", n: 4 })] });
+  it("off-schema output → one identical retry, then LLM_SCHEMA (both attempts billed)", async () => {
+    const bad = { content: [{ type: "text", text: '{"answer":5}' }], stop_reason: "end_turn", usage };
+    const a = mockSdk({ betaCreate: [bad, ok({ answer: "c", n: 4 })] });
     await expect(client(a.sdk).structured(sreq(), h())).resolves.toEqual({ answer: "c", n: 4 });
     expect(a.calls).toHaveLength(2);
     expect(a.calls[1]!.params.max_tokens).toBe(16000);
-    const b = mockSdk({ betaParse: [bad, bad] });
-    expect((await rejects(client(b.sdk).structured(sreq(), h()))).code).toBe("LLM_SCHEMA");
+    const b = mockSdk({ betaCreate: [bad, bad] });
+    const costs = new FakeCosts();
+    expect((await rejects(client(b.sdk).structured(sreq(), h(costs)))).code).toBe("LLM_SCHEMA");
     expect(b.calls).toHaveLength(2);
+    expect(costs.receipts).toHaveLength(1);
+    expect(costs.receipts[0]!.usage.input_tokens).toBe(2000);
   });
 
   it("max_tokens > 32000 → beta.messages.stream().finalMessage() and client-side JSON parse", async () => {
@@ -182,7 +186,7 @@ describe("AnthropicLlm.structured (mocked SDK)", () => {
   });
 
   it("receipts: an identical paid call is never made twice; newRequest forces a new one", async () => {
-    const { sdk, calls } = mockSdk({ betaParse: [ok({ answer: "e", n: 6 }), ok({ answer: "f", n: 7 })] });
+    const { sdk, calls } = mockSdk({ betaCreate: [ok({ answer: "e", n: 6 }), ok({ answer: "f", n: 7 })] });
     const c = client(sdk);
     const costs = new FakeCosts();
     const seen: string[] = [];
@@ -195,14 +199,14 @@ describe("AnthropicLlm.structured (mocked SDK)", () => {
     await expect(c.structured(sreq(), h(costs, true))).resolves.toEqual({ answer: "f", n: 7 });
     expect(calls).toHaveLength(2);
     // a different request is a different fingerprint
-    const other = mockSdk({ betaParse: [ok({ answer: "g", n: 8 })] });
+    const other = mockSdk({ betaCreate: [ok({ answer: "g", n: 8 })] });
     const c2 = new AnthropicLlm({ sdk: other.sdk, rawDir: (c as unknown as { rawDir: string }).rawDir, refusalFallback: true, logger: silentLogger });
     await c2.structured(sreq({ key: "other" }), h(costs));
     expect(other.calls).toHaveLength(1);
   });
 
   it("budget overrun stops after the call is recorded", async () => {
-    const { sdk } = mockSdk({ betaParse: [ok({ answer: "h", n: 9 })] });
+    const { sdk } = mockSdk({ betaCreate: [ok({ answer: "h", n: 9 })] });
     const costs = new FakeCosts();
     costs.failBudget = true;
     expect((await rejects(client(sdk).structured(sreq(), h(costs)))).code).toBe("BUDGET_EXCEEDED");
@@ -218,8 +222,32 @@ describe("AnthropicLlm.structured (mocked SDK)", () => {
     const ac = new AbortController();
     ac.abort();
     expect(mapSdkError(new Error("aborted"), ac.signal).code).toBe("CANCELED");
-    const { sdk } = mockSdk({ betaParse: [Object.assign(new Error("rate"), { status: 429 })] });
+    const { sdk } = mockSdk({ betaCreate: [Object.assign(new Error("rate"), { status: 429 })] });
     expect((await rejects(client(sdk).structured(sreq(), h()))).code).toBe("LLM_API");
+  });
+
+  it("a failure after a paid attempt still records that attempt's usage", async () => {
+    const trunc = { content: [{ type: "text", text: '{"answer":"x' }], stop_reason: "max_tokens", usage };
+    const { sdk } = mockSdk({ betaCreate: [trunc, Object.assign(new Error("overloaded"), { status: 529 })] });
+    const costs = new FakeCosts();
+    expect((await rejects(client(sdk).structured(sreq(), h(costs)))).code).toBe("LLM_API");
+    expect(costs.receipts).toHaveLength(1);
+    expect(costs.receipts[0]!.usage.input_tokens).toBe(1000);
+  });
+
+  it("output_config.format is a plain json_schema that keeps enum/const (no SDK parse hook)", async () => {
+    const Enum = z.object({ verdict: z.enum(["supported", "unsupported"]), kind: z.literal("x"), list: z.array(z.object({ d: z.enum(["a", "b"]) })) });
+    const { sdk, calls } = mockSdk({ create: [{ content: [{ type: "text", text: '{"verdict":"supported","kind":"x","list":[{"d":"b"}]}' }], stop_reason: "end_turn", usage }] });
+    await client(sdk, false).structured({ ...sreq(), schema: Enum } as unknown as StructuredRequest<typeof Out>, h());
+    const format = (calls[0]!.params.output_config as { format: Record<string, unknown> }).format;
+    expect(format).not.toHaveProperty("parse");
+    expect(format.type).toBe("json_schema");
+    const schema = format.schema as { properties: Record<string, Record<string, unknown>>; additionalProperties: boolean };
+    expect(schema.additionalProperties).toBe(false);
+    expect(schema.properties.verdict!.enum).toEqual(["supported", "unsupported"]);
+    expect(schema.properties.kind!.const).toBe("x");
+    expect(((schema.properties.list!.items as { properties: Record<string, { enum: string[] }> }).properties.d!).enum).toEqual(["a", "b"]);
+    expect(JSON.stringify(schema)).not.toContain("{enum:");
   });
 
   it("systemParam keeps at most 4 cache breakpoints (the last ones)", () => {
@@ -305,5 +333,52 @@ describe("estimateStepCost", () => {
     const total = lines.reduce((a, l) => a + l.totalUsd, 0);
     expect(total).toBeCloseTo(5000 * 4e-6 + 5000 * 0.2e-6 + 5000 * 20e-6 + 0.25, 6);
     expect(estimateStepCost("passage", { inputChars: 0, outputChars: 0, cachedChars: 0, lang: null })).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------- real SDK, fake fetch (the SDK's own request/response path)
+describe("AnthropicLlm.structured with the real SDK and a fake fetch", () => {
+  const Anthropic = AnthropicSdk;
+  function realSdk(responses: { text: string; stop_reason: string }[]) {
+    const bodies: Record<string, unknown>[] = [];
+    const fetch = async (_url: unknown, init?: { body?: unknown }) => {
+      bodies.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+      const r = responses.shift();
+      if (!r) throw new Error("unexpected request");
+      const body = {
+        id: `msg_${bodies.length}`, type: "message", role: "assistant", model: "claude-opus-5-5", content: [{ type: "text", text: r.text }],
+        stop_reason: r.stop_reason, stop_sequence: null, usage: { input_tokens: 10, output_tokens: 20, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+      };
+      return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    };
+    const sdk = new Anthropic({ apiKey: "test-key", maxRetries: 0, fetch: fetch as never }) as unknown as AnthropicLike;
+    return { sdk, bodies };
+  }
+  const A = z.object({ answer: z.string() });
+  const areq = { ...sreq(), schema: A } as unknown as StructuredRequest<typeof A>;
+  for (const fallback of [true, false]) {
+    it(`truncated JSON at max_tokens → retry with a larger budget, usage of both calls recorded (fallback ${fallback})`, async () => {
+      const { sdk, bodies } = realSdk([{ text: '{"answer":"abc', stop_reason: "max_tokens" }, { text: '{"answer":"abc"}', stop_reason: "end_turn" }]);
+      const costs = new FakeCosts();
+      await expect(client(sdk, fallback).structured(areq, h(costs))).resolves.toEqual({ answer: "abc" });
+      expect(bodies.map((b) => b.max_tokens)).toEqual([16000, 24000]);
+      expect(costs.receipts).toHaveLength(1);
+      expect(costs.receipts[0]!.usage.input_tokens).toBe(20);
+    });
+  }
+  it("refusal with partial JSON → LLM_REFUSAL with the reframe hint, usage recorded", async () => {
+    const { sdk } = realSdk([{ text: '{"answer":"pa', stop_reason: "refusal" }]);
+    const costs = new FakeCosts();
+    const e = await rejects(client(sdk).structured(areq, h(costs)));
+    expect([e.code, e.hint]).toEqual(["LLM_REFUSAL", REFUSAL_HINT]);
+    expect(costs.receipts).toHaveLength(1);
+  });
+  it("off-schema output → one reparse retry, then LLM_SCHEMA with usage recorded", async () => {
+    const { sdk, bodies } = realSdk([{ text: '{"answer":5}', stop_reason: "end_turn" }, { text: '{"answer":6}', stop_reason: "end_turn" }]);
+    const costs = new FakeCosts();
+    expect((await rejects(client(sdk).structured(areq, h(costs)))).code).toBe("LLM_SCHEMA");
+    expect(bodies).toHaveLength(2);
+    expect(costs.receipts).toHaveLength(1);
+    expect(costs.receipts[0]!.usage.output_tokens).toBe(40);
   });
 });

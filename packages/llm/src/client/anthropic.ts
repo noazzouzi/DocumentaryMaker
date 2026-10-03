@@ -3,14 +3,13 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
-import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import { DocmakerError, canonicalJson, isDocmakerError, stableStringify, type Logger, type Progress, type Receipt, type StageId, type Lang } from "@docmaker/core";
 import { sha256Bytes } from "@docmaker/core/node";
 import { MODEL, usageCostUsd } from "../estimate";
 import { buildResearchFromTurns, type TurnLike } from "../steps/research";
 import type { LlmCallCtx, LlmClient, ResearchRequest, ResearchResult, StructuredRequest, SystemBlock } from "../types";
+import { wireOutputFormat } from "../wire/jsonschema";
 
 export const FALLBACK_BETA = "server-side-fallback-2026-07-01";
 export const REFUSAL_HINT = "the topic triggered a safety classifier; reframe the idea or write this step manually";
@@ -19,12 +18,16 @@ const MAX_TOKENS_CAP = 64000;
 const PARSE_TIMEOUT_MS = 30 * 60_000;
 const MAX_RESEARCH_TURNS = 8;
 
-/** The subset of the SDK this client uses (lets tests inject a mock). */
+/**
+ * The subset of the SDK this client uses (lets tests inject a mock). Structured calls use `create` / `stream` with a
+ * plain json_schema format (no SDK `parse` hook): the SDK parse helpers throw on truncated, refused or off-schema
+ * output before stop_reason and usage can be read, and they drop `enum`/`const` from the schema.
+ */
 export interface AnthropicLike {
-  messages: { parse(params: never, options?: never): PromiseLike<unknown> };
+  messages: { create(params: never, options?: never): PromiseLike<unknown> };
   beta: {
     messages: {
-      parse(params: never, options?: never): PromiseLike<unknown>;
+      create(params: never, options?: never): PromiseLike<unknown>;
       stream(params: never, options?: never): { finalMessage(): Promise<unknown> };
     };
   };
@@ -78,6 +81,19 @@ export function mapSdkError(e: unknown, signal: AbortSignal): DocmakerError {
   if (status !== null) return new DocmakerError("LLM_API", `Anthropic API error ${status}: ${msg}`, { cause: e });
   if (err?.name === "APIConnectionError" || err?.name === "APIConnectionTimeoutError") return new DocmakerError("LLM_API", `Anthropic API unreachable: ${msg}`, { cause: e, retryable: true });
   return new DocmakerError("LLM_API", msg, { cause: e });
+}
+
+/** Concatenated text blocks parsed as JSON and validated with the wire schema; null when either fails. */
+export function parseStructuredText<S extends z.ZodType>(msg: MessageLike, schema: S): z.infer<S> | null {
+  const text = (Array.isArray(msg.content) ? (msg.content as { type?: string; text?: string }[]) : [])
+    .filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
+  if (text.trim() === "") return null;
+  try {
+    const r = schema.safeParse(JSON.parse(text));
+    return r.success ? r.data : null;
+  } catch {
+    return null;
+  }
 }
 
 export class AnthropicLlm implements LlmClient {
@@ -140,40 +156,26 @@ export class AnthropicLlm implements LlmClient {
     return r;
   }
 
-  /** One API call; returns the message and its parsed output (null when the output does not match the schema). */
+  /** One API call; returns the message and its parsed output (null when the text is not JSON matching the schema). */
   private async send<S extends z.ZodType>(req: StructuredRequest<S>, maxTokens: number, signal: AbortSignal): Promise<{ msg: MessageLike; parsed: z.infer<S> | null }> {
     const base = {
       model: MODEL, max_tokens: maxTokens, system: systemParam(req.system), messages: [{ role: "user", content: req.user }],
+      output_config: { effort: req.effort, format: wireOutputFormat(req.schema) },
     };
+    let msg: MessageLike;
     try {
       if (maxTokens > STREAM_ABOVE) {
-        const params = { ...base, ...this.fallbackParams(), output_config: { effort: req.effort, format: betaZodOutputFormat(req.schema) } };
-        const msg = (await this.sdk.beta.messages.stream(params as never, { signal } as never).finalMessage()) as MessageLike;
-        const text = (Array.isArray(msg.content) ? (msg.content as { type?: string; text?: string }[]) : [])
-          .filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
-        let parsed: z.infer<S> | null = null;
-        try {
-          const r = req.schema.safeParse(JSON.parse(text));
-          parsed = r.success ? r.data : null;
-        } catch {
-          parsed = null;
-        }
-        return { msg, parsed };
+        msg = (await this.sdk.beta.messages.stream({ ...base, ...this.fallbackParams() } as never, { signal } as never).finalMessage()) as MessageLike;
+      } else {
+        const opts = { signal, timeout: PARSE_TIMEOUT_MS } as never;
+        msg = (this.refusalFallback
+          ? await this.sdk.beta.messages.create({ ...base, ...this.fallbackParams() } as never, opts)
+          : await this.sdk.messages.create(base as never, opts)) as MessageLike;
       }
-      const opts = { signal, timeout: PARSE_TIMEOUT_MS } as never;
-      const msg = (this.refusalFallback
-        ? await this.sdk.beta.messages.parse({ ...base, ...this.fallbackParams(), output_config: { effort: req.effort, format: betaZodOutputFormat(req.schema) } } as never, opts)
-        : await this.sdk.messages.parse({ ...base, output_config: { effort: req.effort, format: zodOutputFormat(req.schema) } } as never, opts)) as MessageLike;
-      const r = msg.parsed_output === null || msg.parsed_output === undefined ? null : req.schema.safeParse(msg.parsed_output);
-      return { msg, parsed: r && r.success ? r.data : null };
     } catch (e) {
-      // the SDK's parse helper throws when the returned JSON does not match the schema → treat as a null parse
-      const name = (e as { name?: string })?.name ?? "";
-      if (e instanceof SyntaxError || name === "ZodError" || (name === "AnthropicError" && /pars/i.test(String((e as Error).message)))) {
-        return { msg: { stop_reason: "end_turn", usage: null }, parsed: null };
-      }
       throw mapSdkError(e, signal);
     }
+    return { msg, parsed: parseStructuredText(msg, req.schema) };
   }
 
   async structured<S extends z.ZodType>(req: StructuredRequest<S>, h: LlmCallCtx): Promise<z.infer<S>> {
@@ -182,6 +184,8 @@ export class AnthropicLlm implements LlmClient {
       model: MODEL, step: req.step, key: req.key, effort: req.effort, max_tokens: req.maxTokens, system: req.system, user: hashableUser(req.user),
       schema: z.toJSONSchema(req.schema, { unrepresentable: "any" }), fallback: this.refusalFallback,
     };
+    // receipt identity: the non-streaming label stays "messages.parse" so responses paid before the switch to
+    // messages.create (same request, same schema) are still reused instead of being bought again
     const endpoint = req.maxTokens > STREAM_ABOVE ? "messages.stream" : "messages.parse";
     const fp = this.fingerprint(endpoint, identity);
     const reused = await this.tryReuse(fp, req.schema, h);
@@ -195,7 +199,15 @@ export class AnthropicLlm implements LlmClient {
     let attempts = 0;
     for (;;) {
       attempts++;
-      const { msg, parsed } = await this.send(req, maxTokens, h.signal);
+      let sent: { msg: MessageLike; parsed: z.infer<S> | null };
+      try {
+        sent = await this.send(req, maxTokens, h.signal);
+      } catch (e) {
+        // an earlier attempt of this call was paid for: record it before surfacing the error
+        if (attempts > 1) await this.record(h, { fp, endpoint, stage: req.stage, lang: req.lang, usage, outputRef: null });
+        throw e;
+      }
+      const { msg, parsed } = sent;
       last = msg;
       usage = addUsage(usage, msg);
       if (msg.stop_reason === "refusal") {
