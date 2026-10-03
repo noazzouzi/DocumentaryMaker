@@ -70,6 +70,11 @@ export function approvalFrom(body: Record<string, unknown>): { gate: GateId; a: 
   const rest = { ...body };
   delete rest.gate;
   delete rest.by; // ignored: the server sets it
+  // editorial gates recompute their planHash server-side; the outline approval and the cost gate need the reviewed hash
+  if (rest.planHash === undefined || rest.planHash === null || rest.planHash === "") {
+    if (gate === "outline-approval" || gate === "cost") throw new HttpError(400, "VALIDATION", `${gate} needs the planHash of what was reviewed`);
+    rest.planHash = "0".repeat(64);
+  }
   const a = parseOr400(ApprovalBody, { lang: null, note: "", items: [], itemNotes: {}, ...rest }, "approval");
   return { gate, a: { ...a, by: "web" } };
 }

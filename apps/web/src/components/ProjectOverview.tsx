@@ -119,9 +119,7 @@ export function ProjectOverview({ project, initialStatus, initialJobs }: { proje
     setError(null);
     try {
       if (extra) await extra();
-      if (g.planHash) {
-        await api(`/api/projects/${slug}/approvals`, { method: "POST", json: { gate: g.gate, stage: g.stage, lang: g.lang, planHash: g.planHash, note: "", items: [], itemNotes: {} } });
-      }
+      await api(`/api/projects/${slug}/approvals`, { method: "POST", json: { gate: g.gate, stage: g.stage, lang: g.lang, planHash: g.planHash || undefined, note: "", items: [], itemNotes: {} } });
       if (waiting && jobId) await resume();
       else await refresh();
     } catch (e) {
@@ -169,7 +167,7 @@ export function ProjectOverview({ project, initialStatus, initialJobs }: { proje
                     </Button>
                   ) : null}
                   {g.gate === "style-confirm" && project.styleId ? (
-                    <Button size="sm" variant="primary" busy={busy === "gate-style-confirm"} onClick={() => void approveInline(g, async () => void (await api(`/api/projects/${slug}`, { method: "PATCH", json: { styleConfirmed: true } })))}>
+                    <Button size="sm" variant="primary" busy={busy === "gate-style-confirm"} onClick={() => void approveInline(g)}>
                       {t("research.useStyle")}: {project.styleId}
                     </Button>
                   ) : null}
@@ -327,7 +325,7 @@ export function ProjectOverview({ project, initialStatus, initialJobs }: { proje
           const g = fairUse;
           setFairUse(null);
           if (!g) return;
-          await approveInline(g, async () => void (await api(`/api/projects/${slug}`, { method: "PATCH", json: { editorial: { ...project.editorial, fairUseAcknowledged: true } } })));
+          await approveInline(g); // the engine records the approval and sets editorial.fairUseAcknowledged
         }}
       />
     </div>

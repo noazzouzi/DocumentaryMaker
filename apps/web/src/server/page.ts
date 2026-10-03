@@ -37,11 +37,11 @@ export async function attempt<R>(fn: () => Promise<R>): Promise<{ ok: true; valu
 }
 
 /** Reads a document or null when it does not exist yet (other errors propagate). */
-export async function readDocOrNull<S extends Parameters<Engine["readDoc"]>[2]>(
-  engine: Engine, slug: string, rel: string, schema: S,
-): Promise<{ value: Awaited<ReturnType<Engine["readDoc"]>>["value"]; etag: string | null } | null> {
+export async function readDocOrNull<T>(
+  engine: Engine, slug: string, rel: string, schema: { parse(v: unknown): T },
+): Promise<{ value: T; etag: string | null } | null> {
   try {
-    return await engine.readDoc(slug, rel, schema);
+    return (await engine.readDoc(slug, rel, schema as never)) as { value: T; etag: string | null };
   } catch (e) {
     if (isDocmakerError(e) && e.code === "UPSTREAM_MISSING") return null;
     if ((e as { code?: unknown })?.code === "ENOENT") return null;
