@@ -1,9 +1,13 @@
 // RenderService (§12.3–§12.6): one render per machine (render lock + free-memory wait), bundle once per code hash,
 // Chrome reused for every chunk, chapter-aligned muted h264-ts chunks cached by chunk-relative slice hash, frame-exact
 // concat, master post (lut3d + grain), one AAC master mux with the exact length, post-AAC true-peak gate, render.json.
+// Inputs are bound to what was hashed: the timeline bytes are read once and served from memory at a content-addressed
+// URL (the snapshot on disk may be rewritten by a later render job while this one waits or renders), and the mix is
+// pinned (hardlink, else copy) before the slot wait, so chunk hashes, pixels and the muxed audio always agree.
 import { AsyncLocalStorage } from "node:async_hooks";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, link, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -13,7 +17,7 @@ import {
 } from "@docmaker/core";
 import { sha256File, withFileLock } from "@docmaker/core/node";
 import { computeTimeline, planChunks, sliceHash } from "@docmaker/remotion/compute";
-import { createAssetServer, type AssetServer } from "./assetServer";
+import { createAssetServer, resolveRequestPath, type AssetServer } from "./assetServer";
 import { ensureBrowserExecutable } from "./browser";
 import { computeCodeHash, ensureBundleBuilt, isBundleReady, bundleDir } from "./bundle";
 import { closeChrome, openChrome } from "./chrome";
@@ -61,19 +65,88 @@ export function chunksInRange(chunks: readonly { from: number; to: number }[], r
 const toDocErr = (e: unknown, code: "RENDER_FAILED" | "INTERNAL", msg: string): DocmakerError =>
   isDocmakerError(e) ? e : new DocmakerError(code, `${msg}: ${e instanceof Error ? e.message : String(e)}`, { cause: e, retryable: true });
 
-async function readJson(file: string): Promise<unknown> {
-  try {
-    return JSON.parse(await readFile(file, "utf8"));
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") throw new DocmakerError("UPSTREAM_MISSING", `missing ${file}`);
-    throw new DocmakerError("VALIDATION", `unreadable JSON ${file}: ${e instanceof Error ? e.message : String(e)}`);
+export async function readTimelineFile(projectDir: string, rel: string): Promise<Timeline> {
+  return (await readTimelineSnapshot(projectDir, rel)).timeline;
+}
+
+/** A timeline bound to its bytes: parsed once, hashed, and served by the asset server from memory at `urlPath`. */
+export interface TimelineSnapshot { timeline: Timeline; bytes: Buffer; sha256: string; urlPath: string }
+const TORN_READ_ATTEMPTS = 3;
+const TORN_READ_DELAY_MS = 150;
+
+/**
+ * Reads a timeline once. Unparsable JSON is re-read a few times (a snapshot being rewritten in place reads torn:
+ * copyFile truncates first) before it is reported. The URL path is content-addressed, so a page can only ever fetch
+ * the exact bytes the caller hashed.
+ */
+export async function readTimelineSnapshot(projectDir: string, rel: string): Promise<TimelineSnapshot> {
+  const abs = path.join(projectDir, rel);
+  for (let attempt = 1; ; attempt++) {
+    let bytes: Buffer;
+    try {
+      bytes = await readFile(abs);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") throw new DocmakerError("UPSTREAM_MISSING", `missing ${abs}`);
+      throw new DocmakerError("VALIDATION", `unreadable timeline ${abs}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    let raw: unknown;
+    try {
+      raw = JSON.parse(bytes.toString("utf8"));
+    } catch (e) {
+      if (attempt < TORN_READ_ATTEMPTS) {
+        await new Promise((r) => setTimeout(r, TORN_READ_DELAY_MS));
+        continue;
+      }
+      throw new DocmakerError("VALIDATION", `unreadable JSON ${abs}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    const p = Timeline.safeParse(raw);
+    if (!p.success) throw new DocmakerError("VALIDATION", `${rel} is not a valid timeline: ${p.error.issues.slice(0, 3).map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    return { timeline: p.data, bytes, sha256, urlPath: `_snapshot/timeline-${sha256.slice(0, 16)}.json` };
   }
 }
 
-export async function readTimelineFile(projectDir: string, rel: string): Promise<Timeline> {
-  const p = Timeline.safeParse(await readJson(path.join(projectDir, rel)));
-  if (!p.success) throw new DocmakerError("VALIDATION", `${rel} is not a valid timeline: ${p.error.issues.slice(0, 3).map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
-  return p.data;
+/**
+ * Digest of the bytes of every style font the timeline references by a server-relative URL (user-style fonts are
+ * served by path: a file replaced under the same name changes nothing in the timeline). "" when there are none.
+ */
+export async function styleFontsDigest(t: Timeline, projectDir: string, stylesDir: string): Promise<string> {
+  const rows: [string, string][] = [];
+  for (const f of t.render.fonts) {
+    if (/^[a-z][a-z0-9+.-]*:/i.test(f.url)) continue; // absolute URL: not served by us, nothing to hash
+    const r = resolveRequestPath(f.url, { root: projectDir, allow: renderAllowList(), mounts: { styles: stylesDir } });
+    rows.push([f.url, r.kind === "file" ? await sha256File(r.file).catch(() => "missing") : "unresolved"]);
+  }
+  return rows.length ? sha12(canonicalJson(rows)) : "";
+}
+
+function pidAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/**
+ * Pins a file for the duration of one render: a hardlink (else a copy) under a job-private name. The snapshot mix is
+ * replaced by unlink + link when another render job snapshots, so the pinned inode keeps this job's exact audio.
+ */
+export async function pinFile(src: string, dir: string): Promise<string> {
+  await mkdir(dir, { recursive: true });
+  for (const f of await readdir(dir).catch(() => [] as string[])) {
+    const m = /^pin-(\d+)-/.exec(f);
+    if (m && Number(m[1]) !== process.pid && !pidAlive(Number(m[1]))) await rm(path.join(dir, f), { force: true });
+  }
+  const dest = path.join(dir, `pin-${process.pid}-${randomUUID().slice(0, 8)}${path.extname(src)}`);
+  try {
+    await link(src, dest);
+  } catch {
+    await copyFile(src, dest);
+  }
+  return dest;
 }
 
 /** Mix targets from project.json (`audio.targetLufs`, `audio.truePeakGate`), else the spec defaults (−14 LUFS, −1 dBTP). */
@@ -92,6 +165,11 @@ const safeName = (id: string): string => id.replace(/[^A-Za-z0-9._-]+/g, "_").re
 
 function abortError(what: string): DocmakerError {
   return new DocmakerError("CANCELED", `${what} canceled`);
+}
+
+/** Content address of a generated/solid still (v2: + renderer code hash, GL backend and style font bytes). */
+export function generatedStillKey(source: unknown, tokens: unknown, ctx: { codeHash: string; gl: GlMode; fonts: string }): string {
+  return sha12(canonicalJson({ v: 2, codeHash: ctx.codeHash, gl: ctx.gl, fonts: ctx.fonts, source, tokens }));
 }
 
 export class RenderService {
@@ -163,8 +241,11 @@ export class RenderService {
     if (handle) this.live.delete(handle);
     await closeChrome(b);
   }
-  private async server(projectDir: string, timelineRel?: string): Promise<AssetServer> {
-    return this.track(await createAssetServer({ root: projectDir, allow: renderAllowList(timelineRel), mounts: { styles: this.config.paths.styles } }));
+  /** Asset server of a render; the timeline is served from the snapshot's bytes only (content-addressed path). */
+  private async server(projectDir: string, snap: TimelineSnapshot): Promise<AssetServer> {
+    return this.track(await createAssetServer({
+      root: projectDir, allow: renderAllowList(), mounts: { styles: this.config.paths.styles }, memory: { [snap.urlPath]: snap.bytes },
+    }));
   }
 
   private logEmitter(emit: (e: JobEventInput) => void) {
@@ -220,7 +301,9 @@ export class RenderService {
       }
     };
 
-    const timeline = await readTimelineFile(req.projectDir, req.timelineRel);
+    // read once: the chunk hashes AND the pages' timeline (served from these bytes) come from this one snapshot
+    const snap = await readTimelineSnapshot(req.projectDir, req.timelineRel);
+    const timeline = snap.timeline;
     const ct = computeTimeline(timeline);
     const N = ct.durationInFrames;
     const fps = timeline.fps;
@@ -228,8 +311,8 @@ export class RenderService {
       const [a, b] = req.frameRange;
       if (a < 0 || b < a || b >= N) throw new DocmakerError("VALIDATION", `frameRange [${a}, ${b}] outside [0, ${N - 1}]`);
     }
-    const mixAbs = req.mixRel ? path.join(req.projectDir, req.mixRel) : null;
-    if (mixAbs && !existsSync(mixAbs)) throw new DocmakerError("UPSTREAM_MISSING", `mix not found: ${req.mixRel}`);
+    const mixSrc = req.mixRel ? path.join(req.projectDir, req.mixRel) : null;
+    if (mixSrc && !existsSync(mixSrc)) throw new DocmakerError("UPSTREAM_MISSING", `mix not found: ${req.mixRel}`);
     const lutCube = preset.post ? req.lutCube ?? (timeline.grade.lut ? await cachedLutCube(config, timeline.grade.lut) : null) : null;
     if (lutCube && !existsSync(lutCube)) throw new DocmakerError("UPSTREAM_MISSING", `LUT not found: ${lutCube}`);
     const grain = preset.post ? req.grain : 0;
@@ -239,179 +322,185 @@ export class RenderService {
     const renderDir = path.join(req.projectDir, P.renderDir(lang, req.preset));
     const chunkDir = path.join(renderDir, "chunks");
     const outAbs = path.join(req.projectDir, req.outRel);
+    // pinned before the slot wait: a later render job of this lang/preset re-links the snapshot mix meanwhile
+    const mixAbs = mixSrc ? await pinFile(mixSrc, path.join(renderDir, "pins")) : null;
+    try {
+      return await this.withRenderSlot(`${req.slug}:${lang}:${req.preset}`, signal, (what) => {
+        progress.update("bundle", 0, what === "memory" ? "waiting for free memory" : "waiting for the render slot", { waiting: what }, true);
+      }, async () => {
+        if (signal.aborted) throw abortError("render");
+        const { gl, gpu } = await this.gl(req.gl, signal, true);
+        progress.update("bundle", 0, "bundling", {}, true);
+        const { serveUrl, codeHash } = await this.bundleLocked(signal, (p) => progress.update("bundle", p, "bundling"));
+        progress.update("bundle", 1, "bundle ready", { codeHash: codeHash.slice(0, 12) }, true);
+        const exe = await ensureBrowserExecutable(config, { download: false, signal });
+        await mkdir(chunkDir, { recursive: true });
+        await mkdir(path.dirname(outAbs), { recursive: true });
+        await this.removeStaleTemps(chunkDir);
 
-    return this.withRenderSlot(`${req.slug}:${lang}:${req.preset}`, signal, (what) => {
-      progress.update("bundle", 0, what === "memory" ? "waiting for free memory" : "waiting for the render slot", { waiting: what }, true);
-    }, async () => {
-      if (signal.aborted) throw abortError("render");
-      const { gl, gpu } = await this.gl(req.gl, signal, true);
-      progress.update("bundle", 0, "bundling", {}, true);
-      const { serveUrl, codeHash } = await this.bundleLocked(signal, (p) => progress.update("bundle", p, "bundling"));
-      progress.update("bundle", 1, "bundle ready", { codeHash: codeHash.slice(0, 12) }, true);
-      const exe = await ensureBrowserExecutable(config, { download: false, signal });
-      await mkdir(chunkDir, { recursive: true });
-      await mkdir(path.dirname(outAbs), { recursive: true });
-      await this.removeStaleTemps(chunkDir);
+        const server = await this.server(req.projectDir, snap);
+        let browser: HeadlessBrowser | null = null;
+        const intermediates: string[] = [];
+        try {
+          browser = await this.browser(exe, gl);
+          const r = await loadRenderer();
+          const common = commonRemotionOptions(exe, gl, config);
+          const inputProps = {
+            timeline: null, timelineUrl: `${server.url}/${snap.urlPath}`, assetBaseUrl: server.url, mode: "render",
+            layers: { ...RENDER_LAYERS }, itemId: null, scratchBanner: false,
+          };
+          const onBrowserLog = this.logEmitter(emit);
+          const composition = await r.selectComposition({ ...common, serveUrl, id: COMPOSITIONS.doc, inputProps, puppeteerInstance: browser, onBrowserLog });
+          if (composition.durationInFrames !== N || composition.fps !== fps) {
+            throw new DocmakerError("RENDER_FAILED", `composition metadata (${composition.durationInFrames} f @ ${composition.fps}) differs from computeTimeline (${N} f @ ${fps})`);
+          }
+          const planned = chunksInRange(planChunks(ct, req.chunkSeconds * fps), req.frameRange);
+          const total = planned.reduce((s, c) => s + (c.to - c.from + 1), 0);
+          const concurrency = resolveConcurrency(req.concurrency);
+          const renderOpts = presetRenderOptions(req.preset, { gpu });
+          const hashPreset = chunkHashPreset(req.preset, { gl, encoder: renderOpts, fonts: await styleFontsDigest(timeline, req.projectDir, config.paths.styles) });
 
-      const server = await this.server(req.projectDir, req.timelineRel);
-      let browser: HeadlessBrowser | null = null;
-      const intermediates: string[] = [];
-      try {
-        browser = await this.browser(exe, gl);
-        const r = await loadRenderer();
-        const common = commonRemotionOptions(exe, gl, config);
-        const inputProps = {
-          timeline: null, timelineUrl: `${server.url}/${req.timelineRel.replace(/^\/+/, "")}`, assetBaseUrl: server.url, mode: "render",
-          layers: { ...RENDER_LAYERS }, itemId: null, scratchBanner: false,
-        };
-        const onBrowserLog = this.logEmitter(emit);
-        const composition = await r.selectComposition({ ...common, serveUrl, id: COMPOSITIONS.doc, inputProps, puppeteerInstance: browser, onBrowserLog });
-        if (composition.durationInFrames !== N || composition.fps !== fps) {
-          throw new DocmakerError("RENDER_FAILED", `composition metadata (${composition.durationInFrames} f @ ${composition.fps}) differs from computeTimeline (${N} f @ ${fps})`);
-        }
-        const planned = chunksInRange(planChunks(ct, req.chunkSeconds * fps), req.frameRange);
-        const total = planned.reduce((s, c) => s + (c.to - c.from + 1), 0);
-        const concurrency = resolveConcurrency(req.concurrency);
-        const renderOpts = presetRenderOptions(req.preset, { gpu });
-
-        // ---- chunks
-        const chunks: RenderChunk[] = [];
-        let doneUnits = 0; // Σ rendered + encoded frames of finished chunks
-        const tChunks = Date.now();
-        let renderedSoFar = 0;
-        for (const c of planned) {
-          if (signal.aborted) throw abortError("render");
-          const frames = c.to - c.from + 1;
-          const hash = sliceHash(timeline, c.from, c.to, { codeHash, preset: chunkHashPreset(req.preset), premount: fps });
-          const file = path.join(req.projectDir, P.renderChunk(lang, req.preset, hash));
-          const tc = Date.now();
-          const label = `chunk ${c.index + 1}/${planned.length}`;
-          if (existsSync(file) && (await stat(file)).size > 0) {
-            chunks.push({ index: c.index, from: c.from, to: c.to, file: path.relative(req.projectDir, file), hash, cached: true, ms: 0 });
+          // ---- chunks
+          const chunks: RenderChunk[] = [];
+          let doneUnits = 0; // Σ rendered + encoded frames of finished chunks
+          const tChunks = Date.now();
+          let renderedSoFar = 0;
+          for (const c of planned) {
+            if (signal.aborted) throw abortError("render");
+            const frames = c.to - c.from + 1;
+            const hash = sliceHash(timeline, c.from, c.to, { codeHash, preset: hashPreset, premount: fps });
+            const file = path.join(req.projectDir, P.renderChunk(lang, req.preset, hash));
+            const tc = Date.now();
+            const label = `chunk ${c.index + 1}/${planned.length}`;
+            if (existsSync(file) && (await stat(file)).size > 0) {
+              chunks.push({ index: c.index, from: c.from, to: c.to, file: path.relative(req.projectDir, file), hash, cached: true, ms: 0 });
+              doneUnits += 2 * frames;
+              renderedSoFar += frames;
+              progress.update("chunks", doneUnits / (2 * total), `${label} (cached)`, { chunk: c.index, cached: true, renderedFrames: renderedSoFar, encodedFrames: renderedSoFar });
+              continue;
+            }
+            const tmp = file.replace(/\.ts$/, ".tmp.ts");
+            let lastErr: unknown = null;
+            for (let attempt = 1; attempt <= 2; attempt++) {
+              const { cancelSignal, cancel } = r.makeCancelSignal();
+              const onAbort = () => cancel();
+              signal.addEventListener("abort", onAbort, { once: true });
+              try {
+                const res = await r.renderMedia({
+                  ...common, ...renderOpts, composition, serveUrl, inputProps, frameRange: [c.from, c.to], outputLocation: tmp, overwrite: true,
+                  concurrency, puppeteerInstance: browser, cancelSignal, onBrowserLog,
+                  onProgress: (p) => {
+                    const units = doneUnits + p.renderedFrames + p.encodedFrames;
+                    const elapsed = (Date.now() - tChunks) / 1000;
+                    const rendered = renderedSoFar + p.renderedFrames;
+                    const rate = elapsed > 0 ? rendered / elapsed : 0;
+                    progress.update("chunks", units / (2 * total), label, {
+                      chunk: c.index, renderedFrames: rendered, encodedFrames: renderedSoFar + p.encodedFrames,
+                      fps: Math.round(rate * 10) / 10, etaSec: rate > 0 ? Math.round((total - rendered) / rate) : null,
+                    });
+                  },
+                });
+                await rename(tmp, file);
+                const slow = res.slowestFrames.slice(0, 3).map((s) => `${s.frame}:${Math.round(s.time)}ms`).join(", ");
+                this.logger.debug("chunk rendered", { chunk: c.index, from: c.from, to: c.to, ms: Date.now() - tc, slowestFrames: slow });
+                lastErr = null;
+                break;
+              } catch (e) {
+                await rm(tmp, { force: true });
+                if (signal.aborted) throw abortError("render");
+                lastErr = e;
+                this.logger.warn("chunk render failed", { chunk: c.index, attempt, err: e instanceof Error ? e.message : String(e) });
+                if (attempt < 2) {
+                  // the likeliest transient failure on a long master is a crashed/disconnected Chrome: retry on a fresh one
+                  await this.closeBrowser(browser).catch(() => undefined);
+                  browser = null;
+                  browser = await this.browser(exe, gl);
+                }
+              } finally {
+                signal.removeEventListener("abort", onAbort);
+              }
+            }
+            if (lastErr) throw toDocErr(lastErr, "RENDER_FAILED", `chunk ${c.index} (frames ${c.from}–${c.to}) failed`);
+            chunks.push({ index: c.index, from: c.from, to: c.to, file: path.relative(req.projectDir, file), hash, cached: false, ms: Date.now() - tc });
             doneUnits += 2 * frames;
             renderedSoFar += frames;
-            progress.update("chunks", doneUnits / (2 * total), `${label} (cached)`, { chunk: c.index, cached: true, renderedFrames: renderedSoFar, encodedFrames: renderedSoFar });
-            continue;
+            progress.update("chunks", doneUnits / (2 * total), label, { chunk: c.index, renderedFrames: renderedSoFar, encodedFrames: renderedSoFar }, true);
           }
-          const tmp = file.replace(/\.ts$/, ".tmp.ts");
-          let lastErr: unknown = null;
-          for (let attempt = 1; attempt <= 2; attempt++) {
-            const { cancelSignal, cancel } = r.makeCancelSignal();
-            const onAbort = () => cancel();
-            signal.addEventListener("abort", onAbort, { once: true });
-            try {
-              const res = await r.renderMedia({
-                ...common, ...renderOpts, composition, serveUrl, inputProps, frameRange: [c.from, c.to], outputLocation: tmp, overwrite: true,
-                concurrency, puppeteerInstance: browser, cancelSignal, onBrowserLog,
-                onProgress: (p) => {
-                  const units = doneUnits + p.renderedFrames + p.encodedFrames;
-                  const elapsed = (Date.now() - tChunks) / 1000;
-                  const rendered = renderedSoFar + p.renderedFrames;
-                  const rate = elapsed > 0 ? rendered / elapsed : 0;
-                  progress.update("chunks", units / (2 * total), label, {
-                    chunk: c.index, renderedFrames: rendered, encodedFrames: renderedSoFar + p.encodedFrames,
-                    fps: Math.round(rate * 10) / 10, etaSec: rate > 0 ? Math.round((total - rendered) / rate) : null,
-                  });
-                },
-              });
-              await rename(tmp, file);
-              const slow = res.slowestFrames.slice(0, 3).map((s) => `${s.frame}:${Math.round(s.time)}ms`).join(", ");
-              this.logger.debug("chunk rendered", { chunk: c.index, from: c.from, to: c.to, ms: Date.now() - tc, slowestFrames: slow });
-              lastErr = null;
-              break;
-            } catch (e) {
-              await rm(tmp, { force: true });
-              if (signal.aborted) throw abortError("render");
-              lastErr = e;
-              this.logger.warn("chunk render failed", { chunk: c.index, attempt, err: e instanceof Error ? e.message : String(e) });
-              if (attempt < 2) {
-                // the likeliest transient failure on a long master is a crashed/disconnected Chrome: retry on a fresh one
-                await this.closeBrowser(browser).catch(() => undefined);
-                browser = null;
-                browser = await this.browser(exe, gl);
-              }
-            } finally {
-              signal.removeEventListener("abort", onAbort);
+          await this.closeBrowser(browser);
+          browser = null;
+          await this.release(server);
+
+          // ---- concat
+          if (signal.aborted) throw abortError("render");
+          const videoMp4 = path.join(renderDir, "video.mp4");
+          intermediates.push(videoMp4);
+          progress.update("concat", 0, "concatenating chunks", {}, true);
+          const cat = await concatChunks(chunks.map((c) => path.join(req.projectDir, c.file)), videoMp4, {
+            config, signal, logger: this.logger, expectedFrames: total, fps,
+            x264Preset: PRESETS[req.preset].x264Preset ?? "medium", crf: PRESETS[req.preset].crf ?? 18,
+            onProgress: (p) => progress.update("concat", p, "concatenating chunks"),
+          });
+          if (cat.reencoded) emit({ type: "log", level: "warn", message: "chunk concat was re-encoded (stream copy was not frame-exact)", stage: "render" });
+          progress.update("concat", 1, "concatenated", { frames: cat.frames }, true);
+
+          // ---- master post
+          let video = videoMp4;
+          if (doPost) {
+            const postMp4 = path.join(renderDir, "video.post.mp4");
+            intermediates.push(postMp4);
+            progress.update("post", 0, "master post (grade + grain)", {}, true);
+            await masterPost(videoMp4, postMp4, {
+              lutCube, grain, config, signal, totalMs: (total / fps) * 1000,
+              onProgress: (p) => progress.update("post", p, "master post (grade + grain)"),
+            });
+            video = postMp4;
+            progress.update("post", 1, "master post done", {}, true);
+          }
+
+          // ---- mux + gate
+          progress.update("mux", 0, "muxing the master audio", {}, true);
+          const startFrame = req.frameRange ? req.frameRange[0] : 0;
+          await muxMaster(video, mixAbs, outAbs, { frames: total, fps, startFrame, config, signal, onProgress: (p) => progress.update("mux", p * 0.6, "muxing the master audio") });
+          let loudness: RenderResult["loudness"] = null;
+          if (mixAbs) {
+            progress.update("mux", 0.6, "true-peak gate", {}, true);
+            const g = await loudnessGate(outAbs, { gateDbtp: targets.gateDbtp, targetLufs: targets.targetLufs, config, signal, durationSec: total / fps });
+            loudness = { integratedLufs: g.integratedLufs, truePeakDbtp: g.truePeakDbtp, gateAttempts: g.attempts };
+            if (!g.ok) {
+              emit({ type: "log", level: "warn", message: `LOUDNESS_GATE: ${g.integratedLufs.toFixed(1)} LUFS / ${g.truePeakDbtp.toFixed(1)} dBTP after ${g.attempts} attempt(s) (target ${targets.targetLufs} LUFS, gate ${targets.gateDbtp} dBTP)`, stage: "render" });
             }
           }
-          if (lastErr) throw toDocErr(lastErr, "RENDER_FAILED", `chunk ${c.index} (frames ${c.from}–${c.to}) failed`);
-          chunks.push({ index: c.index, from: c.from, to: c.to, file: path.relative(req.projectDir, file), hash, cached: false, ms: Date.now() - tc });
-          doneUnits += 2 * frames;
-          renderedSoFar += frames;
-          progress.update("chunks", doneUnits / (2 * total), label, { chunk: c.index, renderedFrames: renderedSoFar, encodedFrames: renderedSoFar }, true);
-        }
-        await this.closeBrowser(browser);
-        browser = null;
-        await this.release(server);
+          for (const f of intermediates) await rm(f, { force: true });
+          // only a whole-programme render prunes: a frame range or an onlyChapters preview must not evict the full render's chunks
+          if (!req.frameRange && timeline.onlyChapters === null) await this.pruneChunks(chunkDir, new Set(chunks.map((c) => path.basename(c.file))));
 
-        // ---- concat
-        if (signal.aborted) throw abortError("render");
-        const videoMp4 = path.join(renderDir, "video.mp4");
-        intermediates.push(videoMp4);
-        progress.update("concat", 0, "concatenating chunks", {}, true);
-        const cat = await concatChunks(chunks.map((c) => path.join(req.projectDir, c.file)), videoMp4, {
-          config, signal, logger: this.logger, expectedFrames: total, fps,
-          x264Preset: PRESETS[req.preset].x264Preset ?? "medium", crf: PRESETS[req.preset].crf ?? 18,
-          onProgress: (p) => progress.update("concat", p, "concatenating chunks"),
-        });
-        if (cat.reencoded) emit({ type: "log", level: "warn", message: "chunk concat was re-encoded (stream copy was not frame-exact)", stage: "render" });
-        progress.update("concat", 1, "concatenated", { frames: cat.frames }, true);
-
-        // ---- master post
-        let video = videoMp4;
-        if (doPost) {
-          const postMp4 = path.join(renderDir, "video.post.mp4");
-          intermediates.push(postMp4);
-          progress.update("post", 0, "master post (grade + grain)", {}, true);
-          await masterPost(videoMp4, postMp4, {
-            lutCube, grain, config, signal, totalMs: (total / fps) * 1000,
-            onProgress: (p) => progress.update("post", p, "master post (grade + grain)"),
+          const result: RenderResult = {
+            outFile: req.outRel, durationInFrames: N, frames: total, chunks, renderMs: Date.now() - t0, gl, codeHash, loudness,
+          };
+          const doc = RenderDoc.parse({
+            ...result, schemaVersion: 1, lang, preset: req.preset, timelineHash: docHash(timeline),
+            mixHash: mixAbs ? await sha256File(mixAbs) : null, onlyChapters: timeline.onlyChapters, createdAt: new Date().toISOString(),
           });
-          video = postMp4;
-          progress.update("post", 1, "master post done", {}, true);
+          const docAbs = path.join(req.projectDir, P.renderDoc(lang, req.preset));
+          await mkdir(path.dirname(docAbs), { recursive: true });
+          await writeFile(`${docAbs}.tmp`, stableStringify(doc));
+          await rename(`${docAbs}.tmp`, docAbs);
+          progress.update("mux", 1, "render done", { frames: total, ms: result.renderMs }, true);
+          emit({ type: "artifact", stage: "render", lang, path: req.outRel, kind: "video" });
+          emit({ type: "artifact", stage: "render", lang, path: P.renderDoc(lang, req.preset), kind: "render-doc" });
+          return result;
+        } catch (e) {
+          for (const f of intermediates) await rm(f, { force: true });
+          if (signal.aborted) throw abortError("render");
+          throw toDocErr(e, "RENDER_FAILED", "render failed");
+        } finally {
+          await this.closeBrowser(browser);
+          await this.release(server);
         }
-
-        // ---- mux + gate
-        progress.update("mux", 0, "muxing the master audio", {}, true);
-        const startFrame = req.frameRange ? req.frameRange[0] : 0;
-        await muxMaster(video, mixAbs, outAbs, { frames: total, fps, startFrame, config, signal, onProgress: (p) => progress.update("mux", p * 0.6, "muxing the master audio") });
-        let loudness: RenderResult["loudness"] = null;
-        if (mixAbs) {
-          progress.update("mux", 0.6, "true-peak gate", {}, true);
-          const g = await loudnessGate(outAbs, { gateDbtp: targets.gateDbtp, targetLufs: targets.targetLufs, config, signal, durationSec: total / fps });
-          loudness = { integratedLufs: g.integratedLufs, truePeakDbtp: g.truePeakDbtp, gateAttempts: g.attempts };
-          if (!g.ok) {
-            emit({ type: "log", level: "warn", message: `LOUDNESS_GATE: ${g.integratedLufs.toFixed(1)} LUFS / ${g.truePeakDbtp.toFixed(1)} dBTP after ${g.attempts} attempt(s) (target ${targets.targetLufs} LUFS, gate ${targets.gateDbtp} dBTP)`, stage: "render" });
-          }
-        }
-        for (const f of intermediates) await rm(f, { force: true });
-        // only a whole-programme render prunes: a frame range or an onlyChapters preview must not evict the full render's chunks
-        if (!req.frameRange && timeline.onlyChapters === null) await this.pruneChunks(chunkDir, new Set(chunks.map((c) => path.basename(c.file))));
-
-        const result: RenderResult = {
-          outFile: req.outRel, durationInFrames: N, frames: total, chunks, renderMs: Date.now() - t0, gl, codeHash, loudness,
-        };
-        const doc = RenderDoc.parse({
-          ...result, schemaVersion: 1, lang, preset: req.preset, timelineHash: docHash(timeline),
-          mixHash: mixAbs ? await sha256File(mixAbs) : null, onlyChapters: timeline.onlyChapters, createdAt: new Date().toISOString(),
-        });
-        const docAbs = path.join(req.projectDir, P.renderDoc(lang, req.preset));
-        await mkdir(path.dirname(docAbs), { recursive: true });
-        await writeFile(`${docAbs}.tmp`, stableStringify(doc));
-        await rename(`${docAbs}.tmp`, docAbs);
-        progress.update("mux", 1, "render done", { frames: total, ms: result.renderMs }, true);
-        emit({ type: "artifact", stage: "render", lang, path: req.outRel, kind: "video" });
-        emit({ type: "artifact", stage: "render", lang, path: P.renderDoc(lang, req.preset), kind: "render-doc" });
-        return result;
-      } catch (e) {
-        for (const f of intermediates) await rm(f, { force: true });
-        if (signal.aborted) throw abortError("render");
-        throw toDocErr(e, "RENDER_FAILED", "render failed");
-      } finally {
-        await this.closeBrowser(browser);
-        await this.release(server);
-      }
-    });
+      });
+    } finally {
+      if (mixAbs) await rm(mixAbs, { force: true });
+    }
   }
 
   private async removeStaleTemps(dir: string): Promise<void> {
@@ -428,7 +517,8 @@ export class RenderService {
   async renderStills(reqIn: StillsRequest, h: RenderHandlers): Promise<string[]> {
     this.assertOpen();
     const req = StillsRequest.parse(reqIn);
-    const timeline = await readTimelineFile(req.projectDir, req.timelineRel);
+    const snap = await readTimelineSnapshot(req.projectDir, req.timelineRel);
+    const timeline = snap.timeline;
     const N = computeTimeline(timeline).durationInFrames;
     const bad = req.frames.filter((f) => f < 0 || f >= N);
     if (bad.length) throw new DocmakerError("VALIDATION", `still frames outside [0, ${N - 1}]: ${bad.slice(0, 5).join(", ")}`);
@@ -440,14 +530,14 @@ export class RenderService {
       const { gl } = await this.gl("auto", h.signal, false);
       const { serveUrl } = await this.bundleLocked(h.signal);
       const exe = await ensureBrowserExecutable(this.config, { download: false, signal: h.signal });
-      const server = await this.server(req.projectDir, req.timelineRel);
+      const server = await this.server(req.projectDir, snap);
       let browser: HeadlessBrowser | null = null;
       try {
         browser = await this.browser(exe, gl);
         const r = await loadRenderer();
         const common = commonRemotionOptions(exe, gl, this.config);
         const inputProps = {
-          timeline: null, timelineUrl: `${server.url}/${req.timelineRel.replace(/^\/+/, "")}`, assetBaseUrl: server.url, mode: "render",
+          timeline: null, timelineUrl: `${server.url}/${snap.urlPath}`, assetBaseUrl: server.url, mode: "render",
           layers: { ...RENDER_LAYERS }, itemId: null, scratchBanner: false,
         };
         const onBrowserLog = this.logEmitter(emit);
@@ -489,7 +579,8 @@ export class RenderService {
   async renderOverlays(reqIn: OverlayRenderRequest, h: RenderHandlers): Promise<{ itemId: string; file: string }[]> {
     this.assertOpen();
     const req = OverlayRenderRequest.parse(reqIn);
-    const timeline = await readTimelineFile(req.projectDir, req.timelineRel);
+    const snap = await readTimelineSnapshot(req.projectDir, req.timelineRel);
+    const timeline = snap.timeline;
     const byId = new Map(timeline.overlays.map((o) => [o.id, o]));
     const ids = [...new Set(req.itemIds)].filter((id) => {
       if (byId.has(id)) return true;
@@ -502,7 +593,7 @@ export class RenderService {
       const { gl } = await this.gl("auto", h.signal, false);
       const { serveUrl } = await this.bundleLocked(h.signal);
       const exe = await ensureBrowserExecutable(this.config, { download: false, signal: h.signal });
-      const server = await this.server(req.projectDir, req.timelineRel);
+      const server = await this.server(req.projectDir, snap);
       let browser: HeadlessBrowser | null = null;
       try {
         browser = await this.browser(exe, gl);
@@ -513,7 +604,7 @@ export class RenderService {
         for (const [i, itemId] of ids.entries()) {
           if (h.signal.aborted) throw abortError("overlays");
           const inputProps = {
-            timeline: null, timelineUrl: `${server.url}/${req.timelineRel.replace(/^\/+/, "")}`, assetBaseUrl: server.url, mode: "render",
+            timeline: null, timelineUrl: `${server.url}/${snap.urlPath}`, assetBaseUrl: server.url, mode: "render",
             layers: { ...OVERLAY_LAYERS }, itemId, scratchBanner: false,
           };
           const composition = await r.selectComposition({ ...common, serveUrl, id: COMPOSITIONS.item, inputProps, puppeteerInstance: browser, onBrowserLog });
@@ -553,6 +644,12 @@ export class RenderService {
     const req = GeneratedStillsRequest.parse(reqIn);
     const timeline = await readTimelineFile(req.projectDir, req.timelineRel);
     const byId = new Map(timeline.video.map((v) => [v.id, v]));
+    // the key covers everything that changes the PNG: renderer code (GeneratedBackdrop, Remotion), GL backend, style
+    // font bytes, the source and the tokens — stills persist in export/<lang>.generated across exports and upgrades
+    const keyCtx = {
+      codeHash: await computeCodeHash(this.config.repoRoot), gl: (await this.gl("auto", h.signal, false)).gl,
+      fonts: await styleFontsDigest(timeline, req.projectDir, this.config.paths.styles),
+    };
     const jobs: { clipId: string; file: string; source: unknown }[] = [];
     for (const clipId of new Set(req.clipIds)) {
       const v = byId.get(clipId);
@@ -561,7 +658,7 @@ export class RenderService {
         continue;
       }
       // content-addressed: identical sources share one PNG (and survive re-exports)
-      const file = path.join(req.outDir, `gen-${sha12(canonicalJson({ v: 1, source: v.source, tokens: timeline.render }))}.png`);
+      const file = path.join(req.outDir, `gen-${generatedStillKey(v.source, timeline.render, keyCtx)}.png`);
       jobs.push({ clipId, file, source: v.source });
     }
     await mkdir(req.outDir, { recursive: true });

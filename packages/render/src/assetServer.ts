@@ -1,13 +1,19 @@
 // Read-only CORS + Range static server for renders (port of $SP/rtest/render.mjs, hardened): bound to 127.0.0.1:<random>,
 // serves only allowlisted project-relative prefixes plus explicit mounts, ignores the query string (`?v=` cache busters),
 // refuses any `..` segment (403) and answers single byte ranges with 206 + Content-Range (what @remotion/media needs).
+// `memory` entries are exact paths served from bytes held by the caller (the render's content-addressed timeline
+// snapshot: the pages render exactly the bytes the chunk hashes were computed from, whatever happens on disk).
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import http from "node:http";
 import type { AddressInfo, Socket } from "node:net";
 import path from "node:path";
 
-export interface AssetServerOptions { root: string; allow: readonly RegExp[]; mounts?: Record<string, string> }
+export interface AssetServerOptions {
+  root: string; allow: readonly RegExp[]; mounts?: Record<string, string>;
+  /** Exact request paths (no leading slash) answered from these bytes, before mounts and the allowlist. Immutable. */
+  memory?: Record<string, Buffer>;
+}
 export interface AssetServer { url: string; close(): Promise<void> }
 
 const MIME: Record<string, string> = {
@@ -41,7 +47,7 @@ export function parseRange(header: string | undefined, size: number): { start: n
   return { start, end };
 }
 
-type Resolved = { kind: "file"; file: string } | { kind: "error"; status: 400 | 403 | 404 };
+type Resolved = { kind: "file"; file: string } | { kind: "memory"; name: string; body: Buffer } | { kind: "error"; status: 400 | 403 | 404 };
 
 /** Maps a request target to a file, applying the `..` refusal, mounts and the allowlist. Exported for tests. */
 export function resolveRequestPath(target: string, o: AssetServerOptions): Resolved {
@@ -56,6 +62,8 @@ export function resolveRequestPath(target: string, o: AssetServerOptions): Resol
   const segs = decoded.replace(/\\/g, "/").split("/").filter((s) => s !== "" && s !== ".");
   if (segs.some((s) => s === "..")) return { kind: "error", status: 403 };
   if (segs.length === 0) return { kind: "error", status: 404 };
+  const joined = segs.join("/");
+  if (o.memory && Object.hasOwn(o.memory, joined)) return { kind: "memory", name: joined, body: o.memory[joined]! };
   const mount = o.mounts && Object.hasOwn(o.mounts, segs[0]!) ? o.mounts[segs[0]!] : undefined;
   let base: string;
   let rel: string;
@@ -88,22 +96,26 @@ export async function createAssetServer(o: AssetServerOptions): Promise<AssetSer
       const r = resolveRequestPath(req.url ?? "/", o);
       if (r.kind === "error") return void res.writeHead(r.status).end();
       let size: number;
-      try {
-        const st = await stat(r.file);
-        if (!st.isFile()) return void res.writeHead(404).end();
-        size = st.size;
-      } catch {
-        return void res.writeHead(404).end();
+      if (r.kind === "memory") size = r.body.length;
+      else {
+        try {
+          const st = await stat(r.file);
+          if (!st.isFile()) return void res.writeHead(404).end();
+          size = st.size;
+        } catch {
+          return void res.writeHead(404).end();
+        }
       }
       res.setHeader("Accept-Ranges", "bytes");
-      res.setHeader("Content-Type", mimeFor(r.file));
-      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Content-Type", mimeFor(r.kind === "memory" ? r.name : r.file));
+      res.setHeader("Cache-Control", r.kind === "memory" ? "public, max-age=31536000, immutable" : "no-cache");
       const range = parseRange(req.headers.range, size);
       if (range === "unsatisfiable") return void res.writeHead(416, { "Content-Range": `bytes */${size}` }).end();
       const { start, end } = range ?? { start: 0, end: size - 1 };
       const len = size === 0 ? 0 : end - start + 1;
       res.writeHead(range ? 206 : 200, range ? { "Content-Range": `bytes ${start}-${end}/${size}`, "Content-Length": String(len) } : { "Content-Length": String(len) });
       if (req.method === "HEAD" || len === 0) return void res.end();
+      if (r.kind === "memory") return void res.end(r.body.subarray(start, end + 1));
       const stream = createReadStream(r.file, { start, end });
       stream.on("error", () => res.destroy());
       res.on("close", () => stream.destroy());

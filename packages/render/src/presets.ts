@@ -1,7 +1,7 @@
 // Render presets (§12.2) and the options every Remotion call carries.
 import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
-import type { RenderPresetId, RuntimeConfig } from "@docmaker/core";
+import { canonicalJson, sha12, type RenderPresetId, type RuntimeConfig } from "@docmaker/core";
 import { parseEnvFile } from "@docmaker/core/node";
 
 export type GlMode = "swangle" | "angle" | "angle-egl";
@@ -32,8 +32,16 @@ export interface PresetSpec {
  * chunks cached by an older encoder are never concatenated with new ones. v2: limited-range BT.709 (was yuvj420p).
  */
 export const CHUNK_ENCODING_VERSION = 2;
-/** The `preset` string that goes into `sliceHash` (preset id + chunk encoding version). */
-export const chunkHashPreset = (preset: PresetId): string => `${preset}@enc${CHUNK_ENCODING_VERSION}`;
+/**
+ * The `preset` string that goes into `sliceHash`: preset id + chunk encoding version + a digest of the effective render
+ * backend — the GL mode (rasterisation of blur/filters/3D differs between swangle, angle and angle-egl), the exact
+ * encoder options (a GPU host's master switches crf 18 for hardware acceleration + 10M) and the bytes of the style
+ * fonts (served by path, so a font replaced under the same name is invisible to the timeline). Chunks rendered with a
+ * different backend are never concatenated into the same master.
+ */
+export function chunkHashPreset(preset: PresetId, o: { gl: GlMode; encoder: PresetRenderOptions; fonts: string }): string {
+  return `${preset}@enc${CHUNK_ENCODING_VERSION}:${sha12(canonicalJson({ gl: o.gl, encoder: o.encoder, fonts: o.fonts }))}`;
+}
 
 /** Output colour tags of every 8-bit H.264 re-encode (concat fallback, master post): limited-range BT.709. */
 export const BT709_TV_ARGS: readonly string[] = ["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv"];
