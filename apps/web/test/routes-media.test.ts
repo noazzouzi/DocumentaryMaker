@@ -92,3 +92,50 @@ describe("media route", () => {
     expect((await get(["media", "nope.jpg"])).status).toBe(404);
   });
 });
+
+describe("user-style fonts (styles/<dir>/fonts/*, mapped to <home>/styles)", () => {
+  let styles = "";
+  const font = new Uint8Array(64).fill(7);
+  beforeAll(async () => {
+    styles = path.join(await tempProjects(), "styles");
+    await mkdir(path.join(styles, "My Style", "fonts", "sub"), { recursive: true });
+    await writeFile(path.join(styles, "My Style", "fonts", "Display-Bold.woff2"), font);
+    await writeFile(path.join(styles, "My Style", "fonts", "sub", "Body.ttf"), font);
+    await writeFile(path.join(styles, "My Style", "style.json"), "{}");
+    await writeFile(path.join(styles, "My Style", "fonts", "notes.txt"), "x");
+    await writeFile(path.join(dir, "outside.woff2"), font);
+    await symlink(path.join(dir, "outside.woff2"), path.join(styles, "My Style", "fonts", "escape.woff2"));
+  });
+  const getFont = (p: string[]) => {
+    fakeEngine({ config: { ...fakeConfig(dir), paths: { styles } } as never });
+    return mediaRoute.GET(req(`/api/projects/my-film/media/${p.map(encodeURIComponent).join("/")}`), params({ slug: "my-film", path: p }));
+  };
+
+  it("serves a style's font files with a font MIME type", async () => {
+    const r = await getFont(["styles", "My Style", "fonts", "Display-Bold.woff2"]);
+    expect(r.status).toBe(200);
+    expect(r.headers.get("content-type")).toBe("font/woff2");
+    expect(new Uint8Array(await r.arrayBuffer())).toEqual(font);
+    const nested = await getFont(["styles", "My Style", "fonts", "sub", "Body.ttf"]);
+    expect(nested.status).toBe(200);
+    expect(nested.headers.get("content-type")).toBe("font/ttf");
+  });
+
+  it("only font files under fonts/, never outside <home>/styles", async () => {
+    for (const p of [
+      ["styles", "My Style", "style.json"],
+      ["styles", "My Style", "fonts", "notes.txt"],
+      ["styles", "My Style", "Display-Bold.woff2"],
+      ["styles", "..", "outside.woff2"],
+      ["styles", "My Style", "fonts", "..", "..", "..", "outside.woff2"],
+      ["styles", "My Style", "fonts", "escape.woff2"], // symlink out of <home>/styles
+    ]) {
+      expect((await getFont(p)).status, p.join("/")).toBe(403);
+    }
+    expect((await getFont(["styles", "My Style", "fonts", "Missing.woff2"])).status).toBe(404);
+  });
+
+  it("without a styles dir in the config the prefix stays forbidden", async () => {
+    expect((await get(["styles", "My Style", "fonts", "Display-Bold.woff2"])).status).toBe(403);
+  });
+});

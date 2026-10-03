@@ -19,6 +19,7 @@ const MIME: Record<string, string> = {
   otio: "application/json; charset=utf-8", edl: "text/plain; charset=utf-8", cube: "text/plain; charset=utf-8",
   html: "text/plain; charset=utf-8", // never served as active HTML from project folders
   zip: "application/zip",
+  woff2: "font/woff2", woff: "font/woff", ttf: "font/ttf", otf: "font/otf",
 };
 export const mimeOf = (file: string): string => MIME[path.extname(file).slice(1).toLowerCase()] ?? "application/octet-stream";
 
@@ -48,13 +49,30 @@ export function parseRange(header: string | null, size: number): RangeResult {
   return { kind: "partial", start, end: Math.min(end, size - 1) };
 }
 
-/** Resolves an allowlisted media path inside the project dir; 403 on traversal/symlink escape, 404 when missing. */
-export async function resolveMediaPath(projectDir: string, segments: readonly string[]): Promise<{ abs: string; rel: string; size: number; mtimeMs: number }> {
+export const STYLE_FONT_EXT: ReadonlySet<string> = new Set(["woff2", "woff", "ttf", "otf"]);
+
+/**
+ * Resolves an allowlisted media path inside the project dir; 403 on traversal/symlink escape, 404 when missing.
+ * `styles/<dir>/fonts/<file>` (what styleFontAssets() puts in timeline.render.fonts, mounted by the render asset server)
+ * maps to <home>/styles (`stylesDir`) instead, font files only, so the Player preview loads a user style's own fonts.
+ */
+export async function resolveMediaPath(projectDir: string, segments: readonly string[], stylesDir?: string): Promise<{ abs: string; rel: string; size: number; mtimeMs: number }> {
   const rel = safeRel(segments);
   const top = rel.split("/")[0]!;
+  if (top === "styles") {
+    const parts = rel.split("/");
+    const ext = path.extname(rel).slice(1).toLowerCase();
+    if (!stylesDir || parts.length < 4 || parts[2] !== "fonts" || !STYLE_FONT_EXT.has(ext)) throw new HttpError(403, "FORBIDDEN", "path not allowed");
+    return resolveInside(stylesDir, parts.slice(1).join("/"), rel);
+  }
   if (!MEDIA_ROOTS.has(top)) throw new HttpError(403, "FORBIDDEN", "path not allowed");
-  const root = path.resolve(projectDir);
-  const abs = path.resolve(root, rel);
+  return resolveInside(projectDir, rel, rel);
+}
+
+/** `relInRoot` inside `rootDir` (lexically and after realpath); 403 on escape, 404 when missing or not a file. */
+async function resolveInside(rootDir: string, relInRoot: string, rel: string): Promise<{ abs: string; rel: string; size: number; mtimeMs: number }> {
+  const root = path.resolve(rootDir);
+  const abs = path.resolve(root, relInRoot);
   if (!abs.startsWith(root + path.sep)) throw new HttpError(403, "FORBIDDEN", "path not allowed");
   let real: string;
   let realRoot: string;
