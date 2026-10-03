@@ -1,7 +1,7 @@
 // qa[lang, preset] (App. D, §16.4): ffprobe, ebur128, blackdetect (pix_th=0.03, pic_th=0.99) + freezedetect in one decode,
 // contact sheets via renderClient.renderStills, audio.densityReport, director stats → qa/<lang>/<preset>/report.json.
 import path from "node:path";
-import { P, QaReport, Timeline, type QaCheck, type RenderPresetId } from "@docmaker/core";
+import { P, QaReport, Timeline, docHash, type Lang, type QaCheck, type RenderPresetId } from "@docmaker/core";
 import { ffprobeJson, measureEbur128, run } from "@docmaker/core/node";
 import type { StageCtx, StageDef } from "../types";
 import { docs, need } from "../docs";
@@ -81,6 +81,16 @@ async function detectRuns(ctx: StageCtx, file: string): Promise<{ black: Run[]; 
   return { black: parseBlackdetect(r.stderr), freeze: parseFreezedetect(r.stderr) };
 }
 
+/**
+ * The render document without its run bookkeeping (renderMs, per-chunk ms and cached flags): a re-render that reuses
+ * every chunk (same frames, same final.mp4) does not stale the QA report.
+ */
+async function renderContentHash(ctx: Pick<StageCtx, "store">, lang: Lang, preset: RenderPresetId): Promise<string | null> {
+  const doc = await docs.renderDoc(ctx.store, lang, preset).catch(() => null);
+  if (!doc) return null;
+  return docHash({ ...doc, renderMs: 0, chunks: doc.chunks.map((c) => ({ ...c, cached: false, ms: 0 })) });
+}
+
 export const qaStage: StageDef = {
   id: "qa",
   perLang: true,
@@ -90,7 +100,7 @@ export const qaStage: StageDef = {
     const lang = needLang(ctx);
     const preset = presetOf(ctx);
     return {
-      render: await ctx.store.docHashOf(P.renderDoc(lang, preset)), final: await ctx.store.etag(P.renderFinal(lang, preset)),
+      render: await renderContentHash(ctx, lang, preset), final: await ctx.store.etag(P.renderFinal(lang, preset)),
       timeline: await ctx.store.docHashOf(P.timeline(lang)), lint: await ctx.store.docHashOf(P.timelineLint(lang)), audio: ctx.project.audio,
     };
   },
