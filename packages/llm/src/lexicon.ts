@@ -13,12 +13,13 @@ const APOS = "['’]";
 export const ACCUSATORY: Readonly<Record<Lang, RegExp>> = {
   en: wordRegex(
     "rap(?:e|ed|ist|ists)|abus(?:e|ed|er|ers|ive)|assault(?:ed|s)?|molest\\w*|pedophil\\w*|paedophil\\w*|fraud(?:ster|sters|ulent)?|scam(?:med|mer|mers)?" +
-      "|stole|steals?|thie(?:f|ves)|criminals?|murder(?:ed|er|ers|s)?|embezzl\\w*|beat (?:her|him|them)|swindl\\w*|extort\\w*|groom(?:ed|er|ing)",
+      "|stole|steals?|thie(?:f|ves)|criminals?|murder(?:ed|er|ers|s)?|embezzl\\w*|beat (?:her|him|them)|beat (?:his|her|their) \\w+|swindl\\w*|extort\\w*|groom(?:ed|er|ing)" +
+      "|defraud\\w*|harass\\w*|kill(?:ed|er|ers|ing)?|launder\\w*|brib\\w*|corrupt\\w*|li(?:ed|ar|ars)|cheat(?:ed|er|ers|ing|s)?",
   ),
   fr: wordRegex(
     "viol(?:é|ée|és|ées|eur|eurs|er|ait)?|abus(?:é|ée|eur|eurs)|agress(?:é|ée|eur|eurs|ion|ions|ait)|p[ée]dophile\\w*|fraud(?:e|es|eur|eurs|uleux|uleuse)" +
       "|escro(?:c|cs|querie|queries)|a vol[ée]|voleur|voleurs|criminel(?:le|s|les)?|meurtr(?:e|ier|iers|ière)|d[ée]tourn(?:é|ée|ement|ements)" +
-      "|battu(?:e|s|es)?|frapp(?:é|ée|ait)|extorqu\\w*",
+      "|battu(?:e|s|es)?|frapp(?:é|ée|ait)|extorqu\\w*|harc[eè]l\\p{L}*|tu[ée]e?s?|corromp\\p{L}*|blanchi\\p{L}*|menteu(?:r|rs|se|ses)",
   ),
 };
 

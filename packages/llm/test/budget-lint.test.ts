@@ -69,6 +69,17 @@ describe("lintScript", () => {
     const en = lint([chapter("CH1", [seg("CH1-S01", "He stole the money. Prosecutors allege he stole the money.")])]);
     expect(en.filter((x) => x.rule === "accusatory-unattributed")).toHaveLength(1);
   });
+  it("broader accusatory vocabulary (EN and FR) needs attribution too", () => {
+    const flagged = (lang: "en" | "fr", text: string) => lint([chapter("CH1", [seg("CH1-S01", text)])], { lang }).some((x) => x.rule === "accusatory-unattributed");
+    for (const s of ["In 2016, he beat his wife.", "He defrauded investors.", "She harassed her staff.", "He laundered the proceeds.", "He bribed officials.", "The mayor was corrupt.", "He lied to investors and cheated."]) {
+      expect(flagged("en", s), s).toBe(true);
+    }
+    expect(flagged("en", "Prosecutors allege he defrauded investors.")).toBe(false);
+    for (const s of ["Il a harcelé ses employés.", "Il l'a tuée en 2016.", "Le maire est corrompu.", "Il a blanchi l'argent.", "C'est un menteur."]) {
+      expect(flagged("fr", s), s).toBe(true);
+    }
+    expect(flagged("fr", "Selon l'accusation, il aurait blanchi l'argent.")).toBe(false);
+  });
   it("number-without-fact, banned opener (first 60 s only), banned phrase, and-then chain", () => {
     const xs = lint([chapter("CH1", [
       seg("CH1-S01", "In this video, the price hit 5,500 guilders.", { factIds: [] }),
