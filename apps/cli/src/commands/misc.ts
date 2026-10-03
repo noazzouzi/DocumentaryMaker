@@ -18,8 +18,24 @@ export function registerMisc(program: Command, ctx: CliContext): void {
     .action(async (slug: string, o: Opts) => {
       const engine = await ctx.engine();
       if (typeof o.cancel === "string") {
-        await engine.cancel(o.cancel);
-        ctx.io.out(`canceled ${o.cancel}\n`);
+        const id = o.cancel;
+        let before = await engine.getJob(id);
+        if (!before) throw new UsageError(`job ${id} not found`);
+        if (before.coalescedInto) before = (await engine.getJob(before.coalescedInto)) ?? before;
+        if (before.request.slug !== slug) throw new UsageError(`job ${id} belongs to project ${before.request.slug}, not ${slug}`);
+        if (["succeeded", "failed", "canceled", "waiting-approval"].includes(before.status)) {
+          ctx.io.err(`job ${id} already ended (${before.status}): nothing to cancel\n`);
+          process.exitCode = EXIT.error;
+          return;
+        }
+        // a job of another process (CLI, web worker) is asked to stop through a cancel request it polls
+        await engine.cancel(id);
+        const after = await engine.getJob(before.id);
+        if (after?.status === "canceled") ctx.io.out(`canceled ${id}\n`);
+        else {
+          ctx.io.err(`job ${id} ended as ${after?.status ?? "unknown"} before the cancel request took effect\n`);
+          process.exitCode = EXIT.error;
+        }
         return;
       }
       const jobs = await engine.listJobs(slug);

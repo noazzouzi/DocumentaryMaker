@@ -130,11 +130,22 @@ export class WorkerHost {
     this.slugs.add(r.slug);
     return (await this.call("submit", r)) as { jobId: string; coalesced: boolean };
   }
+  /** Projects whose jobs this host reconciles when the worker exits (a resumed or canceled job counts as well). */
+  private async track(jobId: string): Promise<void> {
+    const rec = await this.o.jobs.getJob(jobId).catch(() => null);
+    if (rec) this.slugs.add(rec.request.slug);
+  }
   async resume(jobId: string): Promise<{ jobId: string }> {
+    await this.track(jobId);
     return (await this.call("resume", { jobId })) as { jobId: string };
   }
   async cancel(jobId: string): Promise<void> {
+    await this.track(jobId);
     await this.call("cancel", { jobId });
+  }
+  /** For tests: the projects reconciled on a worker exit. */
+  trackedSlugs(): string[] {
+    return [...this.slugs].sort();
   }
   async ping(): Promise<{ pid: number }> {
     return (await this.call("ping", {})) as { pid: number };

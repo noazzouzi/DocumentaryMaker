@@ -15,6 +15,7 @@ import { ProjectCosts } from "./costs";
 import { NEEDS_TAKE, pipelineEstimate, pipelineSummary, planInvocations } from "./pipeline";
 import { costKey, readProject, runStage, type JobHandle, type StageInvocation } from "./runner";
 import { docs } from "./docs";
+import { readState, updateStageState } from "./state";
 import { JOB_ID_RE, errorInfo, newJobId, nowIso, pidAlive, sleep } from "./util";
 
 const INDEX_KEEP = 200;
@@ -24,6 +25,10 @@ export const isTerminal = (s: JobStatus): boolean => TERMINAL.includes(s);
 const LIVE_ENGINES = new Set<string>();
 const NEVER = new AbortController().signal;
 const ownerRel = (jobId: string) => `jobs/${jobId}.owner.json`;
+/** Cross-process cancel request: written by `cancel` in another process, polled by the process that owns the job. */
+export const cancelRel = (jobId: string) => `jobs/${jobId}.cancel`;
+const CANCEL_POLL_MS = 500;
+const CANCEL_WAIT_MS = 60_000;
 
 /** Canonical identity of a request for coalescing (§5.6). */
 export function requestKey(r: JobRequest): string {
@@ -73,7 +78,12 @@ interface LiveJob {
   done: Promise<JobRecord>;
   resolveDone(r: JobRecord): void;
   coalesced: string[]; // ids of records coalesced into this one
+  /** Invocation keys (stage|lang) that a forced request already completed earlier in its resume chain: not re-forced. */
+  unforce: ReadonlySet<string>;
 }
+
+/** stage|lang key of a stage-done event or an invocation (one preset per job, so the variant is implied). */
+const doneKey = (stage: string, lang: string | null) => `${stage}|${lang ?? "-"}`;
 
 export interface JobManagerOptions { engineId?: string; renderClient: RenderClient | null }
 
@@ -307,9 +317,18 @@ export class JobManager {
     if (dead.length === 0) return [];
     const deadIds = new Set(dead.map((j) => j.id));
     const at = nowIso();
+    const interrupted = new Set<string>(); // stage|lang keys a dead job had started and not finished
     for (const j of dead) {
       if (j.coalescedInto) continue;
       const lines = await readFile(store.abs(P.jobEvents(j.id)), "utf8").catch(() => "");
+      for (const line of lines.split("\n")) {
+        if (!line.trim()) continue;
+        try {
+          const ev = JobEvent.parse(JSON.parse(line));
+          if (ev.type === "stage-start") interrupted.add(doneKey(ev.stage, ev.lang));
+          else if (ev.type === "stage-done" || ev.type === "stage-skip") interrupted.delete(doneKey(ev.stage, ev.lang));
+        } catch { /* torn line */ }
+      }
       let seq = lines.split("\n").filter((l) => l.trim()).length;
       const message = "the process running this job exited before it finished";
       await store.appendNdjson(P.jobEvents(j.id), JobEvent.parse({ jobId: j.id, seq: seq++, at, type: "error", stage: null, code: "INTERRUPTED", message, retryable: true, hint: "resume the job" }));
@@ -319,6 +338,15 @@ export class JobManager {
     await this.mutateIndex(store, (jobs) => jobs.map((j) => (deadIds.has(j.id) || (j.coalescedInto && deadIds.has(j.coalescedInto) && !isTerminal(j.status))
       ? { ...j, status: "failed" as const, endedAt: at, error: { code: "INTERRUPTED" as const, message: "the process running this job exited before it finished" } }
       : j)));
+    // stage states the dead jobs left "running" (runStage never reached its own bookkeeping) become failed INTERRUPTED
+    if (interrupted.size) {
+      for (const st of (await readState(store)).stages) {
+        if (st.status !== "running" || !interrupted.has(doneKey(st.stage, st.lang))) continue;
+        await updateStageState(store, { stage: st.stage, lang: st.lang, variant: st.variant }, st.stageVersion, {
+          status: "failed", finishedAt: at, error: "INTERRUPTED: the process running this stage exited before it finished",
+        }).catch(() => undefined);
+      }
+    }
     // a lock left by an interrupted job of this same process (dead engine) is not taken over by ProjectStore (pid alive)
     try {
       const body = JSON.parse(await readFile(store.abs(P.lock), "utf8")) as { pid?: number; jobId?: string };
@@ -341,7 +369,7 @@ export class JobManager {
   }
 
   // ------------------------------------------------------------ submit / resume / cancel
-  async submit(reqIn: JobRequest, o: { resumeOf?: string | null } = {}): Promise<{ jobId: string; coalesced: boolean }> {
+  async submit(reqIn: JobRequest, o: { resumeOf?: string | null; unforce?: readonly string[] } = {}): Promise<{ jobId: string; coalesced: boolean }> {
     if (this.closed) throw new DocmakerError("INTERNAL", "the engine is closed");
     const req = JobRequest.parse(reqIn);
     if (req.kind === "setup") throw new DocmakerError("VALIDATION", "setup jobs are run by the CLI, not the pipeline runner");
@@ -350,7 +378,9 @@ export class JobManager {
     // validate the plan now so a bad request fails at submit time
     planInvocations(await readProject(store), req);
     const key = requestKey(req);
-    const target = [...this.live.values()].find((l) => l.record.status === "queued" && l.record.request.slug === req.slug && requestKey(l.record.request) === key);
+    const unforce = new Set(req.force ? o.unforce ?? [] : []);
+    const sameUnforce = (x: ReadonlySet<string>) => x.size === unforce.size && [...x].every((k) => unforce.has(k));
+    const target = [...this.live.values()].find((l) => l.record.status === "queued" && l.record.request.slug === req.slug && requestKey(l.record.request) === key && sameUnforce(l.unforce));
     const id = newJobId();
     const record: JobRecord = { id, request: req, status: "queued", createdAt: nowIso(), startedAt: null, endedAt: null, error: null, coalescedInto: target?.record.id ?? null, resumeOf: o.resumeOf ?? null };
     this.slugOf.set(id, req.slug);
@@ -361,7 +391,7 @@ export class JobManager {
     }
     let resolveDone!: (r: JobRecord) => void;
     const done = new Promise<JobRecord>((r) => (resolveDone = r));
-    const job: LiveJob = { record, store, controller: new AbortController(), seq: 0, chain: Promise.resolve(), listeners: new Set(), done, resolveDone, coalesced: [] };
+    const job: LiveJob = { record, store, controller: new AbortController(), seq: 0, chain: Promise.resolve(), listeners: new Set(), done, resolveDone, coalesced: [], unforce };
     this.live.set(id, job);
     await mkdir(store.abs("jobs"), { recursive: true });
     await writeFile(store.abs(ownerRel(id)), JSON.stringify({ pid: process.pid, engineId: this.engineId, at: record.createdAt }));
@@ -376,10 +406,39 @@ export class JobManager {
     if (rec.coalescedInto) return this.resume(rec.coalescedInto);
     if (!isTerminal(rec.status)) throw new DocmakerError("VALIDATION", `job ${jobId} is ${rec.status}`, { hint: "wait for it to end (or cancel it)" });
     if (rec.status === "succeeded") throw new DocmakerError("VALIDATION", `job ${jobId} already succeeded`);
-    const r = await this.submit(rec.request, { resumeOf: jobId });
+    // --force applies once per invocation across a resume chain: stages a forced job already completed are not forced
+    // again (re-forcing the outline would discard the approved outline and block outline-approval forever)
+    const unforce = rec.request.force ? await this.completedInChain(rec) : [];
+    const r = await this.submit(rec.request, { resumeOf: jobId, unforce });
     return { jobId: r.jobId };
   }
 
+  /** stage|lang keys with a stage-done event in this job or any job it resumes (transitively). */
+  private async completedInChain(rec: JobRecord): Promise<string[]> {
+    const store = await ProjectStore.open(this.rt.config.projectsDir, rec.request.slug);
+    const out = new Set<string>();
+    const seen = new Set<string>();
+    let cur: JobRecord | null = rec;
+    while (cur && !seen.has(cur.id)) {
+      seen.add(cur.id);
+      const text = await readFile(store.abs(P.jobEvents(cur.id)), "utf8").catch(() => "");
+      for (const line of text.split("\n")) {
+        if (!line.trim()) continue;
+        try {
+          const ev = JobEvent.parse(JSON.parse(line));
+          if (ev.type === "stage-done") out.add(doneKey(ev.stage, ev.lang));
+        } catch { /* torn line */ }
+      }
+      cur = cur.resumeOf ? await this.readIndexRecord(store, cur.resumeOf) : null;
+    }
+    return [...out].sort();
+  }
+
+  /**
+   * Cancels a job. A job of another process (another CLI, the web job worker) is asked to stop through jobs/<id>.cancel,
+   * which its owner polls; this waits until it ends. A job whose owner is gone is reconciled (failed INTERRUPTED).
+   * A job that already ended is left as it is (callers report its status).
+   */
   async cancel(jobId: string): Promise<void> {
     const live = this.live.get(jobId);
     if (live) {
@@ -390,9 +449,33 @@ export class JobManager {
     const rec = await this.getJob(jobId);
     if (!rec) throw new DocmakerError("UPSTREAM_MISSING", `job ${jobId} not found`);
     if (rec.coalescedInto) return this.cancel(rec.coalescedInto);
-    if (!isTerminal(rec.status)) {
-      throw new DocmakerError("LOCKED", `job ${jobId} runs in another process`, { hint: "cancel it from the process that runs it (web: the job worker)" });
+    if (isTerminal(rec.status)) return;
+    const slug = rec.request.slug;
+    await this.reconcile(slug);
+    const store = await ProjectStore.open(this.rt.config.projectsDir, slug);
+    if (isTerminal((await this.readIndexRecord(store, jobId))?.status ?? "failed")) return;
+    await mkdir(store.abs("jobs"), { recursive: true });
+    await writeFile(store.abs(cancelRel(jobId)), JSON.stringify({ pid: process.pid, at: nowIso() }));
+    const deadline = Date.now() + CANCEL_WAIT_MS;
+    for (;;) {
+      await sleep(250);
+      const r = await this.readIndexRecord(store, jobId);
+      if (!r || isTerminal(r.status)) return;
+      if (Date.now() > deadline) {
+        throw new DocmakerError("LOCKED", `job ${jobId} did not stop within ${CANCEL_WAIT_MS / 1000} s`, { hint: "the cancel request stays pending: the process running the job stops at its next checkpoint" });
+      }
+      if ((await this.reconcile(slug)).includes(jobId)) return;
     }
+  }
+
+  /** Polls jobs/<id>.cancel for a live job (cancel requests from other processes). */
+  private watchCancel(job: LiveJob): () => void {
+    const file = job.store.abs(cancelRel(job.record.id));
+    const t = setInterval(() => {
+      if (!job.controller.signal.aborted && existsSync(file)) job.controller.abort();
+    }, CANCEL_POLL_MS);
+    t.unref?.();
+    return () => clearInterval(t);
   }
 
   // ------------------------------------------------------------ execution
@@ -400,6 +483,7 @@ export class JobManager {
     const { store } = job;
     const signal = job.controller.signal;
     const emit = (e: JobEventInput) => this.emitFor(job, e);
+    const stopWatch = this.watchCancel(job);
     let releaseSlot: (() => void) | null = null;
     let releaseFile: (() => Promise<void>) | null = null;
     const ensureLock = async () => {
@@ -472,7 +556,9 @@ export class JobManager {
     }).catch((e: unknown) => this.rt.logger.error("cannot update jobs/index.json", { err: String(e) }));
     emit({ type: "job-end", status });
     await job.chain;
+    stopWatch();
     await rm(store.abs(ownerRel(job.record.id)), { force: true }).catch(() => undefined);
+    await rm(store.abs(cancelRel(job.record.id)), { force: true }).catch(() => undefined);
     this.live.delete(job.record.id);
     for (const l of job.listeners) l();
     job.resolveDone(structuredClone(ended));
@@ -483,7 +569,7 @@ export class JobManager {
     const req = job.record.request;
     const signal = job.controller.signal;
     const project = await readProject(store);
-    const plan = planInvocations(project, req);
+    const plan = planInvocations(project, req).map((inv) => (inv.force && job.unforce.has(doneKey(inv.stage, inv.lang)) ? { ...inv, force: false } : inv));
     const costs = await ProjectCosts.open(store, project, job.record.id, emit);
     const handle: JobHandle = { jobId: job.record.id, signal, emit, costs, releaseProjectLock: releaseLock, pipelineApproved: null };
 
