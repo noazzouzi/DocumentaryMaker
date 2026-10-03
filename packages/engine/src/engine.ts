@@ -23,7 +23,7 @@ import { pipelineEstimate, planInvocations, stageRange } from "./pipeline";
 import { emptyStageState, findStage, readState } from "./state";
 import { createProjectIn, listProjectsIn, updateProjectIn } from "./project";
 import { writeUserDoc } from "./editing";
-import { runDoctor } from "./doctor";
+import { FASTER_WHISPER_MODEL, runDoctor } from "./doctor";
 import { createDemoProject, demoOutputs } from "./demo";
 import { researchResumeInfo, type ResearchResumeInfo } from "./stages/research";
 import { WorkerHost } from "./worker";
@@ -768,7 +768,9 @@ class EngineImpl implements Engine {
       case "whisper": {
         if (arg === "whisper-cpp") return this.rt.deps.voice.installWhisperCppRuntime(config, o.signal);
         if (arg && arg !== "faster-whisper") throw new DocmakerError("VALIDATION", "--whisper must be faster-whisper or whisper-cpp");
-        return `${await this.setupPython(o.signal)} (faster-whisper downloads its model on first use into ${path.join(config.paths.models, "whisper")})`;
+        const venv = await this.setupPython(o.signal);
+        const dir = await this.rt.deps.voice.ensureFasterWhisperModel(config, o.signal, { model: FASTER_WHISPER_MODEL, onProgress: progress });
+        return `${venv}; faster-whisper ${FASTER_WHISPER_MODEL} in ${dir}`;
       }
       case "clip":
         throw new DocmakerError("TOOL_MISSING", "the CLIP runtime is a later milestone (M3)", { hint: "vision rerank works without it" });

@@ -80,6 +80,9 @@ export function hyperframesResidue(home: string): string[] {
   return out;
 }
 
+/** The faster-whisper model `setup --whisper faster-whisper` downloads (voice: ensureFasterWhisperModel default). */
+export const FASTER_WHISPER_MODEL = "large-v3-turbo";
+
 export async function runDoctor(rt: Runtime, o: { probeNetwork?: boolean; signal?: AbortSignal } = {}): Promise<DoctorReport> {
   const signal = o.signal ?? new AbortController().signal;
   const config: RuntimeConfig = rt.config;
@@ -154,10 +157,15 @@ export async function runDoctor(rt: Runtime, o: { probeNetwork?: boolean; signal
       return null;
     }
   };
-  for (const m of ["kokoro", "piper", "whisper"]) {
+  for (const m of ["kokoro", "piper"]) {
     const v = sub(m);
-    add({ id: `model:${m}`, ok: v !== null, level: "info", value: v ?? "not installed (optional)", hint: v ? null : m === "whisper" ? "docmaker setup --whisper faster-whisper" : `docmaker setup --tts ${m === "kokoro" ? "kokoro" : "piper:<voice>"}` });
+    add({ id: `model:${m}`, ok: v !== null, level: "info", value: v ?? "not installed (optional)", hint: v ? null : `docmaker setup --tts ${m === "kokoro" ? "kokoro" : "piper:<voice>"}` });
   }
+  // ASR QA / recording import: the faster-whisper model (sidecar) or whisper.cpp (synthesis never downloads either)
+  const fw = rt.deps.voice.fasterWhisperModelPresent(path.join(config.paths.models, "whisper", "fw"), FASTER_WHISPER_MODEL);
+  const other = (sub("whisper") ?? "").split(", ").filter((x) => x && x !== "fw");
+  const whisper = [fw ? `faster-whisper ${FASTER_WHISPER_MODEL}` : null, ...other].filter(Boolean).join(", ");
+  add({ id: "model:whisper", ok: whisper !== "", level: "info", value: whisper || "not installed (optional: ASR QA, recording import)", hint: whisper ? null : "docmaker setup --whisper faster-whisper" });
   const clip = existsSync(config.paths.ml) && readdirSync(config.paths.ml).length > 0;
   add({ id: "clip", ok: clip, level: "info", value: clip ? "installed" : "not installed (optional, M3)", hint: null });
 

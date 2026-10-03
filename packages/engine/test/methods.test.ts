@@ -1,6 +1,6 @@
 // Remaining Engine methods: project CRUD (LOCKED_AFTER_START, style confirmation), impact, history/revert, styles,
 // secrets (0600, refresh), testKey offline, home config, upload declarations, listProjects/active job.
-import { readFileSync, statSync } from "node:fs";
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Outline, P } from "@docmaker/core";
@@ -119,7 +119,13 @@ describe("engine methods", () => {
 
   it("doctor reports and estimate returns zero for the fixture", async () => {
     const rep = await e.doctor();
-    expect(rep.checks.map((c) => c.id)).toEqual(expect.arrayContaining(["node", "ffmpeg", "ffmpeg-features", "chrome", "disk:home"]));
+    expect(rep.checks.map((c) => c.id)).toEqual(expect.arrayContaining(["node", "ffmpeg", "ffmpeg-features", "chrome", "disk:home", "model:whisper"]));
+    expect(rep.checks.find((c) => c.id === "model:whisper")).toMatchObject({ ok: false, hint: "docmaker setup --whisper faster-whisper" });
+    // a converted faster-whisper model on disk is reported (the ASR QA uses it; synthesis never downloads it)
+    const fw = path.join(e.config.paths.models, "whisper", "fw", "large-v3-turbo");
+    mkdirSync(fw, { recursive: true });
+    writeFileSync(path.join(fw, "model.bin"), "");
+    expect((await e.doctor()).checks.find((c) => c.id === "model:whisper")).toMatchObject({ ok: true, value: "faster-whisper large-v3-turbo" });
     const est = await e.estimate(slug, "script", "en");
     expect(est?.totalUsd).toBe(0); // fixture LLM: nothing to pay
     await expect(e.estimate(slug, "script", null)).rejects.toMatchObject({ code: "VALIDATION" });
