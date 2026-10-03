@@ -4,7 +4,7 @@ import {
 } from "@docmaker/core";
 import { carryOverResolutions, deterministicFactChecks, factCheckId } from "../factcheck/rules";
 import { splitSentences } from "../lexicon";
-import { EDITORIAL_RULES } from "../prompts/rules";
+import { EDITORIAL_RULES, SAFE_MESSAGING_AUDIT, editorialRules } from "../prompts/rules";
 import { FACTCHECK_EXTRA, FACTCHECK_USER, RECHECK_STRUCT_USER, RECHECK_USER } from "../prompts/steps";
 import { json } from "../prompts/system";
 import { motionStrings } from "../text";
@@ -22,7 +22,7 @@ export async function factCheck(ctx: StepCtx, i: {
 }): Promise<FactCheck> {
   const lang = i.script.lang;
   const system = [
-    { text: `You are the fact-checker and the defamation lawyer of a documentary YouTube channel (${lang}).\n${EDITORIAL_RULES(lang, i.factSheet.asOf)}`, cache: false },
+    { text: `You are the fact-checker and the defamation lawyer of a documentary YouTube channel (${lang}).\n${editorialRules(lang, i.factSheet.asOf, i.riskFlags)}`, cache: false },
     { text: `<fact_sheet>${json(factSheetToWire(i.factSheet))}</fact_sheet>`, cache: true },
   ];
   const textOf = new Map(i.slices.texts.filter((t) => t.lang === lang).map((t) => [t.beatId, t]));
@@ -48,7 +48,8 @@ export async function factCheck(ctx: StepCtx, i: {
     const wire = await call(ctx, {
       step: "factcheck", key: `${lang}.${ch.chapterId}`, schema: FactCheckWire, effort: "high", maxTokens: 16000, lang, system,
       user: FACTCHECK_USER(json(chapterToWire(ch)), publish.title, publish.thumbnailText)
-        + FACTCHECK_EXTRA({ narrationJson: json(narration), onScreenJson: json(onScreen), publishJson: json(publish) }),
+        + FACTCHECK_EXTRA({ narrationJson: json(narration), onScreenJson: json(onScreen), publishJson: json(publish) })
+        + (i.riskFlags.includes("suicide_self_harm") ? SAFE_MESSAGING_AUDIT : ""),
     });
     const validWhere = (w: string): string | null => {
       const t = w.trim();

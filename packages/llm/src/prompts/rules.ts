@@ -1,5 +1,5 @@
 // Shared editorial rules (accuracy / defamation), ported verbatim from $SP/script-pipeline/prompts.ts, + safe messaging.
-import type { Lang } from "@docmaker/core";
+import type { Lang, RiskFlag } from "@docmaker/core";
 
 export const L = (lang: Lang, en: string, fr: string): string => (lang === "fr" ? fr : en);
 
@@ -37,3 +37,13 @@ comme une solution, une issue inévitable ou la conséquence d'une cause unique 
 « a réussi », « s'est donné la mort » répété). Préférer « s'est suicidé » sobrement, ou « est mort par suicide ». Mettre l'accent sur la vie de
 la personne, l'aide et les signes d'alerte. La vidéo se termine par une carte d'aide (numéro d'écoute).`)}
 </safe_messaging>`;
+
+/** EDITORIAL_RULES + the safe-messaging addendum when the project carries suicide_self_harm (§6.3/§14). */
+export const editorialRules = (lang: Lang, asOf: string, riskFlags: readonly RiskFlag[] = []): string =>
+  EDITORIAL_RULES(lang, asOf) + (riskFlags.includes("suicide_self_harm") ? `\n${SAFE_MESSAGING(lang)}` : "");
+
+/** Fact-check addendum: audit narration and on-screen text against the safe-messaging rules. */
+export const SAFE_MESSAGING_AUDIT = `
+Also audit every narration sentence, on-screen text, stamp and translated subtitle against <safe_messaging>: any method, means,
+location or step-by-step detail of suicide or self-harm, or wording that presents suicide as a solution, is an item
+(risk "high", problem starting with "safe messaging:") with a rewrite that removes it.`;

@@ -17,7 +17,7 @@ import { JobManager, isTerminal } from "./jobs";
 import { ProjectCosts, readReceipts } from "./costs";
 import { docs } from "./docs";
 import { STAGE_LIST, stageDef } from "./stages";
-import { buildCtx, fixtureAutoApproves, fixtureOf, inputsHashOf, persistApproval, readProject, updateProjectDoc, type StageInvocation } from "./runner";
+import { buildCtx, fixtureAutoApproves, fixtureOf, inputsHashOf, persistApproval, readProject, riskFlagsOf, updateProjectDoc, type StageInvocation } from "./runner";
 import { pendingClaims } from "./gates";
 import { pipelineEstimate, planInvocations, stageRange } from "./pipeline";
 import { emptyStageState, findStage, readState } from "./state";
@@ -568,7 +568,7 @@ class EngineImpl implements Engine {
     costs.setApproved("script", lang, est.totalUsd); // overrun rule (§5.4) against this estimate
     const r = await this.rt.deps.llm.transcreateSegment(
       { llm: this.rt.llmFor(project), signal: new AbortController().signal, costs, logger: this.rt.logger, progress: () => {}, newRequest: false },
-      { primary: pSeg, current: cSeg, lang, style, factSheet: facts },
+      { primary: pSeg, current: cSeg, lang, style, factSheet: facts, riskFlags: await riskFlagsOf(this.rt, store, project) },
     );
     const next = structuredClone(cur.value);
     for (const ch of next.chapters) {

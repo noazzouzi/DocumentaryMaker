@@ -147,11 +147,14 @@ export async function reviseChapter(ctx: StepCtx, i: ChapterInput & { chapter: C
 }
 
 /** Out-of-sync secondary segment (primaryHash mismatch): cheap, cost-gated transcreation of ONE segment. */
-export async function transcreateSegment(ctx: StepCtx, i: { primary: Script["chapters"][number]["segments"][number]; current: Script["chapters"][number]["segments"][number]; lang: Lang; style: StylePlugin; factSheet: FactSheet }): Promise<{ displayText: string; subtitleTranslation: string }> {
+export async function transcreateSegment(ctx: StepCtx, i: {
+  primary: Script["chapters"][number]["segments"][number]; current: Script["chapters"][number]["segments"][number]; lang: Lang; style: StylePlugin; factSheet: FactSheet;
+  riskFlags?: readonly RiskFlag[];
+}): Promise<{ displayText: string; subtitleTranslation: string }> {
   const seg = (s: typeof i.primary) => ({ id: s.id, type: s.type, text: s.displayText, quote_id: s.quoteId ?? "", subtitle_translation: s.subtitleTranslation, fact_ids: s.factIds });
   const wire = await call(ctx, {
     step: "transcreate", key: `${i.lang}.${i.current.id}`, schema: TranscreateWire, effort: "low", maxTokens: 2000, lang: i.lang,
-    system: buildSystem({ style: i.style, lang: i.lang, asOf: i.factSheet.asOf, riskFlags: [], factSheet: i.factSheet }),
+    system: buildSystem({ style: i.style, lang: i.lang, asOf: i.factSheet.asOf, riskFlags: i.riskFlags ?? [], factSheet: i.factSheet }),
     user: TRANSCREATE_USER({ primaryJson: json(seg(i.primary)), currentJson: json(seg(i.current)), lang: i.lang }),
   });
   const r = transcreateFromWire(wire, i.lang, i.current.type);

@@ -2,7 +2,7 @@
 import { z } from "zod";
 import {
   MotionData, tokenizeDisplay, type BeatLang, type BeatPlan, type ChapterScript, type FactSheet, type Lang,
-  type LintIssue, type MotionTemplate, type StyleData, type StylePlugin,
+  type LintIssue, type MotionTemplate, type RiskFlag, type StyleData, type StylePlugin,
 } from "@docmaker/core";
 import { realignChapterTexts, resplitSegments, beatsFromWire } from "../beats/map";
 import { realignSlices } from "../beats/realign";
@@ -10,7 +10,7 @@ import { checkMotion, copyInvariantFields } from "../beats/motion";
 import { splitBeatsFallback } from "../beats/split";
 import { emptyBeatLang } from "../beats/synthetic";
 import { RECONSTRUCTION_RULES, isSynthetic, validateBeats } from "../beats/validate";
-import { EDITORIAL_RULES } from "../prompts/rules";
+import { editorialRules } from "../prompts/rules";
 import { BEATSLICE_USER, BEATS_EXTRA, BEATS_REPAIR, BEATS_USER } from "../prompts/steps";
 import { buildSystem, json } from "../prompts/system";
 import type { StepCtx } from "../types";
@@ -56,11 +56,15 @@ function failingSegments(issues: LintIssue[]): Set<string> {
   return new Set(issues.filter((x) => RECONSTRUCTION_RULES.includes(x.rule) || x.rule === "V_SEGMENT").map((x) => x.where));
 }
 
-export async function planBeats(ctx: StepCtx, i: { chapter: ChapterScript; factSheet: FactSheet; style: StylePlugin; isHook: boolean; lang: Lang; startOrder: number }): Promise<{ plans: BeatPlan[]; texts: BeatLang[]; issues: LintIssue[]; method: "llm" | "fallback" }> {
+export async function planBeats(ctx: StepCtx, i: {
+  chapter: ChapterScript; factSheet: FactSheet; style: StylePlugin; isHook: boolean; lang: Lang; startOrder: number;
+  /** Project risk flags (suicide_self_harm → safe-messaging rules for on-screen text). */
+  riskFlags?: readonly RiskFlag[];
+}): Promise<{ plans: BeatPlan[]; texts: BeatLang[]; issues: LintIssue[]; method: "llm" | "fallback" }> {
   const { chapter, factSheet, style, lang } = i;
   const profile = style.data.scriptProfile;
   const system = buildSystem({
-    style, lang, asOf: factSheet.asOf, riskFlags: [], factSheet,
+    style, lang, asOf: factSheet.asOf, riskFlags: i.riskFlags ?? [], factSheet,
     extra: `<visual_grammar>${style.promptPack.visualGrammar}</visual_grammar>`,
   });
   const user = BEATS_USER({ chapterScriptJson: json(chapterNarrationWire(chapter)), visualGrammar: "see <visual_grammar> in the system prompt", isHook: i.isHook })
@@ -125,7 +129,10 @@ function reanchor(oldText: string, newText: string, idx: number): number {
  * Secondary language (LLM, validator, fallback) — or the primary language after a text edit (deterministic re-slice,
  * no LLM). Numeric motion fields, ids and enums of secondary languages are always copied from the primary.
  */
-export async function sliceBeats(ctx: StepCtx | null, i: { plans: BeatPlan[]; primaryTexts: BeatLang[]; chapter: ChapterScript; lang: Lang; factSheet: FactSheet; mode: "llm" | "deterministic"; style?: StyleData }): Promise<{ texts: BeatLang[]; issues: LintIssue[]; method: "llm" | "fallback" }> {
+export async function sliceBeats(ctx: StepCtx | null, i: {
+  plans: BeatPlan[]; primaryTexts: BeatLang[]; chapter: ChapterScript; lang: Lang; factSheet: FactSheet; mode: "llm" | "deterministic"; style?: StyleData;
+  riskFlags?: readonly RiskFlag[];
+}): Promise<{ texts: BeatLang[]; issues: LintIssue[]; method: "llm" | "fallback" }> {
   const { chapter, lang, factSheet } = i;
   const plans = i.plans.filter((p) => p.chapterId === chapter.chapterId).sort((a, b) => a.order - b.order);
   const planned = plans.filter((p) => !isSynthetic(p));
@@ -165,7 +172,7 @@ export async function sliceBeats(ctx: StepCtx | null, i: { plans: BeatPlan[]; pr
     const wire = await call(ctx, {
       step: "beatslice", key: `${lang}.${chapter.chapterId}`, schema: BeatSliceWire, effort: "low", maxTokens: 8000, lang,
       system: [
-        { text: `You are the bilingual story editor of a documentary YouTube channel; you cut ${lang === "fr" ? "French" : "English"} narration into the shot plan.\n${EDITORIAL_RULES(lang, factSheet.asOf)}`, cache: false },
+        { text: `You are the bilingual story editor of a documentary YouTube channel; you cut ${lang === "fr" ? "French" : "English"} narration into the shot plan.\n${editorialRules(lang, factSheet.asOf, i.riskFlags)}`, cache: false },
         { text: `<fact_sheet>${json(factSheetToWire(factSheet))}</fact_sheet>`, cache: true },
       ],
       user: BEATSLICE_USER({

@@ -2,7 +2,7 @@
 import { stableStringify, type FactSheet, type Lang, type Outline, type RiskFlag, type StylePlugin } from "@docmaker/core";
 import type { SystemBlock } from "../types";
 import { factSheetToWire, outlineToWire } from "../wire/map";
-import { EDITORIAL_RULES, SAFE_MESSAGING } from "./rules";
+import { editorialRules } from "./rules";
 import { SYSTEM_ROLE } from "./steps";
 
 export interface SystemOptions {
@@ -21,7 +21,7 @@ export function buildSystem(o: SystemOptions): SystemBlock[] {
   const pack = style.promptPack;
   const head = [
     SYSTEM_ROLE(style.data.manifest.names[lang], lang, pack.narratorPersona[lang]),
-    EDITORIAL_RULES(lang, o.asOf) + (o.riskFlags.includes("suicide_self_harm") ? `\n${SAFE_MESSAGING(lang)}` : ""),
+    editorialRules(lang, o.asOf, o.riskFlags),
     `<style_guide>${pack.styleMd}\n${pack.guideMd}\n${pack.qualityDirective}</style_guide>`,
     o.extra ?? "",
   ].filter((s) => s.trim() !== "").join("\n");

@@ -49,6 +49,7 @@ export const beatsliceStage: StageDef = {
       }
       const r = await e.rt.deps.llm.sliceBeats(isPrimary ? null : stepCtx(ctx), {
         plans: plans.plans, primaryTexts: plans.primary, chapter: ch, lang, factSheet: facts, mode: isPrimary ? "deterministic" : "llm", style: ctx.style.data,
+        riskFlags: await e.riskFlags(),
       });
       texts.push(...r.texts);
       validation.push(...r.issues);

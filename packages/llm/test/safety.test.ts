@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 import type { z } from "zod";
 import { type BeatLang, type BeatPlan, type FactSheet, type Script, type ScriptSegment } from "@docmaker/core";
 import { TEST_NOW, makeBeats, makeFactSheet, makeScript } from "@docmaker/core/testing";
-import { ACCUSATORY, ATTRIBUTION, deterministicFactChecks, extractNumbers, factSheetToWire, lintScript, recheck, type LlmClient, type ResearchResult, type StructuredRequest } from "../src/index";
-import { makeCtx } from "./helpers";
+import { ACCUSATORY, ATTRIBUTION, deterministicFactChecks, extractNumbers, factCheck, factSheetToWire, lintScript, planBeats, recheck, sliceBeats, transcreateSegment, type LlmClient, type ResearchResult, type StructuredRequest } from "../src/index";
+import { TEST_PLUGIN, makeCtx } from "./helpers";
 import { maskPersons, mentionsPerson } from "../src/text";
 
 function seg(id: string, displayText: string, o: Partial<ScriptSegment> = {}): ScriptSegment {
@@ -183,5 +183,47 @@ describe("spelled-out figures (rule b, lint number-without-fact)", () => {
       chapters: scriptOf([seg("CH1-S01", "He walked away with two hundred million."), seg("CH1-S02", "The two brothers left.")]).chapters, facts: facts(),
     });
     expect(issues.filter((x) => x.rule === "number-without-fact").map((x) => x.where)).toEqual(["CH1-S01"]);
+  });
+});
+
+describe("safe messaging reaches every writing and checking step (suicide_self_harm)", () => {
+  class CaptureLlm implements LlmClient {
+    readonly kind = "fixture" as const;
+    reqs: { step: string; system: string; user: string }[] = [];
+    async structured<S extends z.ZodType>(req: StructuredRequest<S>): Promise<z.infer<S>> {
+      this.reqs.push({ step: req.step, system: req.system.map((b) => b.text).join("\n"), user: typeof req.user === "string" ? req.user : "" });
+      throw new Error("captured");
+    }
+    async research(): Promise<never> {
+      throw new Error("no research");
+    }
+  }
+  const flags = ["suicide_self_harm"] as const;
+  it("planBeats, sliceBeats, transcreateSegment and factCheck carry <safe_messaging> (and the fact-check audits it)", async () => {
+    const script = makeScript({ chapters: 1, segmentsPerChapter: 2 });
+    const ch = script.chapters[0]!;
+    const { plans, slices } = makeBeats(script, { cues: false });
+    const f = makeFactSheet({ people: 2, quotes: 1, figures: 1 });
+    const run = async (fn: (llm: CaptureLlm) => Promise<unknown>) => {
+      const llm = new CaptureLlm();
+      await fn(llm).catch(() => undefined);
+      return llm.reqs[0]!;
+    };
+    const steps = (rf: readonly ("suicide_self_harm")[]) => [
+      (llm: CaptureLlm) => planBeats(makeCtx(llm), { chapter: ch, factSheet: f, style: TEST_PLUGIN, isHook: false, lang: "en", startOrder: 0, riskFlags: [...rf] }),
+      (llm: CaptureLlm) => sliceBeats(makeCtx(llm), { plans: plans.plans, primaryTexts: slices.texts, chapter: ch, lang: "fr", factSheet: f, mode: "llm", riskFlags: [...rf] }),
+      (llm: CaptureLlm) => transcreateSegment(makeCtx(llm), { primary: ch.segments[0]!, current: ch.segments[0]!, lang: "fr", style: TEST_PLUGIN, factSheet: f, riskFlags: [...rf] }),
+      (llm: CaptureLlm) => factCheck(makeCtx(llm), { script, slices, plans, factSheet: f, publish: null, previous: null, riskFlags: [...rf], scriptHash: "0".repeat(64), slicesHash: "0".repeat(64) }),
+    ];
+    for (const fn of steps(flags)) {
+      const r = await run(fn);
+      expect(r.system, r.step).toContain("<safe_messaging>");
+      if (r.step === "factcheck") expect(r.user).toContain("safe messaging:");
+    }
+    for (const fn of steps([])) {
+      const r = await run(fn);
+      expect(r.system, r.step).not.toContain("<safe_messaging>");
+      expect(r.user).not.toContain("safe messaging:");
+    }
   });
 });

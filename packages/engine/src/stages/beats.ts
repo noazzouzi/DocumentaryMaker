@@ -74,7 +74,7 @@ export const beatsStage: StageDef = {
       }
       // the cold open is the first chapter (and only when it carries the shape's first act, if the outline says so)
       const isHook = t.idx === 0 && (firstAct === undefined || !actOf.has(t.ch.chapterId) || actOf.get(t.ch.chapterId) === firstAct);
-      const r = await e.rt.deps.llm.planBeats(sctx, { chapter: t.ch, factSheet: facts, style: ctx.style, isHook, lang: p.primaryLang, startOrder: 0 });
+      const r = await e.rt.deps.llm.planBeats(sctx, { chapter: t.ch, factSheet: facts, style: ctx.style, isHook, lang: p.primaryLang, startOrder: 0, riskFlags: await e.riskFlags() });
       ctx.progress(++done / todo.length, `beats ${t.ch.chapterId}`);
       const errs = r.issues.filter((x) => x.level === "error");
       if (errs.length) emitLog(ctx, "beats", "warn", `${t.ch.chapterId}: ${errs.length} beat validation error(s) (${errs.slice(0, 3).map((x) => x.rule).join(", ")})`);
