@@ -10,7 +10,7 @@ import * as exportPkg from "@docmaker/export";
 import { isDocmakerError, type Logger, type RuntimeConfig } from "@docmaker/core";
 
 export type StylesApi = Pick<typeof stylesPkg,
-  "discoverStyles" | "suggestStyleOffline" | "riskFlagsOffline" | "classifyTopicOffline" | "scaffoldStyle" | "inspectStyleDir" | "builtinStylesDir">;
+  "discoverStyles" | "suggestStyleOffline" | "riskFlagsOffline" | "classifyTopicOffline" | "scaffoldStyle" | "inspectStyleDir" | "builtinStylesDir" | "styleFontAssets">;
 export type LlmApi = Pick<typeof llmPkg,
   | "createLlmClient" | "runResearch" | "buildFactSheet" | "suggestStyle" | "planBudget" | "writeOutline" | "validateOutline"
   | "writeChapterWithTitle" | "reviseChapter" | "lintScript" | "segmentSkeleton" | "planBeats" | "assembleBeatPlans" | "sliceBeats"
