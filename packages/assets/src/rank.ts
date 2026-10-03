@@ -1,7 +1,8 @@
 // Ranking (§7.6): metadata score, optional CLIP (M3) and vision rerank fusion, dHash dedupe, needsVisionRerank.
 import sharp from "sharp";
-import type { AssetProviderId, BeatPlan, Candidate, CandidateRecord, CandidateScore, VisualKind } from "@docmaker/core";
-import { clamp01, queryTokens, tokensOf } from "./util";
+import type { AssetProviderId, BeatPlan, Candidate, CandidateRecord, CandidateScore, FactSheet, Person, VisualKind } from "@docmaker/core";
+import { candidateNamesPerson, personNameTokenSets } from "./identity";
+import { canonToken, clamp01, matchQueryTokens, matchTokens } from "./util";
 
 /** PROVIDER_PRIOR[visualKind][provider] ∈ [0,1]; missing → 0.5. */
 export const PROVIDER_PRIOR: Record<VisualKind, Partial<Record<AssetProviderId, number>>> = {
@@ -17,17 +18,54 @@ export const PROVIDER_PRIOR: Record<VisualKind, Partial<Record<AssetProviderId, 
   ai_illustration: { fal: 1, local: 0.9, procedural: 0.5 },
 };
 
-export interface MetadataParts { textMatch: number; resolution: number; aspect: number; durFit: number; prior: number; metadata: number }
+export interface MetadataParts { textMatch: number; coverage: number; resolution: number; aspect: number; durFit: number; prior: number; anachronism: number; metadata: number }
 
-function rawText(c: Candidate, q: readonly string[]): number {
-  if (q.length === 0) return 0;
-  const title = new Set(tokensOf(c.title));
-  const tags = new Set(c.tags.flatMap((t) => tokensOf(t)));
-  const desc = new Set(tokensOf(c.description));
+/** People of the beat (names), so a lone surname match ("Mackay Island") gets no credit for the person's name. */
+export type RankPerson = Pick<Person, "name" | "aliases">;
+
+/** Query tokens that count for this candidate: a person's name tokens only count when the candidate names that person. */
+function effectiveQuery(c: Candidate, q: readonly string[], people: readonly RankPerson[]): string[] {
+  if (people.length === 0) return [...q];
+  const drop = new Set<string>();
+  for (const p of people) {
+    for (const set of personNameTokenSets(p)) {
+      const canon = set.map(canonToken);
+      if (!canon.every((t) => q.includes(t))) continue;
+      if (!candidateNamesPerson(c, p)) for (const t of canon) drop.add(t);
+    }
+  }
+  return q.filter((t) => !drop.has(t));
+}
+
+function fieldsOf(c: Candidate): { title: Set<string>; tags: Set<string>; desc: Set<string> } {
+  return { title: new Set(matchTokens(c.title)), tags: new Set(c.tags.flatMap((t) => matchTokens(t))), desc: new Set(matchTokens(c.description)) };
+}
+
+function rawText(c: Candidate, q: readonly string[], people: readonly RankPerson[] = []): number {
+  const eq = effectiveQuery(c, q, people);
+  if (eq.length === 0) return 0;
+  const { title, tags, desc } = fieldsOf(c);
   let s = 0;
-  for (const t of q) s += (title.has(t) ? 2 : 0) + (tags.has(t) ? 1.5 : 0) + (desc.has(t) ? 1 : 0);
+  for (const t of eq) s += (title.has(t) ? 2 : 0) + (tags.has(t) ? 1.5 : 0) + (desc.has(t) ? 1 : 0);
   return s;
 }
+
+/** Share of the query's content tokens found in the candidate's title, tags or description (absolute, not relative to the
+ *  other candidates): the relevance floor reads it. A person's name only counts when the candidate names that person. */
+export function textCoverage(c: Candidate, queryText: string, people: readonly RankPerson[] = []): number {
+  const q = matchQueryTokens(queryText);
+  if (q.length === 0) return 0;
+  const { title, tags, desc } = fieldsOf(c);
+  return effectiveQuery(c, q, people).filter((t) => title.has(t) || tags.has(t) || desc.has(t)).length / q.length;
+}
+
+/** Candidates below this coverage of every beat query are irrelevant (unless identity evidence or a vision score says
+ *  otherwise): a designed backdrop beats an unrelated photograph. */
+export const RELEVANCE_FLOOR = 0.34;
+
+const PERIOD_KINDS: readonly VisualKind[] = ["archival_photo", "news_footage", "document_screenshot"];
+/** Archival material dated more than this many years outside the story's era is penalised. */
+export const ERA_SLACK_YEARS = 50;
 
 export function resolutionScore(c: Pick<Candidate, "kind" | "width">): number {
   if (c.width === null) return 0.5;
@@ -47,17 +85,22 @@ export function durFitScore(c: Pick<Candidate, "kind" | "durationSec">, beatSec:
 }
 
 /** All metadata components (textMatch normalised by the best raw text score among `all`). */
-export function metadataParts(c: Candidate, plan: BeatPlan, all: readonly Candidate[], o?: { cardShare?: number; queryText?: string }): MetadataParts {
-  const q = queryTokens(o?.queryText ?? plan.visualQuery);
-  const max = Math.max(0, ...all.map((x) => rawText(x, q)), rawText(c, q));
-  const textMatch = max > 0 ? rawText(c, q) / max : 0;
+export function metadataParts(c: Candidate, plan: BeatPlan, all: readonly Candidate[], o?: { cardShare?: number; queryText?: string; people?: readonly RankPerson[]; era?: readonly [number, number] | null; year?: number | null }): MetadataParts {
+  const q = matchQueryTokens(o?.queryText ?? plan.visualQuery);
+  const people = o?.people ?? [];
+  const max = Math.max(0, ...all.map((x) => rawText(x, q, people)), rawText(c, q, people));
+  const textMatch = max > 0 ? rawText(c, q, people) / max : 0;
+  const coverage = textCoverage(c, o?.queryText ?? plan.visualQuery, people);
   const resolution = resolutionScore(c);
   const aspect = aspectScore(c);
   const durFit = durFitScore(c, plan.estSeconds);
   const prior = PROVIDER_PRIOR[plan.visualKind]?.[c.provider] ?? 0.5;
   const aspectW = (o?.cardShare ?? 0) > 0 && c.kind === "image" ? 0.05 : 0.1;
-  const metadata = clamp01(0.45 * textMatch + 0.2 * resolution + aspectW * aspect + 0.1 * durFit + 0.15 * prior);
-  return { textMatch, resolution, aspect, durFit, prior, metadata };
+  const era = o?.era ?? null;
+  const year = o?.year ?? null;
+  const anachronism = era && year !== null && PERIOD_KINDS.includes(plan.visualKind) && (year < era[0] - ERA_SLACK_YEARS || year > era[1] + ERA_SLACK_YEARS) ? 1 : 0;
+  const metadata = clamp01(0.45 * textMatch + 0.2 * resolution + aspectW * aspect + 0.1 * durFit + 0.15 * prior - 0.1 * anachronism);
+  return { textMatch, coverage, resolution, aspect, durFit, prior, anachronism, metadata };
 }
 
 export function metadataScore(c: Candidate, plan: BeatPlan, all: readonly Candidate[]): number {
@@ -67,10 +110,10 @@ export function metadataScore(c: Candidate, plan: BeatPlan, all: readonly Candid
 const r3 = (x: number) => Math.round(x * 1000) / 1000;
 
 /** Fuses metadata (+ CLIP similarity) (+ vision rerank) into CandidateScore.total and sorts best first (deterministic ties). */
-export function rankCandidates(i: { plan: BeatPlan; records: CandidateRecord[]; reranked: Map<number, Partial<CandidateScore>> | null; cardShare?: number }): { record: CandidateRecord; score: CandidateScore }[] {
+export function rankCandidates(i: { plan: BeatPlan; records: CandidateRecord[]; reranked: Map<number, Partial<CandidateScore>> | null; cardShare?: number; people?: readonly RankPerson[]; era?: readonly [number, number] | null }): { record: CandidateRecord; score: CandidateScore }[] {
   const all = i.records.map((r) => r.candidate);
   const scored = i.records.map((record, idx) => {
-    const m = metadataParts(record.candidate, i.plan, all, { cardShare: i.cardShare });
+    const m = metadataParts(record.candidate, i.plan, all, { cardShare: i.cardShare, people: i.people, era: i.era, year: yearOfRaw(record.raw) });
     const rr = i.reranked?.get(idx) ?? null;
     const clip = rr?.clip ?? null;
     let metadata = m.metadata;
@@ -86,12 +129,24 @@ export function rankCandidates(i: { plan: BeatPlan; records: CandidateRecord[]; 
       metadata: r3(metadata), clip: clip === null || clip === undefined ? null : r3(clip), vision: vision === null || vision === undefined ? null : r3(vision),
       technical: technical === null || technical === undefined ? null : r3(technical), watermark, nsfw, total: r3(nsfw ? 0 : total),
       focal: rr?.focal ?? null, safeCrop: rr?.safeCrop ?? null,
-      notes: rr?.notes ?? `text ${m.textMatch.toFixed(2)} res ${m.resolution.toFixed(2)} aspect ${m.aspect.toFixed(2)} dur ${m.durFit.toFixed(2)} prior ${m.prior.toFixed(2)}`,
+      notes: rr?.notes ?? `text ${m.textMatch.toFixed(2)} cov ${m.coverage.toFixed(2)} res ${m.resolution.toFixed(2)} aspect ${m.aspect.toFixed(2)} dur ${m.durFit.toFixed(2)} prior ${m.prior.toFixed(2)}${m.anachronism ? " anachronism" : ""}`,
     };
     return { record: { ...record, score }, score, idx };
   });
   scored.sort((a, b) => b.score.total - a.score.total || b.score.metadata - a.score.metadata || keyOf(a.record.candidate).localeCompare(keyOf(b.record.candidate)));
   return scored.map(({ record, score }) => ({ record, score }));
+}
+
+/** Year a provider parsed into the record's raw data (null when unknown). */
+export function yearOfRaw(raw: unknown): number | null {
+  const y = (raw as { year?: unknown } | null)?.year;
+  return typeof y === "number" && Number.isFinite(y) ? y : null;
+}
+
+/** The story's era from the fact sheet timeline (min and max years), null when undated. */
+export function eraOf(facts: Pick<FactSheet, "timeline">): [number, number] | null {
+  const years = facts.timeline.map((e) => /^(-?\d{1,4})/.exec(e.date)).filter((m): m is RegExpExecArray => m !== null).map((m) => Number(m[1]));
+  return years.length > 0 ? [Math.min(...years), Math.max(...years)] : null;
 }
 
 export const keyOf = (c: Pick<Candidate, "provider" | "providerAssetId">): string => `${c.provider}:${c.providerAssetId}`;

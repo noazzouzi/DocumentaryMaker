@@ -70,8 +70,9 @@ async function bearer(ctx: ProviderContext): Promise<string | null> {
 export function openverseUrl(q: AssetQuery): string {
   const audio = q.kind === "audio";
   return `${OPENVERSE_API}/${audio ? "audio" : "images"}/?${qs({
+    // A relaxed second pass (minWidth 0, orientation any) drops the size/aspect filters; portrait images still fit a card.
     q: q.text, license_type: "commercial,modification", aspect_ratio: !audio && q.orientation === "landscape" ? "wide" : null,
-    size: audio ? null : "large", mature: "false", page_size: Math.min(20, Math.max(1, q.limit)),
+    size: audio || q.minWidth <= 0 ? null : "large", mature: "false", page_size: Math.min(20, Math.max(1, q.limit)),
   })}`;
 }
 

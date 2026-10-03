@@ -22,6 +22,12 @@ const COOLDOWN_REREAD_MS = 5_000;
 /** Hosts allowed over plain http (ccMixter has no https API). */
 export const HTTP_ALLOWED_HOSTS: readonly string[] = ["ccmixter.org"];
 
+/** Options our client understands beyond the core HttpGetOptions: `beforeNetwork` runs once per call that is NOT answered
+ *  from the response cache, right before the request goes out (provider quotas count real requests only). */
+export type HttpCallOptions = HttpGetOptions & { beforeNetwork?: () => Promise<void> };
+/** Marks clients that honour `beforeNetwork` (others get the quota acquired up front by quotaHttp). */
+export const BEFORE_NETWORK_HOOK: unique symbol = Symbol.for("docmaker.http.beforeNetwork");
+
 export type LookupFn = (host: string) => Promise<{ address: string; family: number }[]>;
 export interface HttpClientInternals {
   fetchImpl?: typeof fetch; // tests inject a fake transport
@@ -420,6 +426,7 @@ export function createHttpClient(o: { config: RuntimeConfig; logger: Logger } & 
       const hit = await cacheGet(key, ttl);
       if (hit !== null) return hit;
     }
+    await (opts as HttpCallOptions).beforeNetwork?.();
     const body = await withRetry(redactUrl(req.url), opts, async () => {
       const { res, idle, finalUrl } = await attempt(req, opts);
       logger.debug("http", { method: req.method, url: redactUrl(finalUrl), status: res.status });
@@ -438,7 +445,7 @@ export function createHttpClient(o: { config: RuntimeConfig; logger: Logger } & 
     }
   }
 
-  return {
+  const client: HttpClient = {
     async getJson<T>(url: string, opts: HttpGetOptions): Promise<T> {
       return parseJson<T>(await text({ method: "GET", url, body: null, contentType: null, accept: "application/json" }, opts), url);
     },
@@ -499,4 +506,6 @@ export function createHttpClient(o: { config: RuntimeConfig; logger: Logger } & 
       });
     },
   };
+  Object.defineProperty(client, BEFORE_NETWORK_HOOK, { value: true });
+  return client;
 }

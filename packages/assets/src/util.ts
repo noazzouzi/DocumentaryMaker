@@ -93,6 +93,51 @@ export function queryTokens(text: string): string[] {
   return [...new Set(tokensOf(text).filter((t) => !STOP.has(t)))];
 }
 
+// ---- relevance matching (ranking only): ordinals, centuries and decades share one spelling on both sides
+const ORDINAL_WORDS: Record<string, number> = {
+  first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7, eighth: 8, ninth: 9, tenth: 10, eleventh: 11, twelfth: 12,
+  thirteenth: 13, fourteenth: 14, fifteenth: 15, sixteenth: 16, seventeenth: 17, eighteenth: 18, nineteenth: 19, twentieth: 20,
+  premier: 1, deuxieme: 2, troisieme: 3, quatrieme: 4, cinquieme: 5, sixieme: 6, septieme: 7, huitieme: 8, neuvieme: 9, dixieme: 10,
+  onzieme: 11, douzieme: 12, treizieme: 13, quatorzieme: 14, quinzieme: 15, seizieme: 16, "dix-septieme": 17, "dix-huitieme": 18,
+  "dix-neuvieme": 19, vingtieme: 20,
+};
+const ROMAN: Record<string, number> = { xi: 11, xii: 12, xiii: 13, xiv: 14, xv: 15, xvi: 16, xvii: 17, xviii: 18, xix: 19, xx: 20, xxi: 21 };
+const ordinal = (n: number) => `${n}th`;
+
+/** Canonical spelling of an ordinal/century token ("seventeenth", "17e", "xviie", "1600s" → "17th"), else the token itself. */
+export function canonToken(t: string): string {
+  if (ORDINAL_WORDS[t] !== undefined) return ordinal(ORDINAL_WORDS[t]!);
+  let m = /^(\d{1,2})(st|nd|rd|th|e|eme|ème|er|re)$/.exec(t);
+  if (m) return ordinal(Number(m[1]));
+  m = /^([xvi]+)(e|eme|ème)$/.exec(t);
+  if (m && ROMAN[m[1]!] !== undefined) return ordinal(ROMAN[m[1]!]!);
+  m = /^(1\d|20)00s$/.exec(t);
+  if (m) return ordinal(Number(m[1]) + 1);
+  return t;
+}
+
+/** Candidate-side match tokens: canonical tokens plus, for every year, its century ("1637" → "17th") and decade ("1630s"). */
+export function matchTokens(text: string): string[] {
+  const out = new Set<string>();
+  for (const t of tokensOf(text)) {
+    const c = canonToken(t);
+    out.add(c);
+    const y = /^c?(1[0-9]\d{2}|20\d{2})s?$/.exec(t);
+    if (y) {
+      const year = Number(y[1]);
+      out.add(ordinal(Math.floor(year / 100) + 1));
+      out.add(`${Math.floor(year / 10) * 10}s`);
+      out.add(String(year));
+    }
+  }
+  return [...out];
+}
+
+/** Query-side match tokens: content tokens (stopwords dropped) in canonical spelling. */
+export function matchQueryTokens(text: string): string[] {
+  return [...new Set(tokensOf(text).filter((t) => !STOP.has(t)).map(canonToken))];
+}
+
 export function clamp(x: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, x));
 }

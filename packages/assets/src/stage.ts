@@ -15,14 +15,14 @@ import { buildLedger } from "./ledger";
 import { LicensePolicyEngine } from "./license";
 import { materializeCandidate } from "./materialize";
 import { RecentUse, pickAssets } from "./pick";
-import { isClipBeat, isGraphicsBeat, planQueries, providerOrder, shotsNeeded } from "./plan";
+import { isClipBeat, isGraphicsBeat, planQueries, providerOrder, relaxQuery, shotsNeeded } from "./plan";
 import { allProviders, OFFLINE_PROVIDERS } from "./providers";
 import type { SearchResult } from "./providers/common";
 import { createLocalProvider } from "./providers/local";
 import { createProceduralProvider } from "./providers/procedural";
 import { FAL_COST_PER_IMAGE_USD, FAL_ENDPOINT, falRequest } from "./providers/paid";
-import { ConcurrencyGate, QuotaBuckets } from "./quota";
-import { dHash, dedupeRecords, hamming, keyOf, needsVisionRerank, rankCandidates } from "./rank";
+import { ConcurrencyGate, QuotaBuckets, quotaHttp } from "./quota";
+import { dHash, dedupeRecords, eraOf, hamming, keyOf, needsVisionRerank, rankCandidates, RELEVANCE_FLOOR, textCoverage } from "./rank";
 import type { AssetsCtx } from "./types";
 import { readUserFrozen } from "./userfrozen";
 import { commercialMediaHint, needsProvenanceCheck } from "./provenance";
@@ -44,6 +44,10 @@ export interface AssetsStageInput {
 export interface AssetsStageOutput { picks: PicksDocT; frozen: FrozenDoc; ledger: Ledger; candidates: CandidatesDoc[]; clipWords: ClipWordsDoc[] }
 
 const DEFAULT_FOCAL = { x: 0.5, y: 0.45 };
+/** Providers whose candidates skip the relevance floor: the user's own files and media generated from the beat itself. */
+const RELEVANCE_EXEMPT: ReadonlySet<string> = new Set(["local", "procedural", "fal"]);
+/** A vision-rerank score this high vouches for a candidate whatever its metadata says. */
+const VISION_RELEVANT = 0.6;
 const RERANK_TOP = 8;
 
 async function exists(p: string): Promise<boolean> {
@@ -118,6 +122,8 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
   const gate = new ConcurrencyGate();
   const pctx = providerContext(ctx);
   const denylist = buildAiDenylist(facts, i.entities);
+  const qidOf = (pid: string) => i.entities.entities.find((e) => e.personId === pid)?.qid ?? facts.people.find((p) => p.id === pid)?.wikidataQid ?? null;
+  const era = eraOf(facts);
   const prevFrozen = i.previous.frozen?.assets ?? {};
   const userFrozen = await readUserFrozen(i.projectDir);
   const fps = project.video.fps;
@@ -187,6 +193,17 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
     const qid = (rec.raw as { p180?: unknown } | null)?.p180;
     if (typeof qid === "string") depictsByKey.set(keyOf(rec.candidate), qid);
   };
+  /** Provider context whose HTTP calls consume the provider's quota — only for requests that actually go out. */
+  const pctxOf = new Map<AssetProviderId, typeof pctx>();
+  const ctxFor = (id: AssetProviderId, p: AssetProvider): typeof pctx => {
+    if (id === "local" || id === "procedural") return pctx;
+    let c = pctxOf.get(id);
+    if (!c) {
+      c = { ...pctx, http: quotaHttp(pctx.http, () => quota.acquire(id, p.limits, ctx.signal)) };
+      pctxOf.set(id, c);
+    }
+    return c;
+  };
   const search = async (plan: BeatPlan, queries: AssetQuery[]): Promise<CandidateRecord[]> => {
     const records: CandidateRecord[] = [];
     for (const q of queries) {
@@ -195,13 +212,20 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
         const p = providers.get(id);
         if (!p || !p.kinds.includes(q.kind)) continue;
         if (id === "fal" && (!falAllowedForBeat(plan) || !checkFalPrompt(q.text, denylist).ok)) continue;
+        // Relaxation ladder (archives and stock only): full query → without medium/style words → two-word core, each
+        // looser pass without size/aspect filters, until the provider returns something.
+        const relaxable = id !== "local" && id !== "procedural" && id !== "fal" && q.role !== "portrait" && q.role !== "generated";
+        const ladder: AssetQuery[] = [q, ...(relaxable ? relaxQuery(q.text).map((text) => ({ ...q, text, orientation: "any" as const, minWidth: 0 })) : [])];
         try {
-          if (id !== "local" && id !== "procedural") await quota.acquire(id, p.limits, ctx.signal);
-          const res: SearchResult[] = await gate.run(id, p.limits.concurrency, () => p.search(q, pctx));
-          for (const r of res) {
-            records.push({ candidate: r.candidate, score: null, raw: r.raw });
-            noteDepicts(r);
-            if (!roleByKey.has(keyOf(r.candidate))) roleByKey.set(keyOf(r.candidate), q.role);
+          for (const rq of ladder) {
+            const res: SearchResult[] = await gate.run(id, p.limits.concurrency, () => p.search(rq, ctxFor(id, p)));
+            for (const r of res) {
+              records.push({ candidate: r.candidate, score: null, raw: r.raw });
+              noteDepicts(r);
+              if (!roleByKey.has(keyOf(r.candidate))) roleByKey.set(keyOf(r.candidate), q.role);
+            }
+            if (res.length > 0) break;
+            if (rq !== ladder[ladder.length - 1]) log.debug("no results; relaxing the query", { provider: id, beatId: plan.id });
           }
         } catch (e) {
           if (isDocmakerError(e) && e.code === "CANCELED") throw e;
@@ -318,15 +342,31 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
         && !(needsProvenanceCheck(r.candidate.provider) && commercialMediaHint(r.candidate));
     });
     const real = records.filter((r) => r.candidate.provider !== "procedural");
-    let ranked = rankCandidates({ plan, records: real, reranked: null, cardShare });
+    const people = facts.people.filter((p) => plan.personIds.includes(p.id));
+    let ranked = rankCandidates({ plan, records: real, reranked: null, cardShare, people, era });
     if (ranked.length > 1) {
       const rr = await rerank(plan, real, ranked);
-      if (rr.reranked || rr.recs.length !== real.length) ranked = rankCandidates({ plan, records: rr.recs, reranked: rr.reranked, cardShare });
+      if (rr.reranked || rr.recs.length !== real.length) ranked = rankCandidates({ plan, records: rr.recs, reranked: rr.reranked, cardShare, people, era });
     }
     const roleOf = (rec: CandidateRecord): AssetQuery["role"] => roleByKey.get(keyOf(rec.candidate)) ?? queries[0]?.role ?? "broll";
 
+    // Relevance floor: a candidate must match the beat (its queries' content words, the named person, Commons "depicts", or a
+    // vision score) — otherwise the designed procedural/graphic fallback is better than an unrelated photograph.
+    const planQids = new Set(people.map((p) => qidOf(p.id)).filter((x): x is string => x !== null));
+    const relevant = (r: { record: CandidateRecord; score: CandidateScore }): boolean => {
+      const c = r.record.candidate;
+      if (RELEVANCE_EXEMPT.has(c.provider)) return true;
+      if ((r.score.vision ?? 0) >= VISION_RELEVANT) return true;
+      const qid = depictsByKey.get(keyOf(c));
+      if (qid !== undefined && planQids.has(qid)) return true;
+      if (queries.some((q) => q.role === "portrait" && people.some((p) => q.personIds.includes(p.id) && candidateNamesPerson(c, p)))) return true;
+      return [plan.visualQuery, ...queries.filter((q) => q.role !== "portrait").map((q) => q.text)].some((t) => textCoverage(c, t, people) >= RELEVANCE_FLOOR);
+    };
+    const eligible = ranked.filter(relevant);
+    if (eligible.length < ranked.length) log.debug("irrelevant candidates skipped", { beatId: plan.id, skipped: ranked.length - eligible.length });
+
     // Greedy picks with fallback to the next candidate when a freeze or validatePick fails.
-    const ordered = pickAssets({ plan, ranked, shots: ranked.length, recentUse: recent.map() });
+    const ordered = pickAssets({ plan, ranked: eligible, shots: eligible.length, recentUse: recent.map() });
     const chosen: AssetPick[] = [];
     // Near-identical pictures from different providers (no thumbnails were hashed without a rerank): the frozen image decides.
     const pickedHashes: bigint[] = [];
@@ -445,7 +485,6 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
     portraits.push(up);
     frozen.set(a.id, a);
   }
-  const qidOf = (pid: string) => i.entities.entities.find((e) => e.personId === pid)?.qid ?? facts.people.find((p) => p.id === pid)?.wikidataQid ?? null;
   for (const person of facts.people) {
     if (portraits.some((p) => p.personId === person.id) || !personOk(person.id)) continue;
     const qid = qidOf(person.id);

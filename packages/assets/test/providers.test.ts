@@ -88,6 +88,10 @@ describe("Openverse (recorded)", () => {
     const u = new URL(openverseUrl(q()));
     expect(u.pathname).toBe("/v1/images/");
     expect(Object.fromEntries(u.searchParams)).toMatchObject({ q: "tulip field", license_type: "commercial,modification", aspect_ratio: "wide", size: "large", mature: "false", page_size: "20" });
+    // The relaxed pass (minWidth 0, any orientation) drops the size and aspect filters.
+    const r = new URL(openverseUrl(q({ minWidth: 0, orientation: "any" })));
+    expect(r.searchParams.has("size")).toBe(false);
+    expect(r.searchParams.has("aspect_ratio")).toBe(false);
   });
 });
 

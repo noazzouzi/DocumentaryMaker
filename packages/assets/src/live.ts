@@ -10,8 +10,8 @@ import { materializeCandidate, providerContext } from "./materialize";
 import { allProviders, OFFLINE_PROVIDERS } from "./providers";
 import { createLocalProvider } from "./providers/local";
 import { createProceduralProvider } from "./providers/procedural";
-import { QuotaBuckets } from "./quota";
-import { dedupeRecords, keyOf, rankCandidates } from "./rank";
+import { QuotaBuckets, quotaHttp } from "./quota";
+import { dedupeRecords, eraOf, keyOf, rankCandidates } from "./rank";
 import type { AssetsCtx } from "./types";
 import { recordUserFrozen } from "./userfrozen";
 import { commercialMediaHint, needsProvenanceCheck } from "./provenance";
@@ -97,8 +97,10 @@ export async function liveSearch(i: { query: AssetQuery; providers: AssetProvide
     if (!p.kinds.includes(query.kind) || !p.isConfigured(ctx.secrets, ctx.config)) continue;
     if (query.text.trim() === "" && query.entityQid === null && id !== "local" && id !== "procedural") continue; // nothing searchable left
     try {
-      if (id !== "local" && id !== "procedural") await quota.acquire(id, p.limits, ctx.signal);
-      for (const r of await p.search(query, providerContext(ctx))) records.push({ candidate: r.candidate, score: null, raw: r.raw });
+      // Quota tokens are spent per request that actually goes out (response-cache hits are free).
+      const base = providerContext(ctx);
+      const pctx = id === "local" || id === "procedural" ? base : { ...base, http: quotaHttp(base.http, () => quota.acquire(id, p.limits, ctx.signal)) };
+      for (const r of await p.search(query, pctx)) records.push({ candidate: r.candidate, score: null, raw: r.raw });
     } catch (e) {
       if (isDocmakerError(e) && e.code === "CANCELED") throw e;
       ctx.logger.warn("live search provider failed", { provider: id, error: errMsg(e) });
@@ -109,7 +111,8 @@ export async function liveSearch(i: { query: AssetQuery; providers: AssetProvide
     return v.allowed && !peopleRuleBlocks(r.candidate.license, r.candidate, plan)
       && !(needsProvenanceCheck(r.candidate.provider) && commercialMediaHint(r.candidate));
   });
-  const ranked = rankCandidates({ plan, records: allowed, reranked: null }).map((r) => r.record);
+  const people = (facts?.people ?? []).filter((p) => plan.personIds.includes(p.id));
+  const ranked = rankCandidates({ plan, records: allowed, reranked: null, people, era: facts ? eraOf(facts) : null }).map((r) => r.record);
   const at = Date.now();
   for (const r of ranked) await writeFileAtomic(liveFile(i.projectDir, r.candidate.provider, r.candidate.providerAssetId), JSON.stringify({ cachedAt: at, record: r }));
   return ranked;

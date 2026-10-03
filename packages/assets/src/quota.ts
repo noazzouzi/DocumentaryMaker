@@ -3,7 +3,8 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { DocmakerError } from "@docmaker/core";
-import type { ProviderLimits, RuntimeConfig } from "@docmaker/core";
+import type { HttpClient, HttpGetOptions, ProviderLimits, RuntimeConfig } from "@docmaker/core";
+import { BEFORE_NETWORK_HOOK, type HttpCallOptions } from "./http";
 import { withFileLock } from "@docmaker/core/node";
 import { writeFileAtomic } from "./util";
 
@@ -90,4 +91,29 @@ export class ConcurrencyGate {
       this.queue.get(key)?.shift()?.();
     }
   }
+}
+
+/**
+ * An HttpClient view for one provider whose JSON/text/form calls consume a quota token only when a request actually goes out
+ * (a response-cache hit costs nothing), one token per HTTP call (Internet Archive metadata reads, Commons fallbacks…).
+ * Clients without the hook (test stubs) get the token before every call. Downloads are not searches and pass through.
+ */
+export function quotaHttp(http: HttpClient, acquire: () => Promise<void>): HttpClient {
+  const hooked = (http as unknown as Record<symbol, unknown>)[BEFORE_NETWORK_HOOK] === true;
+  const opt = (o: HttpGetOptions): HttpCallOptions => {
+    const prev = (o as HttpCallOptions).beforeNetwork;
+    return { ...o, beforeNetwork: async () => { await prev?.(); await acquire(); } };
+  };
+  const wrap = async <T>(o: HttpGetOptions, call: (o: HttpGetOptions) => Promise<T>): Promise<T> => {
+    if (hooked) return call(opt(o));
+    await acquire();
+    return call(o);
+  };
+  return {
+    getJson: <T>(url: string, o: HttpGetOptions) => wrap(o, (x) => http.getJson<T>(url, x)),
+    getText: (url: string, o: HttpGetOptions) => wrap(o, (x) => http.getText(url, x)),
+    postForm: <T>(url: string, form: Record<string, string>, o: HttpGetOptions) => wrap(o, (x) => http.postForm<T>(url, form, x)),
+    postJson: <T>(url: string, payload: unknown, o: HttpGetOptions) => wrap(o, (x) => http.postJson<T>(url, payload, x)),
+    download: (url: string, dest: string, o: HttpGetOptions) => http.download(url, dest, o),
+  };
 }

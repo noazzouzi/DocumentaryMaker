@@ -6,6 +6,9 @@ import { makeBeats, makeFactSheet, makeScript, TEST_STYLE } from "@docmaker/core
 import {
   dedupeRecords, dHash, hamming, licenseInfo, metadataParts, metadataScore, needsVisionRerank, pickAssets, planQueries, providerOrder, rankCandidates, shotsNeeded,
 } from "../src/index";
+import { relaxQuery } from "../src/plan";
+import { eraOf, RELEVANCE_FLOOR, textCoverage } from "../src/rank";
+import { canonToken } from "../src/util";
 import { tmpDir } from "./helpers";
 
 const { plans } = makeBeats(makeScript({ chapters: 1, segmentsPerChapter: 2 }));
@@ -16,6 +19,50 @@ const cand = (o: Partial<Candidate> & { id: string }): Candidate => ({
   durationSec: null, license: licenseInfo("CC0"), author: null, sourcePageUrl: "", retrievedAt: "2026-10-02T00:00:00.000Z", youtube: null, ...o,
 });
 const rec = (c: Candidate): CandidateRecord => ({ candidate: c, score: null, raw: null });
+
+describe("relevance (coverage floor, names, ordinals, era)", () => {
+  const mackay = { name: "Charles Mackay", aliases: ["Mackay"] };
+  it("a lone surname never counts as a match for a person's name", () => {
+    const marsh = cand({ id: "m", title: "Mackay Island Wildlife Refuge 11 LR" });
+    const book = cand({ id: "b", title: "Memoirs of Extraordinary Popular Delusions, title page" });
+    const q = "charles mackay book title page";
+    expect(textCoverage(marsh, q, [mackay])).toBe(0);
+    expect(textCoverage(marsh, q)).toBeCloseTo(1 / 5, 5); // without the name rule "mackay" would have counted
+    expect(textCoverage(book, q, [mackay])).toBeCloseTo(2 / 5, 5);
+    expect(textCoverage(cand({ id: "p", title: "Charles Mackay (8738982379)" }), q, [mackay])).toBeCloseTo(2 / 5, 5);
+    const plan = { ...base, visualQuery: q, personIds: ["P1"] };
+    expect(metadataParts(marsh, plan, [marsh, book], { people: [mackay] }).textMatch).toBe(0);
+  });
+  it("zero-overlap candidates sit below the floor; ordinals, centuries and decades are normalised", () => {
+    expect(textCoverage(cand({ id: "f", title: "Fishing Boats in a Harbor" }), "an auctioneer kept lowering his price")).toBe(0);
+    expect(RELEVANCE_FLOOR).toBeGreaterThan(0.3);
+    const tulip = cand({ id: "t", title: "Semper Augustus Tulip 17th century" });
+    expect(textCoverage(tulip, "seventeenth century tulip")).toBe(1);
+    expect(textCoverage(cand({ id: "y", title: "Flora's Wagon of Fools, c1637" }), "1630s satire")).toBeCloseTo(1 / 2, 5);
+    expect(textCoverage(cand({ id: "z", title: "Tulip book 1637" }), "1600s tulip")).toBe(1);
+    expect(canonToken("xviie")).toBe("17th");
+    expect(canonToken("17e")).toBe("17th");
+    expect(canonToken("1600s")).toBe("17th");
+  });
+  it("archival material far outside the story's era is penalised", () => {
+    const facts = makeFactSheet();
+    const era = eraOf({ timeline: [{ ...facts.timeline[0]!, date: "1634" }, { ...facts.timeline[0]!, date: "1637-02-03" }] });
+    expect(era).toEqual([1634, 1637]);
+    const frieze = cand({ id: "fr", title: "tulip frieze" });
+    const off = metadataParts(frieze, base, [frieze], { era, year: 1905 });
+    const on = metadataParts(frieze, base, [frieze], { era, year: 1640 });
+    expect(off.anachronism).toBe(1);
+    expect(on.anachronism).toBe(0);
+    expect(on.metadata - off.metadata).toBeCloseTo(0.1, 5);
+    expect(metadataParts(frieze, { ...base, visualKind: "stock_broll" }, [frieze], { era, year: 1905 }).anachronism).toBe(0);
+  });
+  it("relaxes over-specific queries: without medium words, then the two-word core", () => {
+    expect(relaxQuery("semper augustus tulip watercolour")).toEqual(["semper augustus tulip", "semper augustus"]);
+    expect(relaxQuery("flora wagon of fools painting")).toEqual(["flora wagon fools", "flora wagon"]);
+    expect(relaxQuery("tulip bulbs in soil")).toEqual(["tulip bulbs soil", "tulip bulbs"]);
+    expect(relaxQuery("tulip")).toEqual([]);
+  });
+});
 
 describe("metadata score (§7.6)", () => {
   it("weights title > tags > description and normalises by the best", () => {

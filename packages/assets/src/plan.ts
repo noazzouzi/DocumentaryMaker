@@ -122,3 +122,30 @@ export function shotsNeeded(plan: BeatPlan, style: StyleData, motionData?: Recor
   const asl = Math.max(0.5, s.targetAslSec * mul);
   return clamp(Math.round(plan.estSeconds / asl), 1, 4);
 }
+
+/** Medium/style words that over-constrain archive searches ("semper augustus tulip watercolour" → 0 hits). */
+const STYLE_WORDS = new Set([
+  "painting", "paintings", "painted", "watercolour", "watercolor", "watercolours", "watercolors", "illustration", "illustrations", "engraving",
+  "engravings", "etching", "etchings", "drawing", "drawings", "sketch", "sketches", "photo", "photos", "photograph", "photographs", "photography",
+  "picture", "pictures", "image", "images", "close", "up", "closeup", "close-up", "detail", "details", "vintage", "archival", "archive", "old",
+  "historic", "historical", "black", "white", "sepia", "still", "footage", "shot", "view", "scene", "artwork", "print", "prints", "lithograph",
+  "woodcut", "aquarelle", "peinture", "gravure", "dessin", "ancienne", "ancien", "vieille", "vieux", "tableau", "the", "a", "an", "of", "in", "on",
+  "with", "and", "de", "la", "le", "les", "des", "du", "un", "une", "et",
+]);
+
+/**
+ * Query relaxation ladder for archive/stock searches (§7.3): the full query → without medium/style words → its two-word core.
+ * Returns the looser variants only (distinct, non-empty), in order.
+ */
+export function relaxQuery(text: string): string[] {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  const core = words.filter((w) => !STYLE_WORDS.has(w.toLowerCase().replace(/[^\p{L}\p{N}'-]/gu, "")));
+  const out: string[] = [];
+  const add = (t: string) => {
+    const x = t.trim();
+    if (x && x.toLowerCase() !== text.trim().toLowerCase() && !out.some((o) => o.toLowerCase() === x.toLowerCase())) out.push(x);
+  };
+  add(core.join(" "));
+  if (core.length > 2) add(core.slice(0, 2).join(" "));
+  return out;
+}

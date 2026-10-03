@@ -216,7 +216,7 @@ describe("retries, caps, cache, timeouts", () => {
     await expect(http2.getJson("https://upload.wikimedia.org/x", { signal })).rejects.toMatchObject({ code: "PROVIDER_RATE_LIMIT", details: { hostCooldown: true } });
     expect(f.calls.filter((c) => c.url.includes("upload.wikimedia.org"))).toHaveLength(1);
     // Once the window has passed, requests go out again.
-    let t = Date.now() + 601_000;
+    const t = Date.now() + 601_000;
     const http3 = createHttpClient({ config, logger: quietLogger(), fetchImpl: f.impl, lookup: publicLookup, retries: 0, now: () => t });
     await expect(http3.getJson("https://upload.wikimedia.org/y", { signal })).rejects.toMatchObject({ code: "PROVIDER_RATE_LIMIT" });
     expect(f.calls.filter((c) => c.url.includes("upload.wikimedia.org"))).toHaveLength(2);
