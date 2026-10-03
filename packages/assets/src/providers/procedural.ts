@@ -69,7 +69,7 @@ export const PROCEDURAL_RECIPES: readonly ProceduralRecipe[] = [
     id: "drift-gradient", kind: "video",
     args: ({ seed, palette, fps, seconds }) => {
       const c = muted(palette);
-      return ["-f", "lavfi", "-i", `gradients=s=1920x1080:c0=${c.ink}:c1=${c.accent}:c2=${c.paper}:nb_colors=3:seed=${seedOf(seed)}:speed=0.012:r=${fps},hue=s=0.6,vignette=PI/5`, ...VIDEO_OUT(fps, seconds)];
+      return ["-f", "lavfi", "-i", `gradients=s=1920x1080:c0=${c.ink}:c1=${c.accent}:c2=${c.paper}:nb_colors=3:seed=${seedOf(seed)}:speed=0.012:r=${fps},hue=s=0.6`, ...VIDEO_OUT(fps, seconds)];
     },
   },
   {
@@ -87,15 +87,16 @@ export const PROCEDURAL_RECIPES: readonly ProceduralRecipe[] = [
     },
   },
   {
-    // Moving paper: the ledger stains drift slowly under a soft light (replaces life-texture, which read as a dead signal).
+    // Moving paper: a stained sheet drifts slowly under the frame (replaces life-texture, which read as a dead signal). The
+    // texture is computed once on an oversized frame and panned with crop, so a long fallback stays cheap to render.
     id: "paper-drift", kind: "video",
     args: ({ seed, fps, seconds }) => {
-      // Evaluated on a 480×270 grid (frequencies ÷ 4) then scaled up: cheap per frame, smooth after bicubic scaling.
-      const S = `(sin(X/58+${phase(seed, 0)}+T*0.11)*sin(Y/43+${phase(seed, 1)})+0.5*sin(X/25+${phase(seed, 2)})*cos(Y/22+${phase(seed, 3)}-T*0.07))`;
+      const S = `(sin(X/233+${phase(seed, 0)})*sin(Y/171+${phase(seed, 1)})+0.5*sin(X/101+${phase(seed, 2)})*cos(Y/89+${phase(seed, 3)})+0.25*cos(X/43+${phase(seed, 4)})*sin(Y/39+${phase(seed, 5)}))`;
       return [
         "-f", "lavfi", "-i",
-        `color=c=0xd6c49c:s=480x270:r=${fps},format=rgb24,geq=r='clip(r(X,Y)-18*${S}-16,0,255)':g='clip(g(X,Y)-22*${S}-20,0,255)':b='clip(b(X,Y)-26*${S}-24,0,255)',`
-        + "scale=1920:1080:flags=bicubic,vignette=PI/4.5",
+        `color=c=0xd6c49c:s=2112x1188:d=1:r=1,format=rgb24,geq=r='clip(r(X,Y)-18*${S}-16,0,255)':g='clip(g(X,Y)-22*${S}-20,0,255)':b='clip(b(X,Y)-26*${S}-24,0,255)',`
+        + `vignette=PI/4.5,format=yuv420p,loop=loop=-1:size=1:start=0,setpts=N/(${fps}*TB),`
+        + `crop=1920:1080:x='96+90*sin(t*0.21+${phase(seed, 6)})':y='54+50*cos(t*0.17+${phase(seed, 7)})'`,
         ...VIDEO_OUT(fps, seconds),
       ];
     },

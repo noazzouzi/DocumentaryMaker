@@ -48,6 +48,9 @@ const DEFAULT_FOCAL = { x: 0.5, y: 0.45 };
 const RELEVANCE_EXEMPT: ReadonlySet<string> = new Set(["local", "procedural", "fal"]);
 /** A vision-rerank score this high vouches for a candidate whatever its metadata says. */
 const VISION_RELEVANT = 0.6;
+/** Archives whose strict (AND, filtered) search benefits from a looser second pass, and the result count below which it runs. */
+const RELAX_PROVIDERS: ReadonlySet<AssetProviderId> = new Set(["wikimedia", "openverse", "loc"]);
+const RELAX_BELOW = 3;
 const RERANK_TOP = 8;
 
 async function exists(p: string): Promise<boolean> {
@@ -206,31 +209,47 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
   };
   const search = async (plan: BeatPlan, queries: AssetQuery[]): Promise<CandidateRecord[]> => {
     const records: CandidateRecord[] = [];
+    const run = async (id: AssetProviderId, p: AssetProvider, q: AssetQuery, role: AssetQuery["role"]): Promise<number> => {
+      try {
+        const res: SearchResult[] = await gate.run(id, p.limits.concurrency, () => p.search(q, ctxFor(id, p)));
+        for (const r of res) {
+          records.push({ candidate: r.candidate, score: null, raw: r.raw });
+          noteDepicts(r);
+          if (!roleByKey.has(keyOf(r.candidate))) roleByKey.set(keyOf(r.candidate), role);
+        }
+        return res.length;
+      } catch (e) {
+        if (isDocmakerError(e) && e.code === "CANCELED") throw e;
+        log.warn("provider search failed", { provider: id, beatId: plan.id, error: errMsg(e) });
+        return -1;
+      }
+    };
     for (const q of queries) {
+      const empty: AssetProviderId[] = [];
+      let found = 0;
       for (const id of providerOrder(plan, q.kind)) {
         if (records.length >= maxCands) break;
         const p = providers.get(id);
         if (!p || !p.kinds.includes(q.kind)) continue;
         if (id === "fal" && (!falAllowedForBeat(plan) || !checkFalPrompt(q.text, denylist).ok)) continue;
-        // Relaxation ladder (archives and stock only): full query → without medium/style words → two-word core, each
-        // looser pass without size/aspect filters, until the provider returns something.
-        const relaxable = id !== "local" && id !== "procedural" && id !== "fal" && q.role !== "portrait" && q.role !== "generated";
-        const ladder: AssetQuery[] = [q, ...(relaxable ? relaxQuery(q.text).map((text) => ({ ...q, text, orientation: "any" as const, minWidth: 0 })) : [])];
-        try {
-          for (const rq of ladder) {
-            const res: SearchResult[] = await gate.run(id, p.limits.concurrency, () => p.search(rq, ctxFor(id, p)));
-            for (const r of res) {
-              records.push({ candidate: r.candidate, score: null, raw: r.raw });
-              noteDepicts(r);
-              if (!roleByKey.has(keyOf(r.candidate))) roleByKey.set(keyOf(r.candidate), q.role);
-            }
-            if (res.length > 0) break;
-            if (rq !== ladder[ladder.length - 1]) log.debug("no results; relaxing the query", { provider: id, beatId: plan.id });
-          }
-        } catch (e) {
-          if (isDocmakerError(e) && e.code === "CANCELED") throw e;
-          log.warn("provider search failed", { provider: id, beatId: plan.id, error: errMsg(e) });
+        const n = await run(id, p, q, q.role);
+        if (n === 0) empty.push(id);
+        found += Math.max(0, n);
+      }
+      // Relaxation ladder (archive searches that came back nearly empty): without medium/style words, then the two-word core,
+      // each looser pass without size/aspect filters, only on the archives that returned nothing (§7.3).
+      if (found >= RELAX_BELOW || q.role === "portrait" || q.role === "generated") continue;
+      let pending = empty.filter((id) => RELAX_PROVIDERS.has(id));
+      for (const text of relaxQuery(q.text)) {
+        if (pending.length === 0 || found >= RELAX_BELOW || records.length >= maxCands) break;
+        log.debug("few results; relaxing the query", { beatId: plan.id, providers: pending });
+        const still: AssetProviderId[] = [];
+        for (const id of pending) {
+          const n = await run(id, providers.get(id)!, { ...q, text, orientation: "any", minWidth: 0 }, q.role);
+          if (n === 0) still.push(id);
+          found += Math.max(0, n);
         }
+        pending = still;
       }
     }
     return records;
