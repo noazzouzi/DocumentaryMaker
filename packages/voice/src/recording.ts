@@ -1,10 +1,11 @@
 // importRecording (§8.6): the user's own voice → a final "recording" take.
 // global: files → recordings/, recording post chain, ASR, retake detection (4-grams within 30 s, keep the last),
 //         NW of all display words against all ASR words, segment cuts at silence midpoints, < 50 % matched → missing.
-// per-segment: <segmentId>[-n].<ext> files map directly to their segment (ASR + NW inside the segment only).
+// per-segment: <segmentId>[-n].<ext> files map directly to their segment (ASR + NW inside the segment only); files in
+//              recordings/ are used in place, never copied back there (a copy would shadow later re-uploads).
 // Missing segments are filled with pickup TTS (SegmentTake.pickup = true) when a pickup provider is given.
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, readdir, rm } from "node:fs/promises";
+import { copyFile, mkdir, readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import type { Aligner, Lang, Script, SegmentTake, TimedWord, VoiceTrack, WordTiming } from "@docmaker/core";
 import { DocmakerError, P, hashJson, sha256Hex, wordId } from "@docmaker/core";
@@ -229,26 +230,26 @@ export async function importRecording(i: ImportRecordingInput, ctx: VoiceCtx): P
       ctx.progress(0.6 + (0.3 * (ii + 1)) / items.length, `recording: ${p.it.seg.id}`);
     }
   } else {
-    // per-segment: the newest file per segment id wins
-    const bySeg = new Map<string, { file: string; n: number }>();
+    // per-segment: the newest file per segment id wins — the highest explicit -n first, then the most recently written
+    // file (a re-upload replaces recordings/<segmentId>.<ext> in place, possibly with another extension).
+    const bySeg = new Map<string, { file: string; n: number; at: number }>();
     for (const f of i.files) {
       const m = SEGMENT_FILE.exec(path.basename(f));
       if (!m) throw new DocmakerError("VALIDATION", `per-segment recordings must be named <segmentId>[-n].<ext>: ${path.basename(f)}`);
       const n = m[2] ? Number(m[2]) : 0;
+      const st = await stat(f);
+      const at = Math.max(st.mtimeMs, st.ctimeMs);
       const cur = bySeg.get(m[1]!);
-      if (!cur || n >= cur.n) bySeg.set(m[1]!, { file: f, n });
+      if (!cur || n > cur.n || (n === cur.n && at >= cur.at)) bySeg.set(m[1]!, { file: f, n, at });
     }
     const known = new Map(items.map((it) => [it.seg.id, it]));
     for (const id of bySeg.keys()) if (!known.has(id)) throw new DocmakerError("VALIDATION", `${id} is not a voiced segment of the ${lang} script`);
-    const existing = await readdir(recDir).catch(() => [] as string[]);
     for (const [id, { file }] of bySeg) {
       const it = known.get(id)!;
-      // store as recordings/<segmentId>-<n>.<ext> with the next free n
-      const ext = path.extname(file) || ".wav";
-      const taken = existing.map((x) => SEGMENT_FILE.exec(x)).filter((m) => m && m[1] === id).map((m) => Number(m![2] ?? 0));
-      const stored = path.join(recDir, `${id}-${taken.length ? Math.max(...taken) + 1 : 1}${ext}`);
-      await copyFile(file, stored);
-      existing.push(path.basename(stored));
+      // A file already in recordings/ (the stage passes that directory's files) is used in place: a copy stored next to
+      // it would outrank every later re-upload of the segment. A file from elsewhere is stored under its own name.
+      const stored = path.join(recDir, path.basename(file));
+      if (path.resolve(file) !== path.resolve(stored)) await copyFile(file, stored);
       const clean = path.join(recDir, ".clean", `${path.basename(stored)}.wav`);
       await mkdir(path.dirname(clean), { recursive: true });
       await runPostChain(stored, clean, { kind: "recording", rawFormat: null }, ctx);

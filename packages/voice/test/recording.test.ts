@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Aligner, Lang, WordTiming } from "@docmaker/core";
@@ -128,7 +128,9 @@ describe("importRecording — per-segment mode", () => {
     const asr = new IslandAsr(new Map([[id, words(1)]]));
     const second = await importRecording({ lang, script, files: [path.join(dir, `${id}.wav`)], mode: "per-segment", aligner: "auto", previous: first, projectDir, pickup: null, asr }, makeCtx());
     expect(second.id).not.toBe(first.id);
-    expect(existsSync(path.join(projectDir, `voice/en/recordings/${id}-1.wav`))).toBe(true);
+    // a file from elsewhere is stored in recordings/ under its own name (never as a shadowing <id>-<n> copy)
+    expect(existsSync(path.join(projectDir, `voice/en/recordings/${id}.wav`))).toBe(true);
+    expect(existsSync(path.join(projectDir, `voice/en/recordings/${id}-1.wav`))).toBe(false);
     for (const s of second.segments) {
       const old = first.segments.find((x) => x.segmentId === s.segmentId)!;
       if (s.segmentId === id) expect(s.sha256).not.toBe(old.sha256);
@@ -136,6 +138,43 @@ describe("importRecording — per-segment mode", () => {
     }
     expect(second.segments.find((s) => s.segmentId === id)!.words.every((w) => w.source === "aligned")).toBe(true);
   }, 60_000);
+
+  it("a re-uploaded segment replaces the earlier take (files in recordings/ are used in place, newest wins)", async () => {
+    const projectDir = tmpDir("rec-proj-");
+    const recDir = path.join(projectDir, "voice/en/recordings");
+    mkdirSync(recDir, { recursive: true });
+    const id = segs[0]!.id;
+    // what the voice stage does: every audio file of recordings/ is passed to importRecording
+    const scan = () => readdirSync(recDir).filter((f) => /\.(wav|flac)$/.test(f)).sort().map((f) => path.join(recDir, f));
+    const run = async () => {
+      const asr = new IslandAsr(new Map([[id, words(0)]]));
+      const t = await importRecording({ lang, script, files: scan(), mode: "per-segment", aligner: "auto", previous: null, projectDir, pickup: null, asr }, makeCtx());
+      return { take: t.segments.find((s) => s.segmentId === id)!, asr };
+    };
+    // take 1 uploaded as recordings/<id>.wav, imported
+    await speak(path.join(recDir, `${id}.wav`), words(0), 11);
+    const one = await run();
+    expect(readdirSync(recDir).filter((f) => f.startsWith(id))).toEqual([`${id}.wav`]);
+    // retake uploaded at the same name (the upload replaces the file), imported again → the new take is used
+    await speak(path.join(recDir, `${id}.wav`), words(0), 12);
+    const two = await run();
+    expect(readdirSync(recDir).filter((f) => f.startsWith(id))).toEqual([`${id}.wav`]);
+    expect(two.take.sha256).not.toBe(one.take.sha256);
+    expect(two.take.durationMs).not.toBe(one.take.durationMs);
+    // a third take uploaded with another extension: same rank (no -n), the most recently written file wins
+    await new Promise((r) => setTimeout(r, 30));
+    await speak(path.join(recDir, `${id}.flac`), words(0), 13);
+    const three = await run();
+    expect(three.asr.calls.map((c) => path.basename(c))).toEqual([`${id}.flac.wav`]);
+    expect(three.take.sha256).not.toBe(two.take.sha256);
+    // an explicit -n version still outranks an un-numbered file
+    await new Promise((r) => setTimeout(r, 30));
+    await speak(path.join(recDir, `${id}-2.wav`), words(0), 14);
+    await new Promise((r) => setTimeout(r, 30));
+    await speak(path.join(recDir, `${id}.wav`), words(0), 15);
+    const four = await run();
+    expect(four.asr.calls.map((c) => path.basename(c))).toEqual([`${id}-2.wav.wav`]);
+  }, 90_000);
 
   it("works without an ASR (estimated timings + note) and validates file names", async () => {
     const dir = tmpDir("rec-src-");
