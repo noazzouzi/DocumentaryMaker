@@ -74,6 +74,19 @@ describe("buildTtsText — numbers (FR)", () => {
     expect(buildTtsText("Ce bulbe valait 1,5 ƒ.", "fr", NUM).ttsText).toBe("Ce bulbe valait un virgule cinq florin.");
     expect(buildTtsText("Le Xe siècle.", "fr", NUM).ttsText).toBe("Le dixième siècle.");
   });
+  it("round millions take « de/d' » before the currency; a currency after a written scale word is read", () => {
+    const s = "Il a perdu 3 000 000 €, puis 5 millions €, 2 000 000 $ et 1 500 000 € ; 4,5 milliards € !";
+    const r = buildTtsText(s, "fr", NUM);
+    checkSpans(s, r);
+    expect(r.ttsText).toBe(
+      "Il a perdu trois millions d'euros, puis cinq millions d'euros, deux millions de dollars et un million cinq cent mille euros ; " +
+      "quatre virgule cinq milliards d'euros !",
+    );
+    const d = tokenizeDisplay(s).map((w) => w.text);
+    expect(spanText(r, d.indexOf("millions"))).toBe("millions");
+    expect(spanText(r, d.indexOf("€,", d.indexOf("millions")))).toBe("d'euros,");
+    expect(buildTtsText("He lost 5 million $.", "en", NUM).ttsText).toBe("He lost five million dollars.");
+  });
   it("NBSP / narrow NBSP thousands separators", () => {
     const s = "Il y a 2 000 ans, 1 637 bulbes.";
     const r = buildTtsText(s, "fr", NUM);
@@ -119,9 +132,26 @@ describe("buildTtsText — numbers (EN)", () => {
     );
     expect(buildTtsText("The war of 1914-1918 and pre-1914 maps.", "en", NUM).ttsText).toBe("The war of nineteen fourteen to nineteen eighteen and pre-1914 maps.");
   });
-  it("Roman regnal numbers after a capitalised name", () => {
-    expect(buildTtsText("Henry VIII and Elizabeth II.", "en", NUM).ttsText).toBe("Henry the eighth and Elizabeth the second.");
-    expect(buildTtsText("Then I left.", "en", NUM).ttsText).toBe("Then I left.");
+  it("years in pairs, before a noun, at a sentence start and after a dash; plural count nouns stay cardinals", () => {
+    const en = (t: string) => buildTtsText(t, "en", NUM).ttsText;
+    expect(en("The bubble of 1636 and 1637 was famous.")).toBe("The bubble of sixteen thirty-six and sixteen thirty-seven was famous.");
+    expect(en("From 1636 to 1637 prices rose.")).toBe("From sixteen thirty-six to sixteen thirty-seven prices rose.");
+    expect(en("After the 1929 crash")).toBe("After the nineteen twenty-nine crash");
+    expect(en("The year 1637 was rough. 1637 marked the end.")).toBe("The year sixteen thirty-seven was rough. sixteen thirty-seven marked the end.");
+    expect(en("Prices 1636 – 1637 rose.")).toBe("Prices sixteen thirty-six – sixteen thirty-seven rose.");
+    expect(en("a 1929 film")).toBe("a nineteen twenty-nine film");
+    expect(en("The 1500 soldiers and 2000 people.")).toBe("The one thousand five hundred soldiers and two thousand people.");
+    expect(en("See page 1637 and 1638 pages.")).toBe("See page one thousand six hundred thirty-seven and one thousand six hundred thirty-eight pages.");
+  });
+  it("Roman numerals: regnal ordinals after rulers' names and titles, cardinals after series words, others untouched", () => {
+    const en = (t: string) => buildTtsText(t, "en", NUM).ttsText;
+    expect(en("Henry VIII and Elizabeth II.")).toBe("Henry the eighth and Elizabeth the second.");
+    expect(en("Pope Leo XIII and Pharaoh Thutmose III; Charles V.")).toBe("Pope Leo the thirteenth and Pharaoh Thutmose the third; Charles the fifth.");
+    expect(en("World War II, World War I ended.")).toBe("World War Two, World War One ended.");
+    expect(en("Apollo XI landed. Chapter II begins with Part III.")).toBe("Apollo eleven landed. Chapter two begins with Part three.");
+    expect(en("After the War I went home. Then I left.")).toBe("After the War I went home. Then I left.");
+    expect(en("Windsor XII Gin.")).toBe("Windsor XII Gin.");
+    expect(buildTtsText("Louis XIV, le roi Charles X et la Partie II.", "fr", NUM).ttsText).toBe("Louis quatorze, le roi Charles dix et la Partie deux.");
   });
 });
 

@@ -40,6 +40,59 @@ const YEAR_CONTEXT = new Set([
   "durant", "fin", "début", "milieu", "été", "hiver", "printemps", "automne", "entre",
 ]);
 
+/**
+ * Weaker year context: "1636 and 1637", "from 1636 to 1637", "the 1929 crash", a sentence start ("1637 marked the end"),
+ * after a dash. A following plural noun still makes it a cardinal ("the 1500 soldiers", "1500 soldiers marched").
+ */
+const PAIR_WORDS = new Set(["and", "or", "to", "et", "ou", "à"]);
+const WEAK_YEAR_CONTEXT = new Set(["and", "or", "to", "the", "a", "et", "ou", "à", "au", "aux", "la", "le", "l'", "l’"]);
+/** Lowercase words ending in s/x that are not plural count nouns (verbs, function words) after a year. */
+const NOT_PLURAL = new Set([
+  "is", "was", "has", "does", "as", "its", "his", "this", "thus", "plus", "sans", "dans", "sous", "vers", "puis", "alors", "après",
+  "depuis", "chez", "mais", "jamais", "toujours", "marks", "sees", "brings", "begins", "ends", "remains", "changes", "becomes",
+  "starts", "proves", "follows", "comes", "goes", "gives", "makes", "takes", "opens", "closes", "sets", "ushers", "heralds",
+  "signals", "witnesses", "sees", "puts", "leaves", "turns", "lies", "stays", "es", "fus", "vis",
+]);
+const looksPluralNoun = (w: string | null) =>
+  w !== null && /^\p{Ll}[\p{L}'’-]+[sx]$/u.test(w) && !/(?:ss|us)$/u.test(w) && !NOT_PLURAL.has(w.toLocaleLowerCase());
+
+/** EN words after which a Roman numeral is a cardinal ("World War Two", "Apollo eleven", "Chapter two"). */
+const ROMAN_CARDINAL_EN = new Set([
+  "war", "part", "chapter", "act", "scene", "apollo", "gemini", "mercury", "saturn", "phase", "title", "vatican", "volume", "book",
+  "section", "article", "episode", "round", "level", "stage", "class", "type", "mark", "grade", "schedule", "appendix", "annex",
+  "canto", "psalm", "rocky", "series", "season", "council", "amendment", "division", "corps", "army", "legion", "fleet", "table",
+  "figure", "plate", "case", "tier", "category", "sector", "zone", "block", "unit", "model", "version", "liber", "lot", "op",
+]);
+/** FR series words: Roman numerals are cardinals in FR anyway; listed so that single letters are read ("Partie I"). */
+const ROMAN_CARDINAL_FR = new Set([
+  "guerre", "partie", "chapitre", "acte", "scène", "tome", "livre", "volume", "titre", "article", "annexe", "phase", "concile",
+  "vatican", "apollo", "saison", "épisode", "série", "classe", "type", "niveau", "stade", "planche", "figure", "tableau", "légion",
+]);
+/** Titles that make the next capitalised word a ruler's name ("Pope Leo XIII", "Pharaoh Ramesses II", "le roi Louis XVI"). */
+const ROMAN_TITLES = new Set([
+  "king", "queen", "pope", "emperor", "empress", "tsar", "czar", "tsarina", "tsaritsa", "sultan", "pharaoh", "shah", "kaiser", "duke",
+  "duchess", "prince", "princess", "saint", "st", "antipope", "patriarch", "count", "countess", "elector", "margrave", "khan", "caliph",
+  "roi", "reine", "pape", "empereur", "impératrice", "tsarine", "sultan", "pharaon", "duc", "duchesse", "comte", "comtesse",
+]);
+/** Rulers' given names that take a regnal number (EN reading "the eighth"; FR "huit"). Lowercase. */
+const REGNAL_NAMES = new Set([
+  "henry", "henri", "louis", "charles", "george", "edward", "william", "james", "richard", "john", "jean", "philip", "philippe", "elizabeth",
+  "mary", "anne", "victoria", "frederick", "frédéric", "friedrich", "wilhelm", "ludwig", "otto", "rudolf", "rodolphe", "maximilian", "leopold",
+  "léopold", "francis", "françois", "franz", "joseph", "peter", "pierre", "pyotr", "paul", "catherine", "ivan", "nicholas", "nicolas",
+  "alexander", "alexandre", "alfonso", "alphonse", "ferdinand", "carlos", "juan", "pedro", "felipe", "fernando", "isabella", "isabelle",
+  "gustav", "gustave", "gustavus", "christian", "frederik", "olaf", "haakon", "eric", "erik", "magnus", "sancho", "ramesses", "ramses",
+  "amenhotep", "thutmose", "seti", "ptolemy", "ptolémée", "antiochus", "seleucus", "mehmed", "mehmet", "selim", "suleiman", "murad",
+  "bayezid", "mahmud", "abdulhamid", "constantine", "constantin", "justinian", "justinien", "michael", "michel", "basil", "basile", "leo",
+  "léon", "gregory", "grégoire", "benedict", "benoît", "innocent", "clement", "clément", "pius", "pie", "urban", "urbain", "boniface",
+  "sixtus", "sixte", "julius", "jules", "martin", "eugene", "eugène", "adrian", "hadrian", "adrien", "celestine", "célestin", "honorius",
+  "nicholas", "callixtus", "calixte", "stephen", "étienne", "edmund", "harold", "robert", "david", "malcolm", "margaret", "marguerite",
+  "christina", "christine", "sigismund", "sigismond", "casimir", "stanislaus", "stanislas", "vladislaus", "ladislas", "wenceslaus",
+  "venceslas", "matthias", "hugh", "hugues", "baldwin", "baudouin", "godfrey", "amadeus", "amédée", "umberto", "humbert",
+  "victor", "manuel", "afonso", "joão", "sebastian", "rama", "napoleon", "napoléon", "lothair", "lothaire", "conrad", "heinrich",
+  "albert", "albrecht", "charlemagne", "pepin", "pépin", "childeric", "childéric", "clovis", "dagobert", "carloman", "philipp",
+]);
+const capitalise = (w: string) => (w === "" ? w : w[0]!.toUpperCase() + w.slice(1));
+
 /** Words after which a 4-digit number is a cardinal even when it ends a sentence ("page 2017.", "n° 1234"). */
 const CARDINAL_CONTEXT = new Set([
   "page", "pages", "p", "pp", "no", "nos", "n", "nº", "number", "numbers", "numéro", "numéros", "num", "room", "chambre", "article", "art",
@@ -111,6 +164,17 @@ function neighbourCore(words: string[], i: number, dir: -1 | 1): string | null {
   return null;
 }
 
+/** Index of the nearest non-empty word before i (-1 at the start). */
+function prevIndex(words: string[], i: number): number {
+  for (let k = i - 1; k >= 0; k--) if (words[k] !== "") return k;
+  return -1;
+}
+/** Trailing punctuation of the nearest non-empty word before i (null at the start). */
+function neighbourPost(words: string[], i: number): string | null {
+  const k = prevIndex(words, i);
+  return k < 0 ? null : splitCore(words[k]!).post;
+}
+
 export function buildTtsText(spoken: string, lang: Lang, opts: TtsTextOptions): TtsTextResult {
   const display = tokenizeDisplay(spoken);
   // 1. tags ([whispers], [sighs]) are removed from the tts text when stripTags
@@ -124,6 +188,8 @@ export function buildTtsText(spoken: string, lang: Lang, opts: TtsTextOptions): 
   });
   const out = src.slice();
   const done = new Uint8Array(src.length);
+  /** Display words read as a year (the second number of "1636 and 1637" follows the first). */
+  const readAsYear = new Uint8Array(src.length);
 
   const lexicon = [...opts.lexicon]
     .map((e) => ({ e, toks: tokensOf(e.match).map((t) => splitCore(t).core || t) }))
@@ -230,10 +296,19 @@ export function buildTtsText(spoken: string, lang: Lang, opts: TtsTextOptions): 
     const bare = span.length === 1 && !unit && frac === null && !neg && isYearValue(intDigits) && /^\d{4}$/.test(first.core);
     if (bare) {
       const prev = neighbourCore(src, i, -1)?.toLocaleLowerCase(lang) ?? null;
+      const prevPost = neighbourPost(src, i);
       const next = neighbourCore(src, i, 1);
       const standalone = next === null || first.post !== "" || /^[\p{Lu}\p{N}]/u.test(next);
       const cardinalCtx = first.pre.endsWith("#") || (prev !== null && CARDINAL_CONTEXT.has(prev));
-      const year = !cardinalCtx && ((prev !== null && YEAR_CONTEXT.has(prev)) || standalone);
+      // sentence start / after a dash or colon ("… rough. 1637 marked the end", "1636 – 1637")
+      const opening = prev === null || /[.!?…:;\-–—]["»”’)\]]*\s*$/u.test(prevPost ?? "") || /^[\-–—]/u.test(first.pre);
+      const weak = opening || (prev !== null && WEAK_YEAR_CONTEXT.has(prev));
+      // the second year of a pair ("1636 and 1637 prices", "from 1636 to 1637") follows the first one
+      const pi = prevIndex(src, i);
+      const bi = pi >= 0 ? prevIndex(src, pi) : -1;
+      const pairYear = prev !== null && PAIR_WORDS.has(prev) && bi >= 0 && readAsYear[bi] === 1;
+      const year = !cardinalCtx && ((prev !== null && YEAR_CONTEXT.has(prev)) || standalone || pairYear || (weak && !looksPluralNoun(next)));
+      if (year) readAsYear[i] = 1;
       groupWords = [year ? yearWords(Number(intDigits), lang) : cardinalFromDigits(intDigits, lang)];
     } else if (span.length > 1) {
       groupWords = cardinalGroupWords(digitGroups(intDigits), lang);
@@ -246,7 +321,18 @@ export function buildTtsText(spoken: string, lang: Lang, opts: TtsTextOptions): 
     const isCur = unit !== null && unit !== "%";
     let scaleIdx = -1;
     const nx = after + (sepUnit ? 1 : 0);
-    if (pre && nx < src.length && src[nx] !== "" && !done[nx] && SCALE_WORDS.has(splitCore(src[nx]!).core.toLocaleLowerCase(lang))) scaleIdx = nx;
+    const isScaleAt = (k: number) => k < src.length && src[k] !== "" && !done[k] && SCALE_WORDS.has(splitCore(src[k]!).core.toLocaleLowerCase(lang));
+    if (pre && isScaleAt(nx)) scaleIdx = nx;
+    // a currency token after a written scale word: "5 millions €", "5 million $" → "cinq millions d'euros"
+    let scaleUnitIdx = -1;
+    if (!unit && lastParts.post === "" && isScaleAt(after) && splitCore(src[after]!).post === "" && after + 1 < src.length && src[after + 1] !== "" && !done[after + 1]) {
+      const pc = splitCore(src[after + 1]!);
+      if (pc.pre === "" && new RegExp(`^${CUR_RE}$`, "u").test(pc.core)) { scaleIdx = after; scaleUnitIdx = after + 1; }
+    }
+    const curUnit: Cur | null = unit && unit !== "%" ? unit : scaleUnitIdx >= 0 ? (splitCore(src[scaleUnitIdx]!).core as Cur) : null;
+    // FR: an amount ending in a round million/milliard takes "de" ("trois millions d'euros", "un milliard de dollars")
+    const roundScale = lang === "fr" && curUnit !== null && scaleIdx < 0 && /[1-9]/.test(intDigits) && /0{6}$/.test(intDigits) && (frac === null || /^0+$/.test(frac));
+    const deCur = (w: string) => (/^[aeiouyé]/.test(w) ? `d'${w}` : `de ${w}`);
     // cents read after the currency word ("twelve euros fifty", ".00" silent); other fractions are decimals
     const centsMode = isCur && frac !== null && frac.length === 2 && scaleIdx < 0;
     let cents = centsMode && frac !== "00" ? cardinalFromDigits(frac, lang) : "";
@@ -258,9 +344,9 @@ export function buildTtsText(spoken: string, lang: Lang, opts: TtsTextOptions): 
       groupWords = [cents];
       unitText = SUBUNIT[unit as Cur][lang][Number(frac) === 1 ? 0 : 1];
       cents = "";
-    } else if (unit) {
-      const w = curWord(unit, scaleIdx >= 0 || amountPlural(value, centsMode));
-      unitText = scaleIdx >= 0 && lang === "fr" ? (/^[aeiouyé]/.test(w) ? `d'${w}` : `de ${w}`) : w;
+    } else if (curUnit) {
+      const w = curWord(curUnit, scaleIdx >= 0 || amountPlural(value, centsMode));
+      unitText = (scaleIdx >= 0 || roundScale) && lang === "fr" ? deCur(w) : w;
     }
     span.forEach((k, n) => {
       const parts = splitCore(src[k]!);
@@ -278,21 +364,56 @@ export function buildTtsText(spoken: string, lang: Lang, opts: TtsTextOptions): 
     }
     if (scaleIdx >= 0) {
       const ps = splitCore(src[scaleIdx]!);
-      out[scaleIdx] = `${ps.pre}${ps.core} ${unitText}${ps.post}`;
-      done[scaleIdx] = 1;
-      consumed = scaleIdx - i + 1;
+      if (scaleUnitIdx >= 0) {
+        // the currency keeps its own display word: "millions" | "d'euros"
+        const pc = splitCore(src[scaleUnitIdx]!);
+        out[scaleIdx] = src[scaleIdx]!;
+        out[scaleUnitIdx] = `${unitText}${pc.post}`;
+        done[scaleIdx] = 1;
+        done[scaleUnitIdx] = 1;
+        consumed = scaleUnitIdx - i + 1;
+      } else {
+        out[scaleIdx] = `${ps.pre}${ps.core} ${unitText}${ps.post}`;
+        done[scaleIdx] = 1;
+        consumed = scaleIdx - i + 1;
+      }
     }
     return consumed;
   };
 
-  /** Regnal Roman numerals after a capitalised name: "Louis XIV" → "Louis quatorze" / "Louis the fourteenth". */
+  /**
+   * Roman numerals after a capitalised word. FR reads them as cardinals ("Louis quatorze", "Chapitre deux"). EN reads a
+   * regnal ordinal only after a known ruler's name or a title ("Henry the eighth", "Pope Leo the thirteenth") and a
+   * cardinal after series words ("World War Two", "Apollo eleven", "Chapter two"); anything else is left as written.
+   */
   const tryRoman = (i: number): number => {
     const parts = splitCore(src[i]!);
-    if (!/^[IVX]{2,5}$/.test(parts.core)) return 0;
+    if (!/^[IVX]{1,5}$/.test(parts.core)) return 0;
     const n = romanToInt(parts.core);
-    const prev = i > 0 ? splitCore(src[i - 1]!).core : "";
-    if (!n || n > 30 || !/^\p{Lu}\p{Ll}/u.test(prev)) return 0;
-    out[i] = parts.pre + (lang === "fr" ? cardinalFromDigits(String(n), "fr") : `the ${ordinalWords(n, "en")}`) + parts.post;
+    const pk = prevIndex(src, i);
+    const prev = pk >= 0 && !done[pk] ? splitCore(src[pk]!) : null;
+    if (!n || n > 30 || !prev || prev.post !== "" || !/^\p{Lu}\p{Ll}/u.test(prev.core)) return 0;
+    const prevLc = prev.core.toLocaleLowerCase(lang);
+    const ppk = prevIndex(src, pk);
+    const pp = ppk >= 0 ? splitCore(src[ppk]!) : null;
+    const titled = pp !== null && pp.post === "" && ROMAN_TITLES.has(pp.core.toLocaleLowerCase(lang));
+    let say: string | null;
+    if (lang === "fr") {
+      // single letters only after a name/series word ("Charles V", "Partie I"), never the pronoun-like "I" alone
+      say = parts.core.length > 1 || REGNAL_NAMES.has(prevLc) || ROMAN_CARDINAL_FR.has(prevLc) || titled ? cardinalFromDigits(String(n), "fr") : null;
+    } else if (ROMAN_CARDINAL_EN.has(prevLc)) {
+      // "World War I", "Part I" — a lone "I" only after "World War" or a series word not followed by a lowercase verb
+      const nextCore = neighbourCore(src, i, 1);
+      const loneI = parts.core === "I" && !(prevLc === "war" && pp?.core === "World") && nextCore !== null && /^\p{Ll}/u.test(nextCore) && parts.post === "";
+      const card = cardinalFromDigits(String(n), "en");
+      say = loneI ? null : prevLc === "war" ? capitalise(card) : card;
+    } else if (REGNAL_NAMES.has(prevLc) || titled) {
+      say = `the ${ordinalWords(n, "en")}`;
+    } else {
+      say = null;
+    }
+    if (say === null) return 0;
+    out[i] = parts.pre + say + parts.post;
     done[i] = 1;
     return 1;
   };
