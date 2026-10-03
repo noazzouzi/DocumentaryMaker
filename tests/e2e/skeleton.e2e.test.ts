@@ -75,7 +75,7 @@ describe("walking skeleton (real packages, fake render client)", () => {
     for (const f of ["README.md", "credits.md", "reference.mp4"]) expect(files).toContain(f);
     expect(readdirSync(path.join(result.exportDir, "stems")).sort()).toEqual(["clip.wav", "music.wav", "sfx.wav", "vo.wav"]);
     const srt = readFileSync(path.join(result.exportDir, files.find((f) => f.endsWith(".srt"))!), "utf8");
-    expect(srt).toMatch(/^1\n\d\d:\d\d:\d\d,\d{3} --> /);
+    expect(srt).toMatch(/^1\r?\n\d\d:\d\d:\d\d,\d{3} --> /); // the real SRT writer uses CRLF
     const otio = JSON.parse(readFileSync(path.join(result.exportDir, files.find((f) => f.endsWith(".otio"))!), "utf8")) as { OTIO_SCHEMA: string };
     expect(otio.OTIO_SCHEMA).toBe("Timeline.1");
     const qa = QaReport.parse(JSON.parse(readFileSync(path.join(projectDir, P.qaReport("en", "draft")), "utf8")));
