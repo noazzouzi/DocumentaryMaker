@@ -70,6 +70,20 @@ describe("dead air (bare generated backdrops)", () => {
     expect(out.stats.deadAirStretches).toBe(0);
     expect(out.stats.deadAirSec).toBe(0);
   });
+  it("an all-procedural (offline) programme is filled with readable phrases, not lone words", () => {
+    const built = tulipInputs();
+    for (const [id, a] of Object.entries(built.input.frozen)) {
+      if (a.kind === "image" || a.kind === "video") built.input.frozen[id] = { ...a, conform: { ...a.conform, recipe: a.kind === "video" ? "proc-paper-drift-v1" : "proc-gradient-grid-v1" } };
+    }
+    const out = direct(built.input);
+    const t = out.timeline;
+    expect(errorsOf(out)).toEqual([]);
+    // at most one short stretch is left (a beat with no word to show), reported as a DEAD_AIR note
+    expect(out.stats.deadAirSec).toBeLessThanOrEqual(2.5);
+    const texts = t.overlays.filter((o) => o.component === "KineticText").map((o) => (o.props as { lines: string[] }).lines.join(" "));
+    expect(texts).toEqual(expect.arrayContaining(["started with a botanist", "Historian Anne Goldgar"]));
+    for (const lone of ["started", "height", "Historian Anne"]) expect(texts).not.toContain(lone);
+  });
   it("deadAirStretches counts a procedural asset as bare (an unfilled timeline reads back its stretch)", () => {
     const t = structuredClone(runs().tulip.timeline);
     const fg = (f: number) => t.overlays.some((o) => o.from <= f && f < o.from + o.dur && isForeground(o.component));

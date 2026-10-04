@@ -174,13 +174,17 @@ function absorb(shots: Shot[], k: number, into: number): boolean {
 
 const clean = (w: string) => w.replace(/^[«“"'(]+|[»”"'),.;:!?…]+$/gu, "");
 
-/** Short phrase (≤ 3 words, same sentence) starting at word index `k`, trailing function words dropped. */
+/** Short phrase starting at word index `k` (same sentence): three words or more when the first ones are function words —
+ *  "height of the mania", "started with a botanist", not a lone "height" — at most three content words and five words,
+ *  trailing function words dropped. */
 function phraseAt(ctx: Ctx, k: number, end: number): string | null {
   const ws: string[] = [];
-  for (let i = k; i < end && ws.length < 3; i++) {
+  let content = 0;
+  for (let i = k; i < end && ws.length < 5; i++) {
     const w = ctx.words[i]!;
     ws.push(clean(w.text));
-    if (/[.!?…;:]["»”]?$/.test(w.text)) break;
+    if (!isFunctionWord(clean(w.text), ctx.lang)) content++;
+    if (/[.!?…;:]["»”]?$/.test(w.text) || content >= 3 || (content >= 2 && ws.length >= 3)) break;
   }
   const t = contentText(ws.join(" "), ctx.lang);
   return t && t.length <= 48 ? t : null;
