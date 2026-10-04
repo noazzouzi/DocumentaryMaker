@@ -274,6 +274,8 @@ export interface RelevanceSignals {
   anachronism: boolean;
   /** A place group its title/categories name while naming none of the story's places (null when none). */
   foreignPlace: string | null;
+  /** Only a demonym of a place foreign to the story ("Indo-Greek coin", "Chinese bowl"): a weak signal, penalised only. */
+  foreignDemonym: string | null;
   /** A currency it shows that the story never mentions (null when none). */
   foreignCurrency: string | null;
 }
@@ -307,18 +309,20 @@ export function relevanceSignals(c: Pick<Candidate, "title" | "tags" | "descript
   const corePlaceMatch = [...mentioned].some((g) => ctx.corePlaces.has(g));
   const named = [...placesIn(head, { namesOnly: true })].filter((g) => !ctx.places.has(g));
   const foreignPlace = ctx.places.size > 0 && !placeMatch && named.length > 0 ? named[0]! : null;
+  const others = [...mentioned].filter((g) => !ctx.places.has(g));
+  const foreignDemonym = ctx.places.size > 0 && !placeMatch && foreignPlace === null && others.length > 0 ? others[0]! : null;
   const shown = [...currenciesIn(`${head} \n ${c.description}`)];
   const foreignCurrency = ctx.currencies.size > 0 && shown.length > 0 && !shown.some((g) => ctx.currencies.has(g)) ? shown[0]! : null;
   const { year, stated } = candidateYear(c, rawYear);
   const anachronism = ctx.periodKind ? isAnachronistic(year, ctx.windows)
     : stated && year !== null && year < ctx.modernSince && isAnachronistic(year, ctx.windows);
-  return { salientHits, salientTotal, onTopic, placeMatch, corePlaceMatch, year, yearStated: stated, anachronism, foreignPlace, foreignCurrency };
+  return { salientHits, salientTotal, onTopic, placeMatch, corePlaceMatch, year, yearStated: stated, anachronism, foreignPlace, foreignDemonym, foreignCurrency };
 }
 
 /** Metadata penalty of the signals (subtracted from the metadata score). */
 export function relevancePenalty(s: RelevanceSignals): number {
   // A provider date is often when a photograph of the subject was taken (a 2008 photo of a 1590 garden): a light penalty.
-  return (s.anachronism ? (s.yearStated ? 0.15 : 0.05) : 0) + (s.foreignPlace ? 0.2 : 0) + (s.foreignCurrency ? 0.2 : 0) + (s.salientTotal > 0 && s.salientHits === 0 ? 0.15 : 0);
+  return (s.anachronism ? (s.yearStated ? 0.15 : 0.05) : 0) + (s.foreignPlace ? 0.2 : s.foreignDemonym ? 0.1 : 0) + (s.foreignCurrency ? 0.2 : 0) + (s.salientTotal > 0 && s.salientHits === 0 ? 0.15 : 0);
 }
 
 /**
@@ -343,6 +347,7 @@ export function signalNotes(s: RelevanceSignals): string {
   if (s.onTopic) parts.push("on-topic");
   if (s.anachronism) parts.push(`anachronism ${s.year}`);
   if (s.foreignPlace) parts.push(`foreign-place ${s.foreignPlace}`);
+  if (s.foreignDemonym) parts.push(`foreign-demonym ${s.foreignDemonym}`);
   if (s.foreignCurrency) parts.push(`foreign-currency ${s.foreignCurrency}`);
   return parts.join(" ");
 }

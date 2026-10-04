@@ -142,6 +142,17 @@ describe("relevance rules on the demo's off-topic picks", () => {
     expect(ranked[0]!.record.candidate.providerAssetId).toBe("ships");
     expect(ranked.find((r) => r.record.candidate.providerAssetId === "saf")!.score.notes).toMatch(/foreign-place persia/);
   });
+  it("a foreign demonym alone is a weak signal: penalised, not disqualifying", () => {
+    const p = plan("gold coins pile candlelight", { visualKind: "stock_broll" });
+    const greek = cand("dio", "Gold coin of Diodotus, Indo-Greek, National Museum, New Delhi");
+    const plain = cand("gc", "Gold coins");
+    const ctx = beatContext(p, facts, story);
+    const s = relevanceSignals(greek, null, [p.visualQuery], ctx);
+    expect(s.foreignDemonym).toBe("greece");
+    expect(relevanceFailure(s)).toBeNull();
+    const ranked = rankCandidates({ plan: p, records: [greek, plain].map((c) => ({ candidate: c, score: null, raw: null })), reranked: null, relevance: { ctx, queries: [p.visualQuery] } });
+    expect(ranked[0]!.record.candidate.providerAssetId).toBe("gc");
+  });
   it("a vision score outranks metadata: the fused total follows the vision score", () => {
     const p = plan("dutch merchants seventeenth century painting");
     const ships = cand("ships", "Dutch Ships in a Gale", "merchant ship");
