@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineProject } from "vitest/config";
-import { testTmpRoot } from "../../vitest.shared";
+import { testTmpRoot } from "../../vitest.shared.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export default defineProject({

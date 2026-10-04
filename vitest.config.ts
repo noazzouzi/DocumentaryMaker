@@ -1,5 +1,5 @@
 import { defineConfig } from "vitest/config";
-import { testTmpRoot } from "./vitest.shared";
+import { testTmpRoot } from "./vitest.shared.ts";
 export default defineConfig({
   test: {
     projects: [
