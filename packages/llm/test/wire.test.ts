@@ -72,10 +72,20 @@ describe("factSheetFromWire", () => {
     expect(f.gaps.some((g) => g.includes("orphan"))).toBe(true);
     expect(f.angles).toEqual(["a"]);
   });
-  it("garbage ids raise LLM_SCHEMA with the path", () => {
+  it("malformed item ids are renumbered (person references follow); malformed references count as unknown", () => {
     const w = fsWire();
     w.people[0]!.id = "Ada";
-    expect(() => factSheetFromWire(w, { registry, asOf: "2026-10-02", topic: "T" })).toThrow(/people\[0\]\.id/);
+    w.timeline[0]!.person_ids = ["ada", "P2"];
+    w.quotes[0]!.speaker_id = "Ada";
+    w.quotes.push({ ...w.quotes[0]!, id: "Q2a", verbatim: "Second part.", source_id: "S1" });
+    w.claims[0]!.source_ids = ["S1", "source two"];
+    const { factSheet: f, issues } = factSheetFromWire(w, { registry, asOf: "2026-10-02", topic: "T" });
+    expect(f.people.map((p) => [p.id, p.name])).toEqual([["P3", "Ada"], ["P2", "Kid"]]);
+    expect(f.timeline[0]!.personIds).toEqual(["P3", "P2"]);
+    expect(f.quotes.map((q) => [q.id, q.speakerId, q.verbatim])).toEqual([["Q1", "P3", "Exact words."], ["Q3", "P3", "Second part."]]);
+    expect(f.claims[0]!.sourceIds).toEqual(["S1"]);
+    expect(issues.filter((x) => x.rule === "FS_RENAMED_ID").map((x) => x.where)).toEqual(["P3", "Q3"]);
+    expect(issues.some((x) => x.rule === "FS_BAD_REF" && x.where === "claims[0].source_ids[1]")).toBe(true);
   });
 });
 

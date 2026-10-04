@@ -6,7 +6,7 @@ import {
 } from "@docmaker/core";
 import { maskPersons, sharedNameTokens } from "../text";
 import { applyFrTypography } from "./typography";
-import { normChapterId, normLoopId, normRef, normRefs, normRefsLenient, normSegmentId } from "./ids";
+import { normChapterId, normLoopId, normRef, normRefsLenient, normSegmentId } from "./ids";
 import type {
   ChapterScriptWire, FactCheckWire, FactSheetWire, OutlineWire, PassageWire, RerankWire, StyleSuggestionWire, TranscreateWire,
 } from "./schemas";
@@ -28,16 +28,61 @@ function hostOf(url: string): string {
 export interface FactSheetMapResult { factSheet: FactSheet; invalidRefs: string[]; issues: LintIssue[] }
 
 /**
+ * Item ids the model malformed ("Q2a", "P-new") get the next free number of their prefix: the fact sheet assigns its own
+ * ids, so a bad one is trivially fixable and never fails the (stored, reused) response. Returns raw (trimmed, upper) → id.
+ */
+function renameMalformed(raws: readonly string[], prefix: string, where: string, issues: LintIssue[]): Map<string, string> {
+  const valid = (r: string): string | null => {
+    try {
+      return normRef(r, "", prefix);
+    } catch {
+      return null;
+    }
+  };
+  let next = Math.max(0, ...raws.map((r) => Number(valid(r)?.slice(1) ?? 0))) + 1;
+  const renamed = new Map<string, string>();
+  raws.forEach((r, i) => {
+    const key = r.trim().toUpperCase();
+    if (key === "" || valid(r) !== null || renamed.has(key)) return; // a repeated bad id stays a duplicate
+    const id = `${prefix}${next++}`;
+    renamed.set(key, id);
+    issues.push(warn("FS_RENAMED_ID", id, `${where}[${i}].id "${r}" is not ${prefix}<n>: renamed ${id}`));
+  });
+  return renamed;
+}
+
+/**
  * Sources come from the REGISTRY (url/title/fetched/cited/snippets); only publisher/source_type/reliability/language/
  * published_at come from the model. Items citing unknown (or no) sources move to `gaps` and into `invalidRefs`.
+ * Malformed item ids are renumbered (references to a renamed person follow); a malformed reference counts as unknown.
  */
 export function factSheetFromWire(w: FactSheetWireLike, o: { registry: readonly RegistryEntry[]; asOf: string; topic: string }): FactSheetMapResult {
   const issues: LintIssue[] = [];
   const invalidRefs: string[] = [];
   const gaps = w.gaps.map((g) => g.trim()).filter((g) => g !== "");
+  const renamed: Record<string, Map<string, string>> = {
+    P: renameMalformed(w.people.map((p) => p.id), "P", "people", issues), E: renameMalformed(w.timeline.map((e) => e.id), "E", "timeline", issues),
+    Q: renameMalformed(w.quotes.map((q) => q.id), "Q", "quotes", issues), N: renameMalformed(w.figures.map((f) => f.id), "N", "figures", issues),
+    C: renameMalformed(w.claims.map((c) => c.id), "C", "claims", issues),
+  };
+  /** An item's own id (malformed ones were renamed above). */
+  const idOf = (raw: string, path: string, prefix: "P" | "E" | "Q" | "N" | "C"): string | null => renamed[prefix]!.get(raw.trim().toUpperCase()) ?? normRef(raw, path, prefix);
+  /** A reference: a renamed person follows its new id; anything malformed is reported and treated as unknown (null). */
+  const refOf = (raw: string, path: string, prefix: "S" | "P"): string | null => {
+    const r = renamed[prefix]?.get(raw.trim().toUpperCase());
+    if (r) return r;
+    try {
+      return normRef(raw, path, prefix);
+    } catch {
+      issues.push(warn("FS_BAD_REF", path, `"${raw}" is not ${prefix}<n> (treated as unknown)`));
+      return null;
+    }
+  };
+  const refsOf = (raws: readonly string[], path: string, prefix: "S" | "P"): string[] =>
+    [...new Set(raws.map((r, i) => refOf(r, `${path}[${i}]`, prefix)).filter((r): r is string => r !== null))];
   const wireSources = new Map<string, FactSheetWire["sources"][number]>();
   w.sources.forEach((s, i) => {
-    const id = normRef(s.id, `sources[${i}].id`, "S");
+    const id = refOf(s.id, `sources[${i}].id`, "S");
     if (id === null) return;
     if (!o.registry.some((r) => r.id === id)) {
       invalidRefs.push(id);
@@ -67,7 +112,7 @@ export function factSheetFromWire(w: FactSheetWireLike, o: { registry: readonly 
   };
 
   const people = w.people.flatMap((p, i) => {
-    const id = normRef(p.id, `people[${i}].id`, "P")!;
+    const id = idOf(p.id, `people[${i}].id`, "P");
     if (!id || !firstTime(id, "person")) return [];
     return [{
       id, name: p.name.trim(), roleInStory: p.role_in_story.trim(), publicFigure: p.public_figure, isMinorOrPrivateVictim: p.is_minor_or_private_victim,
@@ -77,9 +122,9 @@ export function factSheetFromWire(w: FactSheetWireLike, o: { registry: readonly 
   const personIds = new Set(people.map((p) => p.id));
 
   const timeline = w.timeline.flatMap((e, i) => {
-    const id = normRef(e.id, `timeline[${i}].id`, "E");
+    const id = idOf(e.id, `timeline[${i}].id`, "E");
     if (!id || !firstTime(id, "event")) return [];
-    const sourceIds = normRefs(e.source_ids, `timeline[${i}].source_ids`, "S");
+    const sourceIds = refsOf(e.source_ids, `timeline[${i}].source_ids`, "S");
     if (!sourcesOk(sourceIds)) {
       invalidRefs.push(id);
       gaps.push(`${e.date} — ${e.title}: ${e.what_happened}`.trim());
@@ -87,16 +132,16 @@ export function factSheetFromWire(w: FactSheetWireLike, o: { registry: readonly 
     }
     return [{
       id, date: e.date.trim(), title: e.title.trim(), whatHappened: e.what_happened.trim(),
-      personIds: normRefs(e.person_ids, `timeline[${i}].person_ids`, "P").filter((p) => personIds.has(p)),
+      personIds: refsOf(e.person_ids, `timeline[${i}].person_ids`, "P").filter((p) => personIds.has(p)),
       status: e.status, sourceIds, dramaValue: clamp(e.drama_value, 0, 10),
     }];
   });
 
   const quotes = w.quotes.flatMap((q, i) => {
-    const id = normRef(q.id, `quotes[${i}].id`, "Q");
+    const id = idOf(q.id, `quotes[${i}].id`, "Q");
     if (!id || !firstTime(id, "quote")) return [];
-    const sourceId = normRef(q.source_id, `quotes[${i}].source_id`, "S");
-    const speakerId = normRef(q.speaker_id, `quotes[${i}].speaker_id`, "P");
+    const sourceId = refOf(q.source_id, `quotes[${i}].source_id`, "S");
+    const speakerId = refOf(q.speaker_id, `quotes[${i}].speaker_id`, "P");
     if (!sourceId || !known.has(sourceId) || !speakerId || !personIds.has(speakerId)) {
       invalidRefs.push(id);
       gaps.push(`Unverified quote: "${q.verbatim.trim()}"`);
@@ -109,9 +154,9 @@ export function factSheetFromWire(w: FactSheetWireLike, o: { registry: readonly 
   });
 
   const figures = w.figures.flatMap((f, i) => {
-    const id = normRef(f.id, `figures[${i}].id`, "N");
+    const id = idOf(f.id, `figures[${i}].id`, "N");
     if (!id || !firstTime(id, "figure")) return [];
-    const sourceIds = normRefs(f.source_ids, `figures[${i}].source_ids`, "S");
+    const sourceIds = refsOf(f.source_ids, `figures[${i}].source_ids`, "S");
     if (!sourcesOk(sourceIds) || !Number.isFinite(f.value)) {
       invalidRefs.push(id);
       gaps.push(`${f.label}: ${f.value} ${f.unit}`.trim());
@@ -121,9 +166,9 @@ export function factSheetFromWire(w: FactSheetWireLike, o: { registry: readonly 
   });
 
   const claims = w.claims.flatMap((c, i) => {
-    const id = normRef(c.id, `claims[${i}].id`, "C");
+    const id = idOf(c.id, `claims[${i}].id`, "C");
     if (!id || !firstTime(id, "claim")) return [];
-    const sourceIds = normRefs(c.source_ids, `claims[${i}].source_ids`, "S");
+    const sourceIds = refsOf(c.source_ids, `claims[${i}].source_ids`, "S");
     if (!sourcesOk(sourceIds)) {
       invalidRefs.push(id);
       gaps.push(c.summary.trim());
