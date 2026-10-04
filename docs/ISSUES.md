@@ -364,3 +364,12 @@ Every §4.19 engine signature is unchanged; the items below are additive or beha
 7. `setup --whisper faster-whisper` now calls voice's `ensureFasterWhisperModel` (W4 request); doctor's `model:whisper` row uses `fasterWhisperModelPresent`.
 
 **Resolution (I, 2026-10-03).** Behaviour notes; nothing to apply.
+
+## 2026-10-04 assets (P4) — keyless relevance, likeness-only portraits; a note for the engine
+
+**Behaviour notes.**
+1. **Relevance (keyless ranking).** Besides word coverage (floor raised to 0.4), a candidate must carry one of the beat's salient nouns (media, framing and era words excluded); a generic query (one salient noun) also needs the story's topic, people or main places; a place or currency the story never mentions, or a title date far outside the beat's era (the query's century/decade/year, else the cited facts' dates plus the story's core cluster of timeline years), rules a candidate out unless it is on the story's topic. Commons categories are now candidate tags (extmetadata `Categories`). A vision score ≥ 0.6 vouches for a candidate and one < 0.3 rules it out, so the Claude vision rerank stays the preferred judge whenever it runs.
+2. **Portraits are likenesses.** `validatePick(..., portraitOf)` refuses graves, statues, plaques, houses, signatures, coats of arms and documents (EN/FR/DE/NL titles + Commons categories) with rule `NOT_A_PORTRAIT`; they may still be beat picks. When no pick is a likeness, the stage freezes the best named likeness among the person's beat candidates (role `portrait`); namesakes ("<name> (mayor)") and pictures naming places the story never mentions are left out.
+3. **Credits.** Every licence with a known deed carries its canonical URL (CC0/PDM included); every visual line says how it was changed ("cropped, colour-graded and animated" / "trimmed and colour-graded").
+
+**Note for the engine (W10/I), no change made.** `stages/assets.ts` builds the reranker only when `ctx.llm.kind === "anthropic"` and an Anthropic key is set, so a fixture/demo project never gets the vision rerank even with `ANTHROPIC_API_KEY` set. If the demo should prefer vision when a key exists, gate on the key (and allowPaid) rather than on the project's LLM provider.
