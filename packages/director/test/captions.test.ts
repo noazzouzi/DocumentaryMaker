@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { COMPONENT_META, type LayoutWord } from "@docmaker/core";
 import { TEST_STYLE } from "@docmaker/core/testing";
 import { direct, groupCaptions } from "../src/index";
+import { SRT_MIN_SEC, SRT_MIN_WORDS, srtGroups } from "../src/captions";
 import { readText } from "../src/overlays/hold";
 import { runs } from "./helpers";
 import { policyScenario } from "./scenario";
@@ -75,6 +76,26 @@ describe("captions in the timeline", () => {
       expect(c.burn).toBe(false);
       expect(c.words.map((x) => x.text).join(" ").length).toBeLessThanOrEqual(84);
     }
+  });
+
+  it("SRT: no cue of one or two words split off its sentence by the size limit ('guilders.', 0.87 s)", () => {
+    const S = TEST_STYLE.captionDNA.srtGrouping;
+    const texts = (gs: LayoutWord[][]) => gs.map((g) => g.map((x) => x.text).join(" "));
+    // 98 characters: the 2 × 42 limit used to leave "guilders." alone
+    const long = seq("In the winter of 1637 a single bulb of the Semper Augustus tulip was offered for ten thousand guilders.".split(" "));
+    const g1 = srtGroups(long, S);
+    expect(g1.flat().map((x) => x.text)).toEqual(long.map((x) => x.text)); // every word once, in order
+    for (const g of g1) {
+      expect(g.length, texts([g])[0]).toBeGreaterThanOrEqual(SRT_MIN_WORDS);
+      expect(g[g.length - 1]!.endMs - g[0]!.startMs).toBeGreaterThanOrEqual(SRT_MIN_SEC * 1000);
+      expect(g.map((x) => x.text).join(" ").length).toBeLessThanOrEqual(S.maxChars * S.maxLines);
+    }
+    // a comma near the middle is the preferred split
+    const comma = seq("Within a single week of February the prices that had climbed all winter, collapsed into nothing at all overnight.".split(" "));
+    expect(texts(srtGroups(comma, S)).every((t) => t.split(" ").length >= SRT_MIN_WORDS)).toBe(true);
+    // a short sentence of its own stays its own cue when it cannot join the previous one
+    const own = seq("Bulbs that had sold for the price of a canal house in Amsterdam found no buyer at the Haarlem auction. Nobody bought.".split(" "));
+    expect(texts(srtGroups(own, S)).at(-1)).toMatch(/Nobody bought\.$/);
   });
 
   it("burned captions are suppressed under text cards and around keyword slams", () => {

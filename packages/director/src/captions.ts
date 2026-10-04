@@ -112,6 +112,37 @@ export function srtGroups(words: readonly LayoutWord[], s: CaptionDNA["srtGroupi
       groups.splice(k - 1, 2, [...groups[k - 1]!, ...g]);
     }
   }
+  return rebalanceTails(groups, s, fits);
+}
+
+/** An SRT cue shorter than this many words or seconds after a size break reads as a stray word ("guilders.", 0.87 s). */
+export const SRT_MIN_WORDS = 3;
+export const SRT_MIN_SEC = 1.2;
+const spanMs = (ws: readonly LayoutWord[]) => ws[ws.length - 1]!.endMs - ws[0]!.startMs;
+
+/**
+ * A cue split off its sentence by the size or duration limit (the previous cue does not end a sentence and no pause
+ * separates them) that is shorter than SRT_MIN_WORDS words or SRT_MIN_SEC: merged back when the whole fits, else the two
+ * cues are re-split where both fit and neither is short — at a comma when one is near, else where they are most even.
+ */
+function rebalanceTails(groups: LayoutWord[][], s: CaptionDNA["srtGrouping"], fits: (ws: readonly LayoutWord[]) => boolean): LayoutWord[][] {
+  const short = (ws: readonly LayoutWord[]) => ws.length < SRT_MIN_WORDS || spanMs(ws) < SRT_MIN_SEC * 1000;
+  const ok = (ws: readonly LayoutWord[]) => fits(ws) && spanMs(ws) <= s.maxSec * 1000;
+  for (let k = 1; k < groups.length; k++) {
+    const p = groups[k - 1]!, g = groups[k]!;
+    const last = p[p.length - 1]!;
+    if (!short(g) || endsSentence(last.text) || g[0]!.startMs - last.endMs >= 1500) continue;
+    const all = [...p, ...g];
+    if (ok(all)) { groups.splice(k - 1, 2, all); k--; continue; }
+    let best = -1, bestCost = Number.POSITIVE_INFINITY;
+    for (let i = 1; i < all.length; i++) {
+      const a = all.slice(0, i), b = all.slice(i);
+      if (!ok(a) || !ok(b) || short(a) || short(b)) continue;
+      const cost = Math.abs(joinedLen(a) - joinedLen(b)) - (endsComma(all[i - 1]!.text) ? 24 : 0);
+      if (cost < bestCost) { best = i; bestCost = cost; }
+    }
+    if (best > 0) groups.splice(k - 1, 2, all.slice(0, best), all.slice(best));
+  }
   return groups;
 }
 
