@@ -107,6 +107,14 @@ export function currenciesIn(text: string): Set<string> {
 // ------------------------------------------------------------------------------------------------ era
 /** Year of a date-ish string or a 4-digit year in free text (not a museum number such as "1863,0613.754"). */
 function yearsIn(text: string): number[] {
+  // Era-marked years first ("40-350 CE", "200 BC", "AD 79"): ancient objects rarely carry four digits.
+  const era = /(?<![\d.,/])(\d{1,4})(?:\s?[-–]\s?\d{1,4})?\s?(CE|BCE|BC|AD|av\.? J\.?-C\.?|v\.? Chr\.?|n\.? Chr\.?)(?![\p{L}])|(?<![\p{L}])AD\s?(\d{1,4})(?![\d])/gu;
+  const marked: number[] = [];
+  for (const m of text.matchAll(era)) {
+    if (m[3] !== undefined) marked.push(Number(m[3]));
+    else marked.push(/^(?:BCE|BC|av|v)/.test(m[2]!) ? -Number(m[1]) : Number(m[1]));
+  }
+  if (marked.length > 0) return marked;
   const out: number[] = [];
   for (const m of text.matchAll(/(?<![\d.,/])(?:c\.?\s?|ca\.?\s?)?(1[0-9]\d{2}|20\d{2})(?![\d])(?![.,]\d)/g)) out.push(Number(m[1]));
   return out;

@@ -78,6 +78,8 @@ describe("story and beat context", () => {
     expect(beatEraWindows(plan("Mackay book", { factIds: ["E7"] }), facts)).toEqual([[1593, 1637], [1841, 1841]]);
     expect(candidateYear({ title: "Print, satirical print (BM 1863,0613.754-765)" }, 1780)).toEqual({ year: 1780, stated: false }); // museum numbers are not dates
     expect(candidateYear({ title: "Frieze (USA), 1905–15" }, null)).toEqual({ year: 1905, stated: true });
+    expect(candidateYear({ title: "Gold coin of the Kushans, 40-350 CE, Ashmolean Museum, Oxford" }, 2012)).toEqual({ year: 40, stated: true });
+    expect(candidateYear({ title: "Roman denarius, 44 BC" }, null)).toEqual({ year: -44, stated: true });
     expect(candidateYear({ title: "Portrait of a lady, Safavid Iran, mid-17th century" }, null)).toEqual({ year: 1650, stated: true });
     expect(isAnachronistic(1843, [[1600, 1699]])).toBe(true);
     expect(isAnachronistic(1648, [[1593, 1637]])).toBe(false);
@@ -102,6 +104,7 @@ describe("relevance rules on the demo's off-topic picks", () => {
     expect(verdict(plan("gold coins pile candlelight", { visualKind: "stock_broll" }), cand("g", "Gold coins"))).toBeNull();
     // Stock b-roll is not held to the era, but a dated old work from another era (a 1920 film advertisement) is refused …
     expect(verdict(plan("gold coins pile candlelight", { visualKind: "stock_broll" }), cand("ad", "Three Gold Coins (1920) - Ad 1"))).toMatch(/dated 1920/);
+    expect(verdict(plan("gold coins pile candlelight", { visualKind: "stock_broll" }), cand("ku", "Gold coin of the Kushans, 40-350 CE, Ashmolean Museum, Oxford"))).toMatch(/dated 40/);
     // … while a modern photograph is fine.
     expect(verdict(plan("gold coins pile candlelight", { visualKind: "stock_broll" }), cand("g2", "Gold coins 2015"))).toBeNull();
   });
