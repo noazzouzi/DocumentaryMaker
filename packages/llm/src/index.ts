@@ -2,6 +2,7 @@
 // (the only files it writes are raw paid responses in the caller-provided rawDir, costs/llm/<fingerprint>.json).
 import { DocmakerError, type Logger } from "@docmaker/core";
 import { AnthropicLlm, createAnthropicSdk } from "./client/anthropic";
+import { ClaudeCodeLlm } from "./client/claude-code";
 import { FixtureLlm } from "./client/fixture";
 import type { LlmClient } from "./types";
 
@@ -10,16 +11,30 @@ export type {
   StyleCatalogEntry, SystemBlock,
 } from "./types";
 
-/** rawDir = <projectDir>/costs/llm (raw responses by fingerprint). Fixture: <repoRoot>/fixtures/<fixtureId> (or its llm/ dir). */
-export function createLlmClient(cfg: { provider: "anthropic" | "fixture"; fixtureDir: string | null; rawDir: string; refusalFallback: boolean; logger: Logger; apiKey: string | null }): LlmClient {
+/**
+ * rawDir = <projectDir>/costs/llm (raw responses by fingerprint). Fixture: <repoRoot>/fixtures/<fixtureId> (or its llm/ dir).
+ * claude-code: `claudeCode` gives the CLI ("claude" unless DOCMAKER_CLAUDE_BIN) and its empty working directory.
+ */
+export function createLlmClient(cfg: {
+  provider: "anthropic" | "claude-code" | "fixture"; fixtureDir: string | null; rawDir: string; refusalFallback: boolean; logger: Logger; apiKey: string | null;
+  claudeCode?: { bin: string; workDir: string; env?: NodeJS.ProcessEnv };
+}): LlmClient {
   if (cfg.provider === "fixture") {
     if (!cfg.fixtureDir) throw new DocmakerError("FIXTURE_MISSING", "fixture provider without a fixture directory", { hint: "set project.llm.fixtureId" });
     return new FixtureLlm(cfg.fixtureDir);
+  }
+  if (cfg.provider === "claude-code") {
+    if (!cfg.claudeCode) throw new DocmakerError("INTERNAL", "claude-code provider without its CLI settings");
+    return new ClaudeCodeLlm({ ...cfg.claudeCode, rawDir: cfg.rawDir, logger: cfg.logger });
   }
   return new AnthropicLlm({ sdk: createAnthropicSdk(cfg.apiKey), rawDir: cfg.rawDir, refusalFallback: cfg.refusalFallback, logger: cfg.logger });
 }
 export { FixtureLlm, fixtureLlmDir, fixtureFileName, readFixtureFile } from "./client/fixture";
 export { AnthropicLlm, FALLBACK_BETA, REFUSAL_HINT, mapSdkError, systemParam, type AnthropicLike } from "./client/anthropic";
+export {
+  ClaudeCodeLlm, CLAUDE_CODE_INSTALL_HINT, CLAUDE_CODE_LOGIN_HINT, CLAUDE_CODE_PROVIDER, CLAUDE_CODE_STRIPPED_ENV, buildResearchFromClaudeCode,
+  claudeCodeArgs, claudeCodeEnv, claudeCodeFailure, isClaudeCodeTurn, urlKey, type ClaudeCodeConfig, type ClaudeCodeEvent, type ClaudeCodeTurn,
+} from "./client/claude-code";
 
 // ---- steps (§6.2 call table)
 export { runResearch, buildResearchFromTurns, sourceListText, researchPrompts, type TurnLike } from "./steps/research";

@@ -11,7 +11,7 @@ import type { EngineDeps } from "../deps";
 import { docs, need } from "../docs";
 import { outlineGate } from "../gates";
 import { writeTextIfChanged } from "../util";
-import { X, emitLog, needLang, skeletonOf, stepCtx, writeDoc } from "./common";
+import { X, emitLog, llmBilled, needLang, skeletonOf, stepCtx, writeDoc } from "./common";
 import { cpsOf } from "./outline";
 
 const CROSS_CHAPTER_RULES = new Set(["loop-unpaid", "loop-order", "teaser-unpaid", "clip-share"]);
@@ -70,7 +70,7 @@ export const scriptStage: StageDef = {
   },
   async estimate(ctx) {
     const lang = needLang(ctx);
-    if (ctx.llm.kind === "fixture") return { stage: "script", lang, lines: [], totalUsd: 0, confidence: "exact" };
+    if (!llmBilled(ctx)) return { stage: "script", lang, lines: [], totalUsd: 0, confidence: "exact" };
     const outline = await docs.outline(ctx.store);
     const chars = outline?.budgets[lang]?.chars ?? Math.round(ctx.project.targetMinutes * 60 * cpsOf(ctx.project, ctx.style, lang) * ctx.style.data.scriptProfile.narrationShare);
     const n = outline?.chapters.length ?? 6;

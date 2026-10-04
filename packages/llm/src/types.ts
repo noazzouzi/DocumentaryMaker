@@ -37,7 +37,8 @@ export interface LlmCallCtx {
   onReceipt?: (r: Receipt) => void;
 }
 export interface LlmClient {
-  readonly kind: "anthropic" | "fixture";
+  /** "claude-code": the user's Claude subscription through the `claude` CLI (no API key, no per-call cost). */
+  readonly kind: "anthropic" | "claude-code" | "fixture";
   structured<S extends z.ZodType>(req: StructuredRequest<S>, h: LlmCallCtx): Promise<z.infer<S>>;
   research(req: ResearchRequest, h: LlmCallCtx & { progress: Progress }): Promise<ResearchResult>;
 }

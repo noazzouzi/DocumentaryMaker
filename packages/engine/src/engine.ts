@@ -12,7 +12,7 @@ import { ProjectStore, cacheCapBytes, ensureHome, maskSecret, readHomeConfig, ru
 import type { z } from "zod";
 import type { DemoOptions, Engine, EngineOptions, ImpactReport, StageStatus } from "./types";
 import { REAL_DEPS } from "./deps";
-import { createRuntime, type Runtime } from "./runtime";
+import { claudeCodeSettings, createRuntime, type Runtime } from "./runtime";
 import { JobManager, isTerminal } from "./jobs";
 import { ProjectCosts, readReceipts } from "./costs";
 import { docs } from "./docs";
@@ -355,8 +355,14 @@ class EngineImpl implements Engine {
     const reg = await this.rt.styles();
     const offline = { ...this.rt.deps.styles.suggestStyleOffline(idea, reg), stage: "idea" as const };
     this.rt.refresh();
-    if (!o.useLlm || !this.rt.secrets.anthropic || this.rt.config.offline) return offline;
-    const llm = this.rt.deps.llm.createLlmClient({ provider: "anthropic", fixtureDir: null, rawDir: path.join(this.rt.config.paths.cache, "llm"), refusalFallback: true, logger: this.rt.logger, apiKey: this.rt.secrets.anthropic });
+    if (!o.useLlm || this.rt.config.offline) return offline;
+    // the provider new projects get: the claude-code subscription, else the API (needs a key)
+    const subscription = (await readHomeConfig(this.rt.config).catch(() => null))?.defaults.llm === "claude-code";
+    if (!subscription && !this.rt.secrets.anthropic) return offline;
+    const llm = this.rt.deps.llm.createLlmClient({
+      provider: subscription ? "claude-code" : "anthropic", fixtureDir: null, rawDir: path.join(this.rt.config.paths.cache, "llm"), refusalFallback: true,
+      logger: this.rt.logger, apiKey: this.rt.secrets.anthropic ?? null, claudeCode: claudeCodeSettings(this.rt),
+    });
     const styles = reg.list().map((s) => ({ id: s.id, names: s.names, description: s.description, bestFor: s.bestFor }));
     try {
       const s = await this.rt.deps.llm.suggestStyle({ llm, signal: new AbortController().signal, costs: looseCosts(), logger: this.rt.logger, progress: () => {}, newRequest: false }, { idea, styles, factSummary: null, stage: "idea" });

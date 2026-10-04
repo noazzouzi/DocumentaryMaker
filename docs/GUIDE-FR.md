@@ -39,18 +39,35 @@ pnpm docmaker setup --yt-dlp           # extraits YouTube (optionnel)
 pnpm docmaker doctor                   # tout doit être vert ou en avertissement
 ```
 
-**Clés** : au minimum Claude. ElevenLabs si vous voulez cette voix ; Pexels/Pixabay (gratuites) pour plus de b-roll ; un contact pour Wikimedia.
+**Claude** : au choix, votre **abonnement Claude** (Pro ou Max, sans clé API) ou une **clé API Anthropic** (facturée à l'appel).
+
+Avec l'abonnement, DocumentaryMaker lance le programme officiel `claude` (Claude Code) connecté à votre compte. Installez-le là où tourne DocumentaryMaker (sous Windows : dans Ubuntu/WSL) :
+
+```sh
+curl -fsSL https://claude.ai/install.sh | bash
+claude auth login                              # votre compte Claude, une seule fois
+pnpm docmaker setup --llm claude-code          # nouveaux projets : abonnement (vérifie aussi l'installation)
+```
+
+Les étapes Claude coûtent alors 0 $ et consomment le quota de votre abonnement (Max conseillé pour un film de 25 min). Les estimations de coût de ce guide ne concernent plus que les autres services.
+
+Avec une clé API, à la place :
 
 ```sh
 pnpm docmaker keys set ANTHROPIC_API_KEY
+pnpm docmaker keys test anthropic
+```
+
+**Autres clés** : ElevenLabs si vous voulez cette voix ; Pexels/Pixabay (gratuites) pour plus de b-roll ; un contact pour Wikimedia.
+
+```sh
 pnpm docmaker keys set ELEVENLABS_API_KEY      # optionnel
 pnpm docmaker keys set PEXELS_API_KEY          # optionnel, gratuit
-pnpm docmaker keys test anthropic
 ```
 
 Pour le contact Wikimedia, ajoutez `DOCMAKER_CONTACT=votre-adresse@exemple.fr` dans `~/.documentarymaker/.env` ou `.env.local` (ou écran **Réglages → Contact Wikimedia**). Il n'est envoyé qu'à Wikimedia, Wikidata et Openverse, et réduit les refus « 429 Too Many Requests ».
 
-**Web** : `pnpm dev:web`, puis ouvrez http://127.0.0.1:3210. Au premier lancement, l'écran **Installation** vous guide et vous demande votre **situation vis-à-vis de la licence Remotion** : « particulier ou entreprise de 3 personnes au plus » (gratuit) ou « licence entreprise ». L'outil ne choisit jamais à votre place.
+**Web** : `pnpm dev:web`, puis ouvrez http://127.0.0.1:3210 (le moteur des nouveaux projets se règle aussi dans **Réglages → Moteur d'écriture**). Au premier lancement, l'écran **Installation** vous guide et vous demande votre **situation vis-à-vis de la licence Remotion** : « particulier ou entreprise de 3 personnes au plus » (gratuit) ou « licence entreprise ». L'outil ne choisit jamais à votre place.
 
 **Comment fonctionnent les validations.** La chaîne avance seule jusqu'à une étape qui a besoin de vous. En ligne de commande, `run` s'arrête alors avec le **code 3**, affiche la commande à taper, puis vous relancez avec `--resume <jobId>`. Dans le web, un bandeau apparaît sur la **Vue d'ensemble** avec un bouton « Ouvrir ».
 
@@ -421,7 +438,7 @@ Ces garde-fous réduisent les risques mais **ne sont pas un conseil juridique**.
 
 | Poste | Ordre de grandeur |
 |---|---|
-| Claude (recherche, plan, script 25–30 min, beats, vérification) | **~5–10 $** au réel (l'estimation initiale affichée était de ~3 $ ; révisions, réécritures et revérifications s'ajoutent) |
+| Claude (recherche, plan, script 25–30 min, beats, vérification) | **~5–10 $** au réel avec une clé API (l'estimation initiale affichée était de ~3 $ ; révisions, réécritures et revérifications s'ajoutent) ; **0 $** avec votre abonnement Claude (`setup --llm claude-code`), qui consomme alors votre quota |
 | ElevenLabs, prise française de 25 min | **~2 $** selon l'abonnement ; les reprises ne refont que les segments modifiés |
 | Prise brouillon, Kokoro/Piper, votre voix | gratuit |
 | Commons, Openverse, Internet Archive, LOC, NASA, Pexels, Pixabay, YouTube local | gratuit |

@@ -3,7 +3,7 @@
 import { BeatPlansDoc, P, hashJson, type BeatLang, type BeatPlan, type ChapterScript, type Script } from "@docmaker/core";
 import type { StageDef } from "../types";
 import { docs, need } from "../docs";
-import { X, emitLog, skeletonOf, stepCtx, writeDoc } from "./common";
+import { X, emitLog, llmBilled, skeletonOf, stepCtx, writeDoc } from "./common";
 
 const textHashOf = (ch: ChapterScript) => hashJson(ch.segments.map((s) => s.displayText));
 const isSynthetic = (p: BeatPlan) => p.origin === "clip" || p.origin === "breath";
@@ -39,7 +39,7 @@ export const beatsStage: StageDef = {
     };
   },
   async estimate(ctx) {
-    if (ctx.llm.kind === "fixture") return { stage: "beats", lang: null, lines: [], totalUsd: 0, confidence: "exact" };
+    if (!llmBilled(ctx)) return { stage: "beats", lang: null, lines: [], totalUsd: 0, confidence: "exact" };
     const primary = await docs.script(ctx.store, ctx.project.primaryLang);
     const chars = primary?.chapters.reduce((a, c) => a + c.segments.reduce((b, s) => b + s.displayText.length, 0), 0) ?? ctx.project.targetMinutes * 900;
     const n = primary?.chapters.length ?? 6;

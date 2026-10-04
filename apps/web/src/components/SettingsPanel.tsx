@@ -87,6 +87,7 @@ export function SettingsPanel({ home, styles, paths }: { home: HomeConfig; style
   const [langs, setLangs] = useState<Lang[]>(home.defaults.languages);
   const [minutes, setMinutes] = useState(home.defaults.targetMinutes);
   const [styleId, setStyleId] = useState<string | null>(home.defaults.styleId);
+  const [llm, setLlm] = useState<"anthropic" | "claude-code">(home.defaults.llm ?? "anthropic");
   const [uiLang, setUiLang] = useState(home.uiLang);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -103,7 +104,7 @@ export function SettingsPanel({ home, styles, paths }: { home: HomeConfig; style
     try {
       await api("/api/home", {
         method: "PATCH",
-        json: { contact: contact.trim() || null, uiLang, defaults: { languages: langs.length ? langs : ["en"], targetMinutes: Math.min(60, Math.max(1, minutes)), styleId } },
+        json: { contact: contact.trim() || null, uiLang, defaults: { languages: langs.length ? langs : ["en"], targetMinutes: Math.min(60, Math.max(1, minutes)), styleId, llm } },
       });
       setUiLangCookie(uiLang === "en" || uiLang === "fr" ? uiLang : null);
       setSaved(true);
@@ -150,6 +151,12 @@ export function SettingsPanel({ home, styles, paths }: { home: HomeConfig; style
                     {s.names[lang]}
                   </option>
                 ))}
+              </select>
+            </Field>
+            <Field label={t("new.llm")} hint={t("settings.llmHint")}>
+              <select className={inputCls} value={llm} onChange={(e) => setLlm(e.target.value as "anthropic" | "claude-code")}>
+                <option value="claude-code">{t("new.llm.claude-code")}</option>
+                <option value="anthropic">{t("new.llm.anthropic")}</option>
               </select>
             </Field>
             <Field label={t("settings.uiLang")}>

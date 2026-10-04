@@ -94,13 +94,30 @@ pnpm docmaker demo --only-chapters CH1 --preset draft   # plus court pour un ess
 
 ### Votre premier vrai projet
 
+Claude écrit la recherche, le plan, le script et la vérification. Deux façons de l'utiliser, au choix :
+
+**Avec votre abonnement Claude (Pro ou Max), sans clé API.** DocumentaryMaker lance le programme officiel `claude` (Claude Code), connecté à votre compte. Installez-le là où tourne DocumentaryMaker (sous Windows : dans Ubuntu/WSL, pas la version Windows) :
+
+```sh
+curl -fsSL https://claude.ai/install.sh | bash    # installe Claude Code
+claude auth login                                 # connexion avec votre compte Claude (une seule fois)
+pnpm docmaker setup --llm claude-code             # les nouveaux projets utiliseront votre abonnement
+```
+
+**Avec une clé API Anthropic** (facturée à l'appel) :
+
 ```sh
 pnpm docmaker keys set ANTHROPIC_API_KEY          # saisie masquée, écrite dans ~/.documentarymaker/.env (0600)
+```
+
+Puis :
+
+```sh
 pnpm docmaker new "La rupture catastrophique de Johnny Depp" --lang fr --minutes 25
 pnpm docmaker run la-rupture-catastrophique-de-johnny-depp
 ```
 
-`run` avance jusqu'à la prochaine validation humaine, explique quoi faire (code de sortie 3), puis reprend avec `--resume`. Le détail est dans le [guide](docs/GUIDE-FR.md).
+`run` avance jusqu'à la prochaine validation humaine, explique quoi faire (code de sortie 3), puis reprend avec `--resume`. Le détail est dans le [guide](docs/GUIDE-FR.md). `--llm claude-code` ou `--llm anthropic` sur `new` choisit le moteur d'un projet précis.
 
 Les projets sont rangés dans `projects/<slug>/` à la racine du dépôt (ou `DOCMAKER_PROJECTS`) ; les caches, modèles et styles personnels dans `~/.documentarymaker/` (ou `DOCMAKER_HOME`).
 
@@ -147,7 +164,7 @@ Priorité : variables d'environnement > `~/.documentarymaker/.env` > `.env.local
 
 | Variable | Sert à | Sans elle |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | recherche, plan, script, beats, vérification (Claude) | seuls les projets « fixture » (démo) fonctionnent |
+| `ANTHROPIC_API_KEY` | recherche, plan, script, beats, vérification (Claude), facturés à l'appel | utilisez votre abonnement Claude (`setup --llm claude-code`, ci-dessous), sinon seuls les projets « fixture » (démo) fonctionnent |
 | `ELEVENLABS_API_KEY` | voix off ElevenLabs (payante) | prise brouillon, Kokoro/Piper ou votre voix |
 | `PEXELS_API_KEY`, `PIXABAY_API_KEY` | b-roll et photos libres (clés gratuites) | les sources sans clé restent actives |
 | `FAL_KEY` | illustrations générées (payant ; **jamais** pour une personne réelle) | pas d'images IA |
@@ -156,14 +173,25 @@ Priorité : variables d'environnement > `~/.documentarymaker/.env` > `.env.local
 | `REMOTION_LICENSE_KEY` | clé de licence entreprise Remotion, si votre structure en a besoin | — |
 | `DOCMAKER_AUTO_APPROVE_USD` | approuve automatiquement les estimations sous ce montant | chaque coût est demandé |
 
-Autres réglages utiles : `DOCMAKER_HOME`, `DOCMAKER_PROJECTS`, `DOCMAKER_OFFLINE=1` (aucune connexion), `DOCMAKER_BROWSER_EXECUTABLE` (Chrome déjà installé), `DOCMAKER_CACHE_MAX_GB`. Liste complète et commentée : [`.env.example`](.env.example). Vérifier : `pnpm docmaker keys list` et `pnpm docmaker keys test anthropic`.
+Autres réglages utiles : `DOCMAKER_HOME`, `DOCMAKER_PROJECTS`, `DOCMAKER_OFFLINE=1` (aucune connexion), `DOCMAKER_BROWSER_EXECUTABLE` (Chrome déjà installé), `DOCMAKER_CACHE_MAX_GB`, `DOCMAKER_CLAUDE_BIN` (chemin du programme `claude`, à exporter dans le shell). Liste complète et commentée : [`.env.example`](.env.example). Vérifier : `pnpm docmaker keys list` et `pnpm docmaker keys test anthropic`.
+
+### Abonnement Claude (Claude Code) au lieu d'une clé API
+
+Avec le moteur `claude-code`, chaque appel lance `claude -p` (le programme officiel, non modifié), connecté à **votre** compte :
+
+- l'appel est isolé de votre configuration Claude Code (`--safe-mode` : ni CLAUDE.md, ni plugins, ni MCP ; dossier de travail vide ; aucune session enregistrée) ;
+- `ANTHROPIC_API_KEY` est retirée de son environnement : c'est bien l'abonnement qui est utilisé, jamais une clé ; DocumentaryMaker ne lit jamais vos identifiants Claude ;
+- les étapes Claude coûtent 0 $ (pas de validation de coût pour elles) ; la limite, c'est le quota de votre abonnement : un documentaire de 25 min consomme beaucoup, Max est recommandé. Une étape relancée réutilise sa réponse sans reconsommer ;
+- la recherche web passe par les outils de recherche et de lecture de pages de Claude Code. La liste des sources ne garde que les URL réellement renvoyées par ces outils (une URL citée sans avoir été vue est retirée). Les extraits par source sont vides (l'API seule les fournit) ; la vérification des citations mot à mot, elle, ne change pas ;
+- `pnpm docmaker doctor` vérifie que `claude` est installé (version Linux sous WSL) et connecté avec un abonnement, pas une clé API ;
+- usage personnel : c'est votre abonnement, pour vos projets ; ne le partagez pas via une instance accessible à d'autres.
 
 ## Coûts et plafonds
 
 - Chaque étape payante affiche une **estimation avant de s'exécuter** ; une seule approbation couvre un `run` (`--yes`, `--max-cost <usd>` ou bouton « Approuver … $ »).
 - Plafonds par défaut : **25 $ par étape**, **40 $ par projet** ; une étape qui dépasse nettement son estimation s'arrête.
 - Un appel payant identique n'est jamais refait (reçus) ; `--new-request` force un nouvel appel.
-- Ordres de grandeur : **Claude ~5–10 $ pour un script de 30 min** (recherche comprise), **ElevenLabs ~2 $ par prise française de 25 min** (selon votre abonnement). Les sources d'images sans clé, la prise brouillon, les voix locales, le montage, le rendu et l'export sont gratuits.
+- Ordres de grandeur : **Claude ~5–10 $ pour un script de 30 min** avec une clé API (recherche comprise ; 0 $ avec votre abonnement Claude, qui consomme alors votre quota), **ElevenLabs ~2 $ par prise française de 25 min** (selon votre abonnement). Les sources d'images sans clé, la prise brouillon, les voix locales, le montage, le rendu et l'export sont gratuits.
 - `pnpm docmaker cost <slug>` : estimations, dépenses, total vs plafond.
 
 ---
@@ -296,7 +324,7 @@ Code sous licence MIT ([`LICENSE`](LICENSE)) ; les dépendances et idées repris
 
 DocumentaryMaker turns an idea (e.g. "Johnny Depp's catastrophic breakup", 25 min) into a long-form drama-commentary YouTube documentary: sourced research with Claude, an approved outline and thesis, a script written natively in French and/or English, beats tied to a fact sheet, a fact-check with human approval gates, licensed images/b-roll/YouTube clips (yt-dlp runs locally) with automatic credits, a voice-over (free scratch take, ElevenLabs, local Kokoro/Piper, or your own recording with a teleprompter), a deterministic director (transitions, keyframes, captions, motion design, sound design), Remotion rendering with a −14 LUFS mix, and exports to DaVinci Resolve, Premiere Pro and Final Cut Pro (FCPXML, xmeml, OTIO, EDL, SRT, stems, publish kit).
 
-**Quick start:** Node 22.12+, pnpm 10, ffmpeg ≥ 6.1 (Python 3.11–3.12 optional) → `pnpm install --frozen-lockfile`, `pnpm docmaker setup --browser`, `pnpm docmaker doctor`, `pnpm docmaker demo --offline` (no keys, no network) or `--online`. Web app: `pnpm dev:web` → http://127.0.0.1:3210. Keys (`ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`, `PEXELS_API_KEY`, `PIXABAY_API_KEY`, `FAL_KEY`, `BRAVE_API_KEY`, `DOCMAKER_CONTACT`) go in `~/.documentarymaker/.env` (`docmaker keys set`) or `.env.local`; every paid step shows an estimate first, with caps of $25 per stage and $40 per project.
+**Quick start:** Node 22.12+, pnpm 10, ffmpeg ≥ 6.1 (Python 3.11–3.12 optional) → `pnpm install --frozen-lockfile`, `pnpm docmaker setup --browser`, `pnpm docmaker doctor`, `pnpm docmaker demo --offline` (no keys, no network) or `--online`. Web app: `pnpm dev:web` → http://127.0.0.1:3210. Keys (`ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`, `PEXELS_API_KEY`, `PIXABAY_API_KEY`, `FAL_KEY`, `BRAVE_API_KEY`, `DOCMAKER_CONTACT`) go in `~/.documentarymaker/.env` (`docmaker keys set`) or `.env.local`; every paid step shows an estimate first, with caps of $25 per stage and $40 per project. **No API key?** Use your Claude Pro/Max subscription: install Claude Code where docmaker runs (`curl -fsSL https://claude.ai/install.sh | bash`, then `claude auth login`) and run `pnpm docmaker setup --llm claude-code`; every LLM call then runs the unmodified `claude -p` CLI signed in with your account (isolated with `--safe-mode`, API keys removed from its environment), at $0 per call against your subscription quota.
 
 **Styles:** `drama-commentary`, `cinematic-essay`, `true-crime-dossier`, suggested automatically from the idea; add your own as a data-only folder with `docmaker style new <id> --from <base>`.
 

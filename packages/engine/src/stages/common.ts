@@ -42,6 +42,13 @@ export function X(ctx: StageCtx): StageExt {
   return e;
 }
 
+/** LLM calls are billed per call only through the API: fixtures and the claude-code subscription cost nothing. */
+export const llmBilled = (ctx: StageCtx): boolean => ctx.llm.kind === "anthropic";
+/** A real model can be called: the claude-code subscription, or the API with a key. */
+export const llmLive = (ctx: StageCtx): boolean => ctx.llm.kind === "claude-code" || (ctx.llm.kind === "anthropic" && !!ctx.secrets.anthropic);
+/** LLM identity in input hashes: claude-code answers stand for API answers, so switching provider re-runs nothing. */
+export const llmHashKind = (kind: string): string => (kind === "claude-code" ? "anthropic" : kind);
+
 export function stepCtx(ctx: StageCtx): StepCtx {
   return { llm: ctx.llm, signal: ctx.signal, costs: ctx.costs, logger: ctx.logger, progress: ctx.progress, newRequest: ctx.options.newRequest === true };
 }

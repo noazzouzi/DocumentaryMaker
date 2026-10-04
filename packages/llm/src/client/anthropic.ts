@@ -1,15 +1,14 @@
 // Live Claude client (§6.1): structured outputs, refusal fallback, streaming above 32k tokens, stop_reason handling,
 // prompt caching, receipts by fingerprint (a paid call is never made twice), raw responses in rawDir, research harness.
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { DocmakerError, canonicalJson, isDocmakerError, stableStringify, type Logger, type Progress, type Receipt, type StageId, type Lang } from "@docmaker/core";
+import { DocmakerError, canonicalJson, isDocmakerError, type Logger, type Progress, type Receipt, type StageId, type Lang } from "@docmaker/core";
 import { sha256Bytes } from "@docmaker/core/node";
 import { MODEL, usageCostUsd } from "../estimate";
 import { buildResearchFromTurns, type TurnLike } from "../steps/research";
 import type { LlmCallCtx, LlmClient, ResearchRequest, ResearchResult, StructuredRequest, SystemBlock } from "../types";
 import { wireOutputFormat } from "../wire/jsonschema";
+import { hashableUser, persistRaw, reuseParsed } from "./raw";
 
 export const FALLBACK_BETA = "server-side-fallback-2026-07-01";
 export const REFUSAL_HINT = "the topic triggered a safety classifier; reframe the idea or write this step manually";
@@ -57,16 +56,6 @@ function addUsage(a: Usage, m: MessageLike): Usage {
 export function systemParam(blocks: readonly SystemBlock[]): { type: "text"; text: string; cache_control?: { type: "ephemeral" } }[] {
   const cacheIdx = blocks.map((b, i) => (b.cache ? i : -1)).filter((i) => i >= 0).slice(-4);
   return blocks.map((b, i) => (cacheIdx.includes(i) ? { type: "text" as const, text: b.text, cache_control: { type: "ephemeral" as const } } : { type: "text" as const, text: b.text }));
-}
-
-/** Request identity for receipts: images are replaced by the hash of their data. */
-function hashableUser(user: StructuredRequest<z.ZodType>["user"]): unknown {
-  if (typeof user === "string") return user;
-  return user.map((b) => {
-    const src = (b as { type: string; source?: { type?: string; data?: string } }).source;
-    if (b.type === "image" && src?.type === "base64" && typeof src.data === "string") return { ...b, source: { ...src, data: `sha256:${sha256Bytes(src.data)}` } };
-    return b;
-  });
 }
 
 export function mapSdkError(e: unknown, signal: AbortSignal): DocmakerError {
@@ -118,31 +107,6 @@ export class AnthropicLlm implements LlmClient {
     return sha256Bytes(`anthropic|${endpoint}|${canonicalJson(body)}`);
   }
 
-  private async tryReuse<S extends z.ZodType>(fp: string, schema: S, h: LlmCallCtx): Promise<z.infer<S> | undefined> {
-    if (h.newRequest) return undefined;
-    const r = await h.costs.findReceipt(fp);
-    if (!r?.outputRef) return undefined;
-    try {
-      const stored = JSON.parse(await readFile(join(this.rawDir, `${fp}.json`), "utf8")) as { parsed?: unknown };
-      const ok = schema.safeParse(stored.parsed);
-      if (!ok.success) return undefined;
-      h.onReceipt?.(r);
-      this.logger.debug("llm: reused paid response", { fingerprint: fp });
-      return ok.data;
-    } catch {
-      return undefined;
-    }
-  }
-
-  private async persist(fp: string, data: Record<string, unknown>): Promise<string> {
-    await mkdir(this.rawDir, { recursive: true });
-    const file = join(this.rawDir, `${fp}.json`);
-    const tmp = `${file}.${process.pid}.tmp`;
-    await writeFile(tmp, stableStringify(data), "utf8");
-    await rename(tmp, file);
-    return `costs/llm/${fp}.json`;
-  }
-
   private async record(h: LlmCallCtx, o: { fp: string; endpoint: string; stage: StageId; lang: Lang | null; usage: Usage; outputRef: string | null }): Promise<Receipt> {
     const r = await h.costs.record({
       fingerprint: o.fp, provider: "anthropic", endpoint: o.endpoint, model: MODEL, stage: o.stage, lang: o.lang,
@@ -188,7 +152,7 @@ export class AnthropicLlm implements LlmClient {
     // messages.create (same request, same schema) are still reused instead of being bought again
     const endpoint = req.maxTokens > STREAM_ABOVE ? "messages.stream" : "messages.parse";
     const fp = this.fingerprint(endpoint, identity);
-    const reused = await this.tryReuse(fp, req.schema, h);
+    const reused = await reuseParsed(this.rawDir, fp, req.schema, h, this.logger);
     if (reused !== undefined) return reused;
 
     let usage = ZERO;
@@ -229,7 +193,7 @@ export class AnthropicLlm implements LlmClient {
         await this.record(h, { fp, endpoint, stage: req.stage, lang: req.lang, usage, outputRef: null });
         throw new DocmakerError("LLM_SCHEMA", `the ${req.step} output does not match its schema (stop_reason ${String(msg.stop_reason)})`, { retryable: true });
       }
-      const outputRef = await this.persist(fp, { fingerprint: fp, step: req.step, key: req.key, model: MODEL, attempts, request: identity, response: last, parsed });
+      const outputRef = await persistRaw(this.rawDir, fp, { fingerprint: fp, step: req.step, key: req.key, model: MODEL, attempts, request: identity, response: last, parsed });
       await this.record(h, { fp, endpoint, stage: req.stage, lang: req.lang, usage, outputRef });
       h.costs.assertWithinBudget(req.stage, req.lang);
       return parsed;

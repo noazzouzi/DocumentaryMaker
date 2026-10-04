@@ -7,9 +7,9 @@ import { ENV_KEYS, type Approval, type ApprovalsDoc, type BeatPlan, type FactChe
 import { TEST_STYLE, makeProject } from "@docmaker/core/testing";
 import { planInvocations, stageRange } from "../src/pipeline";
 import { blackViolations, parseBlackdetect, parseFreezedetect, sheetFrames } from "../src/stages/qa";
-import { contactCheck, nodeVersionCheck, parseFfmpegList, parseFfmpegVersion, rateLimitedContactHosts, versionAtLeast } from "../src/doctor";
+import { claudeCodeCheck, contactCheck, nodeVersionCheck, parseFfmpegList, parseFfmpegVersion, rateLimitedContactHosts, versionAtLeast } from "../src/doctor";
 import { workerEnv, workerForkOptions } from "../src/worker";
-import { buildRenderTokens, filterPlans, filterScript } from "../src/stages/common";
+import { buildRenderTokens, filterPlans, filterScript, llmHashKind } from "../src/stages/common";
 import { musicOptionsFor, usedMoods } from "../src/stages/assets";
 import { clipNarratedOf, finalTakeGated } from "../src/stages/voice";
 import { newRefErrors } from "../src/runner";
@@ -100,6 +100,25 @@ describe("doctor contact check", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("claude-code provider", () => {
+  it("doctor: not installed, Windows build through WSL, not signed in, API key, subscription", () => {
+    expect(claudeCodeCheck({ path: null, version: null, status: null, wanted: false })).toMatchObject({ id: "claude-code", ok: false, level: "info" });
+    expect(claudeCodeCheck({ path: null, version: null, status: null, wanted: true })).toMatchObject({ ok: false, level: "error", hint: expect.stringMatching(/install\.sh/) });
+    expect(claudeCodeCheck({ path: "/mnt/c/Users/u/AppData/Roaming/npm/claude", version: null, status: null, wanted: true }).value).toMatch(/Windows build/);
+    const at = { path: "/home/u/.local/bin/claude", version: "2.1.282 (Claude Code)", wanted: true };
+    expect(claudeCodeCheck({ ...at, status: { loggedIn: false, authMethod: "none" } })).toMatchObject({ ok: false, value: "2.1.282 (Claude Code), not signed in", hint: expect.stringMatching(/claude auth login/) });
+    expect(claudeCodeCheck({ ...at, status: { loggedIn: true, authMethod: "api_key" } }).value).toMatch(/api_key, not a Claude subscription/);
+    expect(claudeCodeCheck({ ...at, status: { loggedIn: true, authMethod: "claude.ai", subscriptionType: "max" } })).toEqual({
+      id: "claude-code", ok: true, level: "error", value: "2.1.282 (Claude Code), Claude max", hint: null,
+    });
+  });
+  it("input hashes treat claude-code as the API (switching provider re-runs nothing)", () => {
+    expect(llmHashKind("claude-code")).toBe("anthropic");
+    expect(llmHashKind("anthropic")).toBe("anthropic");
+    expect(llmHashKind("fixture")).toBe("fixture");
   });
 });
 

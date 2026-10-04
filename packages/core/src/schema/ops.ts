@@ -278,7 +278,10 @@ export const HomeConfig = z.object({
   remotionLicense: z.object({ status: z.enum(["individual-or-small-org", "company-license"]), acknowledgedAt: IsoDateTime }).nullable(),
   contact: z.string().nullable(), // Wikimedia/Wikidata contact (overridden by DOCMAKER_CONTACT)
   uiLang: z.enum(["auto", "en", "fr"]),
-  defaults: z.object({ languages: z.array(Lang), targetMinutes: z.number(), styleId: z.string().nullable() }),
+  defaults: z.object({
+    languages: z.array(Lang), targetMinutes: z.number(), styleId: z.string().nullable(),
+    llm: z.enum(["anthropic", "claude-code"]).optional(), // LLM provider of new projects (absent: anthropic)
+  }),
   onboardingDone: z.boolean(),
 });
 export type HomeConfig = z.infer<typeof HomeConfig>;

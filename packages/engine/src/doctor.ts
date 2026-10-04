@@ -7,8 +7,9 @@ import path from "node:path";
 import { CONTACT_RATE_LIMIT_HINT } from "@docmaker/assets";
 import { CONTACT_UA_HOSTS, ENV_KEYS, GlProbe, type RuntimeConfig, type SecretName, type Secrets } from "@docmaker/core";
 import { cacheCapBytes, freeDiskBytes, maskSecret, readHomeConfig, run } from "@docmaker/core/node";
+import { CLAUDE_CODE_INSTALL_HINT, CLAUDE_CODE_LOGIN_HINT, claudeCodeEnv } from "@docmaker/llm";
 import type { DoctorCheck, DoctorReport } from "./types";
-import type { Runtime } from "./runtime";
+import { claudeCodeSettings, type Runtime } from "./runtime";
 
 export const REQUIRED_FILTERS = [
   "afftfilt", "aevalsrc", "anoisesrc", "gradients", "life", "drawgrid", "noise", "colorchannelmixer", "vignette", "loudnorm", "ebur128",
@@ -78,6 +79,30 @@ function isExec(p: string | null): boolean {
   } catch {
     return false;
   }
+}
+
+/** First PATH entry holding an executable `bin` (a path with a slash is taken as is). */
+function whichBin(bin: string, envPath: string | undefined): string | null {
+  if (bin.includes("/")) return isExec(bin) ? bin : null;
+  for (const dir of (envPath ?? "").split(path.delimiter)) {
+    if (dir && isExec(path.join(dir, bin))) return path.join(dir, bin);
+  }
+  return null;
+}
+
+/**
+ * The CLI of the claude-code provider: installed for Linux (under WSL the Windows `claude` is reachable through /mnt/c but
+ * is not a usable install) and signed in with a Claude subscription, not an API key. `wanted`: new projects use claude-code.
+ */
+export function claudeCodeCheck(i: { path: string | null; version: string | null; status: unknown; wanted: boolean }): DoctorCheck {
+  const base = { id: "claude-code", level: i.wanted ? ("error" as const) : ("info" as const) };
+  if (!i.path) return { ...base, ok: false, value: "not installed (optional: Claude subscription mode)", hint: CLAUDE_CODE_INSTALL_HINT };
+  if (i.path.startsWith("/mnt/")) return { ...base, ok: false, value: `Windows build reached through WSL (${i.path})`, hint: CLAUDE_CODE_INSTALL_HINT };
+  const s = (i.status && typeof i.status === "object" ? i.status : {}) as { loggedIn?: unknown; authMethod?: unknown; subscriptionType?: unknown };
+  const v = i.version ?? "unknown version";
+  if (s.loggedIn !== true) return { ...base, ok: false, value: `${v}, not signed in`, hint: CLAUDE_CODE_LOGIN_HINT };
+  if (s.authMethod !== "claude.ai") return { ...base, ok: false, value: `${v}, signed in with ${String(s.authMethod)}, not a Claude subscription`, hint: CLAUDE_CODE_LOGIN_HINT };
+  return { ...base, ok: true, value: `${v}, Claude ${typeof s.subscriptionType === "string" ? s.subscriptionType : "subscription"}`, hint: null };
 }
 
 export function secretChecks(secrets: Secrets): DoctorCheck[] {
@@ -189,6 +214,19 @@ export async function runDoctor(rt: Runtime, o: { probeNetwork?: boolean; signal
   add({ id: "model:whisper", ok: whisper !== "", level: "info", value: whisper || "not installed (optional: ASR QA, recording import)", hint: whisper ? null : "docmaker setup --whisper faster-whisper" });
   const clip = existsSync(config.paths.ml) && readdirSync(config.paths.ml).length > 0;
   add({ id: "clip", ok: clip, level: "info", value: clip ? "installed" : "not installed (optional, M3)", hint: null });
+
+  // Claude subscription mode (provider claude-code): `auth status` runs with the environment the real calls get
+  const cc = claudeCodeSettings(rt);
+  const ccPath = whichBin(cc.bin, rt.env.PATH);
+  let ccVersion: string | null = null;
+  let ccStatus: unknown = null;
+  if (ccPath && !ccPath.startsWith("/mnt/")) {
+    ccVersion = (await tool(ccPath, ["--version"], signal)).stdout.trim().split(/\r?\n/)[0] || null;
+    try {
+      ccStatus = JSON.parse((await run(ccPath, ["auth", "status"], { signal, timeoutMs: 15_000, env: claudeCodeEnv(cc.env) })).stdout) as unknown;
+    } catch { /* unreadable: reported as not signed in */ }
+  }
+  add(claudeCodeCheck({ path: ccPath, version: ccVersion, status: ccStatus, wanted: hc?.defaults.llm === "claude-code" }));
 
   // keys, contact, disk, residue
   checks.push(...secretChecks(rt.secrets));

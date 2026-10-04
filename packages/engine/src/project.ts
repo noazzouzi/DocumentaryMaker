@@ -40,7 +40,7 @@ export async function createProjectIn(rt: Runtime, input: NewProjectInputT, extr
   const explicitSlug = parsed.slug !== undefined;
   const slug = explicitSlug ? parsed.slug! : uniqueSlug(rt.config.projectsDir, slugify(parsed.idea));
   if (explicitSlug && existsSync(path.join(/*turbopackIgnore: true*/ rt.config.projectsDir, slug, P.project))) throw new DocmakerError("VALIDATION", `project ${slug} already exists`);
-  let p = defaultProject({ ...input, slug, styleId: input.styleId ?? hc?.defaults.styleId ?? null }, new Date(), {
+  let p = defaultProject({ ...input, slug, styleId: input.styleId ?? hc?.defaults.styleId ?? null, llm: input.llm ?? hc?.defaults.llm }, new Date(), {
     hasElevenLabs: !!rt.secrets.elevenlabs, kokoro: models.kokoro, piper: models.piper,
     homeDefaults: hc ? { languages: hc.defaults.languages, targetMinutes: hc.defaults.targetMinutes } : null,
   });

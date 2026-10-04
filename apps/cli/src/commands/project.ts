@@ -102,21 +102,21 @@ export function registerProject(program: Command, ctx: CliContext): void {
     .option("--primary <lang>")
     .option("--minutes <n>")
     .option("--style <style>", "auto | <id> (an id confirms the style)", "auto")
-    .option("--llm <provider>", "anthropic | fixture")
+    .option("--llm <provider>", "claude-code (your Claude subscription) | anthropic (API key) | fixture; default: `setup --llm`, else anthropic")
     .option("--fixture <id>")
     .option("--seed <n>")
     .action(async (idea: string, o: Opts) => {
       const engine = await ctx.engine();
       const langs = parseLangs(str(o.lang), false);
       const llm = str(o.llm) ?? (o.fixture ? "fixture" : undefined);
-      if (llm && llm !== "anthropic" && llm !== "fixture") throw new UsageError("--llm must be anthropic or fixture");
+      if (llm && llm !== "anthropic" && llm !== "claude-code" && llm !== "fixture") throw new UsageError("--llm must be claude-code, anthropic or fixture");
       if (llm === "fixture" && !o.fixture) throw new UsageError("--llm fixture needs --fixture <id>");
       const minutes = o.minutes !== undefined ? Number(o.minutes) : undefined;
       if (minutes !== undefined && !(minutes >= 1 && minutes <= 60)) throw new UsageError("--minutes must be between 1 and 60");
       const style = str(o.style) ?? "auto";
       const p = await engine.createProject({
         idea, slug: str(o.slug), ...(langs.length ? { languages: langs } : {}), primaryLang: parseLangs(str(o.primary), false)[0], targetMinutes: minutes,
-        styleId: style === "auto" ? null : style, llm: llm as "anthropic" | "fixture" | undefined, fixtureId: str(o.fixture) ?? null,
+        styleId: style === "auto" ? null : style, llm: llm as "anthropic" | "claude-code" | "fixture" | undefined, fixtureId: str(o.fixture) ?? null,
         seed: o.seed !== undefined ? Number(o.seed) : undefined,
       });
       ctx.io.out(`created ${p.slug} (${p.languages.join(", ")}, ${p.targetMinutes} min)\n`);

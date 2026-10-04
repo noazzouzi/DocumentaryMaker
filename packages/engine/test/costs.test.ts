@@ -9,15 +9,18 @@ import { silentLogger } from "../src/util";
 import { REPO_ROOT, fixtureProject, pipelineReq, runToEnd, testEngine, testEnv, type TestEnv } from "./helpers";
 import type { EngineExt } from "../src/engine";
 
-/** The fixture LLM presented as a paid client: estimates become non-zero; each call records a receipt of `usd`. */
-function paidLlm(fixture: string, usd: number): LlmClient {
+/**
+ * The fixture LLM presented as a live client: as the API ("anthropic": estimates become non-zero; each call records a
+ * receipt of `usd`) or as the claude-code subscription (estimates $0, receipts $0).
+ */
+function paidLlm(fixture: string, usd: number, kind: "anthropic" | "claude-code" = "anthropic"): LlmClient {
   const inner = createLlmClient({ provider: "fixture", fixtureDir: path.join(REPO_ROOT, "fixtures", fixture), rawDir: "", refusalFallback: false, logger: silentLogger, apiKey: null });
   let n = 0;
   const pay = async (stage: Parameters<LlmClient["structured"]>[0]["stage"], lang: Parameters<LlmClient["structured"]>[0]["lang"], h: Parameters<LlmClient["structured"]>[1]) => {
-    await h.costs.record({ fingerprint: sha256Hex(`call-${n++}`), provider: "anthropic", endpoint: "messages", model: "claude-opus-5-5", stage, lang, usage: { input_tokens: 1000 }, costUsd: usd, outputRef: null });
+    await h.costs.record({ fingerprint: sha256Hex(`call-${n++}`), provider: kind, endpoint: "messages", model: "claude-opus-5-5", stage, lang, usage: { input_tokens: 1000 }, costUsd: usd, outputRef: null });
   };
   return {
-    kind: "anthropic",
+    kind,
     async structured(req, h) {
       const out = await inner.structured(req, h);
       await pay(req.stage, req.lang, h);
@@ -120,6 +123,42 @@ describe("pipeline cost gate", () => {
     } finally {
       await e2.close();
       t2.cleanup();
+    }
+  });
+});
+
+describe("claude-code subscription", () => {
+  it("LLM stages are estimated at $0: the pipeline runs without a cost gate", async () => {
+    const t3 = testEnv("costs-subscription");
+    const e3 = await testEngine(t3, { llmOverride: paidLlm("tulip-mania", 0, "claude-code") });
+    try {
+      const slug = (await fixtureProject(e3, "tulip-mania", "sub")).slug;
+      const pe = await e3.estimatePipeline(slug, { from: "research", to: "outline", langs: [] });
+      expect(pe.totalUsd).toBe(0);
+      const r = await runToEnd(e3, pipelineReq(slug, "research", "outline"));
+      expect(r.events.some((x) => x.type === "needs-approval" && x.gate === "cost")).toBe(false);
+      expect(r.status).toBe("succeeded");
+      expect((await e3.status(slug)).costUsd).toBe(0);
+    } finally {
+      await e3.close();
+      t3.cleanup();
+    }
+  });
+
+  it("new projects take the home default provider, and the runtime builds the claude-code client for them", async () => {
+    const t4 = testEnv("costs-default-llm");
+    const e4 = await testEngine(t4);
+    try {
+      const hc = await e4.homeConfig();
+      await e4.setHomeConfig({ defaults: { ...hc.defaults, llm: "claude-code" } });
+      const p = await e4.createProject({ idea: "The terrible secret of a tulip trader" });
+      expect(p.llm.provider).toBe("claude-code");
+      expect(e4.rt.llmFor(p).kind).toBe("claude-code");
+      expect((await e4.createProject({ idea: "Explicit fixture project", llm: "fixture", fixtureId: "tulip-mania" })).llm.provider).toBe("fixture");
+      expect((await e4.createProject({ idea: "Explicit API project", llm: "anthropic" })).llm.provider).toBe("anthropic");
+    } finally {
+      await e4.close();
+      t4.cleanup();
     }
   });
 });

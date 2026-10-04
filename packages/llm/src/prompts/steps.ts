@@ -17,6 +17,14 @@ ON VIDEO (interviews, testimony, news clips) with where to find them, 4) numbers
 ironies and reversals, 7) what remains unverified or disputed.
 Write the dossier as dense notes, one claim per line, each cited. Flag contradictions between sources explicitly.`;
 
+/** Claude Code research (no API citations): the URL markers the registry is rebuilt from, and the tool budget. */
+export const RESEARCH_CLAUDE_CODE = (maxSearches: number, maxFetches: number): string => `
+Tools: at most ${maxSearches} web searches and ${maxFetches} page fetches. When you fetch a page, ask for the passages, dates, numbers and
+verbatim quotes you need from it.
+Citations: right after each claim, put the exact URL of the source that supports it in square brackets, e.g. "… in 2016. [https://example.org/page]".
+Cite only URLs that appeared in your search results or that you fetched; never cite from memory.
+When you are done, reply with the complete dossier as your final message: no preamble, no closing remarks.`;
+
 // ---------------------------------------------------------------- step 1b: dossier -> FactSheet (structured output, no tools)
 export const FACTSHEET_USER = (dossier: string, sourceList: string, asOf: string): string => `<dossier>${dossier}</dossier>
 <source_list>${sourceList}</source_list>

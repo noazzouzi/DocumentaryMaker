@@ -13,7 +13,7 @@ import type { ProjectStore } from "@docmaker/core/node";
 import type { StageDef } from "../types";
 import { docs } from "../docs";
 import { nowIso, writeTextIfChanged } from "../util";
-import { X, assetsCtx, emitLog, stepCtx, writeDoc } from "./common";
+import { X, assetsCtx, emitLog, llmBilled, llmHashKind, stepCtx, writeDoc } from "./common";
 
 const RESEARCH_VERSION = 1;
 export const RESEARCH_RAW_DIR = "research/raw";
@@ -102,11 +102,11 @@ export const researchStage: StageDef = {
     const p = ctx.project;
     return {
       idea: p.idea, languages: p.languages, targetMinutes: p.targetMinutes, asOf: p.editorial.asOf,
-      provider: p.llm.provider, fixtureId: p.llm.fixtureId, offline: X(ctx).offline,
+      provider: llmHashKind(p.llm.provider), fixtureId: p.llm.fixtureId, offline: X(ctx).offline,
     };
   },
   async estimate(ctx) {
-    if (ctx.llm.kind === "fixture") return { stage: "research", lang: null, lines: [], totalUsd: 0, confidence: "exact" };
+    if (!llmBilled(ctx)) return { stage: "research", lang: null, lines: [], totalUsd: 0, confidence: "exact" };
     const e = X(ctx);
     const minutes = ctx.project.targetMinutes;
     const lines = [

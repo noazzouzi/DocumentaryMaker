@@ -6,7 +6,7 @@ import type { StageCtx, StageDef } from "../types";
 import { docs, effectivePublish, need } from "../docs";
 import { factsheetHash, reopenChanged, withVideoVerified } from "../gates";
 import { rewrittenHolds } from "../editing";
-import { X, needLang, stepCtx, writeDoc } from "./common";
+import { X, llmBilled, llmHashKind, needLang, stepCtx, writeDoc } from "./common";
 
 export { withVideoVerified };
 
@@ -30,12 +30,12 @@ export const factcheckStage: StageDef = {
       script: await ctx.store.docHashOf(P.script(lang)), slices: await ctx.store.docHashOf(P.beatSlices(lang)),
       plans: await ctx.store.docHashOf(P.beatPlans), factsheet: await ctx.store.docHashOf(P.factsheet), videoQuotes: await videoQuotes(ctx),
       publish: hashJson(effectivePublish(ctx.project, lang, script, suggestion)), riskFlags: await e.riskFlags(), personAcks: await e.personAcks(),
-      llm: ctx.llm.kind,
+      llm: llmHashKind(ctx.llm.kind),
     };
   },
   async estimate(ctx) {
     const lang = needLang(ctx);
-    if (ctx.llm.kind === "fixture") return { stage: "factcheck", lang, lines: [], totalUsd: 0, confidence: "exact" };
+    if (!llmBilled(ctx)) return { stage: "factcheck", lang, lines: [], totalUsd: 0, confidence: "exact" };
     const script = await docs.script(ctx.store, lang);
     const chars = script?.chapters.reduce((a, c) => a + c.segments.reduce((b, s) => b + s.displayText.length, 0), 0) ?? ctx.project.targetMinutes * 900;
     const n = script?.chapters.length ?? 6;

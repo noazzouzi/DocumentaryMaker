@@ -3,7 +3,7 @@
 import { BeatSlicesDoc, P, docHash, hashJson, type BeatLang, type LintIssue } from "@docmaker/core";
 import type { StageDef } from "../types";
 import { docs, need } from "../docs";
-import { X, emitLog, needLang, stepCtx, writeDoc } from "./common";
+import { X, emitLog, llmBilled, needLang, stepCtx, writeDoc } from "./common";
 
 export const beatsliceStage: StageDef = {
   id: "beatslice",
@@ -19,7 +19,7 @@ export const beatsliceStage: StageDef = {
   },
   async estimate(ctx) {
     const lang = needLang(ctx);
-    if (ctx.llm.kind === "fixture" || lang === ctx.project.primaryLang) return { stage: "beatslice", lang, lines: [], totalUsd: 0, confidence: "exact" };
+    if (!llmBilled(ctx) || lang === ctx.project.primaryLang) return { stage: "beatslice", lang, lines: [], totalUsd: 0, confidence: "exact" };
     const script = await docs.script(ctx.store, lang);
     const chars = script?.chapters.reduce((a, c) => a + c.segments.reduce((b, s) => b + s.displayText.length, 0), 0) ?? ctx.project.targetMinutes * 900;
     const lines = X(ctx).rt.deps.llm.estimateStepCost("beatslice", { inputChars: chars * 3, outputChars: chars * 2, cachedChars: 20_000, lang });

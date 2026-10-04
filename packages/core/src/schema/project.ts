@@ -60,7 +60,8 @@ export type CaptionsMode = z.infer<typeof CaptionsMode>;
 export const CaptionVariant = z.enum(["keywords", "pop", "karaoke", "rail"]);
 export type CaptionVariant = z.infer<typeof CaptionVariant>;
 export const SfxPackId = z.enum(["procedural", "remotion-sfx-cc0", "hyperframes-pixabay", "user"]);
-export const LlmProviderId = z.enum(["anthropic", "fixture"]);
+/** "claude-code": the user's Claude subscription through the official `claude` CLI (no API key). */
+export const LlmProviderId = z.enum(["anthropic", "claude-code", "fixture"]);
 export const VisionRerankMode = z.enum(["off", "selective", "all"]);
 
 /** "Theme the edit to the topic": produced by the style-suggestion call (or the user), merged into render tokens. */

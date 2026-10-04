@@ -2,7 +2,7 @@
 // /new: idea → instant offline style ranking (debounced) → style confirmation → create → pipeline estimate → start.
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import type { HomeConfig, Lang, PipelineEstimate, Project, StyleSuggestion } from "@docmaker/core";
+import type { HomeConfig, Lang, LlmProviderId, PipelineEstimate, Project, StyleSuggestion } from "@docmaker/core";
 import type { StyleSummary } from "@docmaker/styles";
 import { fmtUsd } from "@/i18n";
 import { api, errorText, submitJob } from "@/lib/api";
@@ -17,7 +17,7 @@ export function NewProjectForm({ home, styles }: { home: HomeConfig; styles: Sty
   const [primary, setPrimary] = useState<Lang>(home.defaults.languages[0] ?? "en");
   const [minutes, setMinutes] = useState(home.defaults.targetMinutes || 20);
   const [styleId, setStyleId] = useState<string | null>(home.defaults.styleId);
-  const [llm, setLlm] = useState<"anthropic" | "fixture">("anthropic");
+  const [llm, setLlm] = useState<LlmProviderId>(home.defaults.llm ?? "anthropic");
   const [fixtureId, setFixtureId] = useState("tulip-mania");
   const [suggestion, setSuggestion] = useState<StyleSuggestion | null>(null);
   const [suggesting, setSuggesting] = useState(false);
@@ -204,7 +204,8 @@ export function NewProjectForm({ home, styles }: { home: HomeConfig; styles: Sty
               <input type="number" min={5} max={60} className={inputCls} value={minutes} onChange={(e) => setMinutes(Math.min(60, Math.max(5, Number(e.target.value) || 5)))} />
             </Field>
             <Field label={t("new.llm")}>
-              <select className={inputCls} value={llm} onChange={(e) => setLlm(e.target.value as "anthropic" | "fixture")}>
+              <select className={inputCls} value={llm} onChange={(e) => setLlm(e.target.value as LlmProviderId)}>
+                <option value="claude-code">{t("new.llm.claude-code")}</option>
                 <option value="anthropic">{t("new.llm.anthropic")}</option>
                 <option value="fixture">{t("new.llm.fixture")}</option>
               </select>

@@ -9,7 +9,7 @@ import type { AudioCtx, MusicGenOptions } from "@docmaker/audio";
 import type { StageCtx, StageDef } from "../types";
 import { docs, need } from "../docs";
 import { fairUseGate } from "../gates";
-import { X, assetsCtx, audioCtx, emitLog, stepCtx, writeDoc } from "./common";
+import { X, assetsCtx, audioCtx, emitLog, llmBilled, llmLive, stepCtx, writeDoc } from "./common";
 
 const MOOD_KEY: Record<Exclude<MusicMood, "none">, MusicGenOptions["key"]> = {
   ominous: "D minor", tense: "E minor", sad: "A minor", mysterious: "A minor", epic: "D minor",
@@ -152,7 +152,7 @@ export const assetsStage: StageDef = {
       factsheet: facts ? docHash(facts) : null, clips: clipSegs, quotes: hashJson((facts?.quotes ?? []).filter((q) => quoteIds.has(q.id))),
       localIndex: await ctx.store.docHashOf(P.localIndex), styleHash: ctx.style.dataHash,
       providers: configuredProviders(ctx), licensePolicy: p.assets.licensePolicy, monetized: p.editorial.monetized, offline: e.offline,
-      fairUse: p.editorial.fairUseAcknowledged, visionRerank: p.assets.visionRerank, rerank: !e.offline && ctx.llm.kind === "anthropic" && !!ctx.secrets.anthropic,
+      fairUse: p.editorial.fairUseAcknowledged, visionRerank: p.assets.visionRerank, rerank: !e.offline && llmLive(ctx),
       maxCandidatesPerBeat: p.assets.maxCandidatesPerBeat, maxClipSeconds: p.assets.maxClipSeconds, clipFallback: p.assets.clipFallback,
       music: p.audio.music, musicLibraryDir: p.audio.musicLibraryDir, sfxPacks: p.audio.sfxPacks, personAcks: await e.personAcks(),
       riskFlags: await e.riskFlags(), seed: p.seed, themeAccent: p.themeOverride?.accent ?? null,
@@ -168,7 +168,7 @@ export const assetsStage: StageDef = {
     const plans = await docs.plans(ctx.store);
     const n = plans?.plans.length ?? Math.round(p.targetMinutes * 15);
     const lines = [];
-    if (!e.offline && ctx.llm.kind === "anthropic" && ctx.secrets.anthropic && p.assets.visionRerank !== "off") {
+    if (!e.offline && llmBilled(ctx) && ctx.secrets.anthropic && p.assets.visionRerank !== "off") {
       const share = p.assets.visionRerank === "all" ? 1 : 0.3;
       lines.push(...e.rt.deps.llm.estimateStepCost("rerank", { inputChars: Math.round(n * share) * 9_000, outputChars: Math.round(n * share) * 800, cachedChars: 0, lang: null }));
     }
@@ -203,7 +203,7 @@ export const assetsStage: StageDef = {
     for (const [id, a] of Object.entries(frozenWithMusic.assets)) if (a.role === "music" && !musicIds.has(id)) delete frozenWithMusic.assets[id];
 
     const actx = assetsCtx(ctx);
-    const rerank = !e.offline && ctx.llm.kind === "anthropic" && !!ctx.secrets.anthropic && p.assets.visionRerank !== "off";
+    const rerank = !e.offline && llmLive(ctx) && p.assets.visionRerank !== "off";
     const reranker = rerank ? e.rt.deps.llm.makeReranker(stepCtx(ctx)) : null;
     ctx.progress(0.12, "resolving assets");
     const out = await e.rt.deps.assets.resolveAssets({

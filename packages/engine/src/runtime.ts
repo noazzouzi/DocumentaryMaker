@@ -24,6 +24,11 @@ export interface Runtime {
   llmFor(project: Project): LlmClient;
 }
 
+/** The `claude` CLI of the claude-code provider (DOCMAKER_CLAUDE_BIN overrides) and its empty working directory. */
+export function claudeCodeSettings(rt: Pick<Runtime, "env" | "config">): { bin: string; workDir: string; env: NodeJS.ProcessEnv } {
+  return { bin: rt.env.DOCMAKER_CLAUDE_BIN || "claude", workDir: path.join(rt.config.paths.home, "claude-code"), env: rt.env };
+}
+
 export function createRuntime(o: {
   cwd: string; env: NodeJS.ProcessEnv; deps: EngineDeps; renderClient: RenderClient | null; llmOverride: LlmClient | null; logger?: Logger;
 }): Runtime {
@@ -71,6 +76,12 @@ export function createRuntime(o: {
         if (!project.llm.fixtureId) throw new DocmakerError("FIXTURE_MISSING", "the project uses the fixture LLM without a fixture id");
         return o.deps.llm.createLlmClient({
           provider: "fixture", fixtureDir: rt.fixtureDir(project.llm.fixtureId), rawDir: "", refusalFallback: false, logger: rt.logger, apiKey: null,
+        });
+      }
+      if (project.llm.provider === "claude-code") {
+        return o.deps.llm.createLlmClient({
+          provider: "claude-code", fixtureDir: null, rawDir: path.join(rt.config.projectsDir, project.slug, "costs", "llm"), refusalFallback: false,
+          logger: rt.logger, apiKey: null, claudeCode: claudeCodeSettings(rt),
         });
       }
       // Lazy: the SDK refuses to construct without a key, and most stages never call the LLM.

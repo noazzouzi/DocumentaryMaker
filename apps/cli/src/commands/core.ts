@@ -233,6 +233,7 @@ export function registerCore(program: Command, ctx: CliContext): void {
     .option("--yt-dlp", "yt-dlp")
     .option("--whisper <impl>", "faster-whisper | whisper-cpp")
     .option("--clip", "CLIP runtime (M3)")
+    .option("--llm <provider>", "LLM of new projects: claude-code (your Claude subscription) | anthropic (API key)")
     .action(async (o: Record<string, unknown>) => {
       const { runSetup } = await import("./setup");
       process.exitCode = await runSetup(ctx, o);

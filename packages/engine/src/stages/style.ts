@@ -3,7 +3,7 @@
 import { P, StyleSuggestion, type RiskFlag } from "@docmaker/core";
 import type { StageDef } from "../types";
 import { docs, need } from "../docs";
-import { X, emitLog, stepCtx, writeDoc } from "./common";
+import { X, emitLog, llmBilled, llmHashKind, llmLive, stepCtx, writeDoc } from "./common";
 
 function mergeFlags(a: readonly RiskFlag[], b: readonly RiskFlag[]): RiskFlag[] {
   const all = [...new Set([...a, ...b])].filter((f) => f !== "none").sort();
@@ -17,10 +17,10 @@ export const styleStage: StageDef = {
   optionKeys: [],
   async inputs(ctx) {
     const reg = await X(ctx).rt.styles();
-    return { idea: ctx.project.idea, factsheet: await ctx.store.docHashOf(P.factsheet), registry: reg.hash, llm: ctx.llm.kind };
+    return { idea: ctx.project.idea, factsheet: await ctx.store.docHashOf(P.factsheet), registry: reg.hash, llm: llmHashKind(ctx.llm.kind) };
   },
   async estimate(ctx) {
-    if (ctx.llm.kind === "fixture" || !ctx.secrets.anthropic) return { stage: "style", lang: null, lines: [], totalUsd: 0, confidence: "exact" };
+    if (!llmBilled(ctx) || !ctx.secrets.anthropic) return { stage: "style", lang: null, lines: [], totalUsd: 0, confidence: "exact" };
     const lines = X(ctx).rt.deps.llm.estimateStepCost("style", { inputChars: 12_000, outputChars: 3_000, cachedChars: 0, lang: null });
     return { stage: "style", lang: null, lines, totalUsd: lines.reduce((a, l) => a + l.totalUsd, 0), confidence: "estimate" };
   },
@@ -31,7 +31,7 @@ export const styleStage: StageDef = {
     const facts = need(await docs.factsheet(ctx.store), "research/factsheet.json", "research");
     const offline = e.rt.deps.styles.suggestStyleOffline(ctx.project.idea, reg);
     let suggestion: StyleSuggestion = { ...offline, stage: "research" };
-    const canLlm = ctx.llm.kind === "fixture" || !!ctx.secrets.anthropic;
+    const canLlm = ctx.llm.kind === "fixture" || llmLive(ctx);
     if (canLlm) {
       try {
         const styles = reg.list().map((s) => ({ id: s.id, names: s.names, description: s.description, bestFor: s.bestFor }));
