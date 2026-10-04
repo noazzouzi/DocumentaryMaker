@@ -6,7 +6,7 @@ import { mkdir, readFile, rename, rm } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import pRetry from "p-retry";
-import { DocmakerError, isDocmakerError } from "@docmaker/core";
+import { CONTACT_UA_HOSTS, DocmakerError, isDocmakerError } from "@docmaker/core";
 import type { HttpClient, HttpGetOptions, Logger, RuntimeConfig } from "@docmaker/core";
 import { sha256Bytes, userAgentFor } from "@docmaker/core/node";
 import { writeFileAtomic } from "./util";
@@ -98,6 +98,17 @@ export function isBlockedAddress(ip: string): boolean {
   const norm = h.map((x) => x.toString(16)).join(":");
   return blockList.check(norm, "ipv6");
 }
+
+/**
+ * The single actionable hint for a 429 from a contact-etiquette host (Wikimedia/Commons, Wikidata, Openverse) while no
+ * contact is configured. The contact is the user's own choice: it is never invented or derived from git/OS data.
+ */
+export const CONTACT_RATE_LIMIT_HINT =
+  "set DOCMAKER_CONTACT to an e-mail address or URL of your choice (or the Wikimedia contact in the web settings): "
+  + "Wikimedia rate-limits clients that identify no contact; it is sent only to Wikimedia, Wikidata and Openverse";
+/** Whether a 429 from `host` should carry CONTACT_RATE_LIMIT_HINT under `config`. */
+export const needsContactHint = (host: string, config: Pick<RuntimeConfig, "contact">): boolean =>
+  !config.contact && CONTACT_UA_HOSTS.includes(host.toLowerCase());
 
 /** Hosts whose 429 without a wait hint gets a fixed back-off (§7.2: Wikimedia 20 s). */
 export const FIXED_429_BACKOFF_MS: readonly [RegExp, number][] = [[/(^|\.)(wikimedia|wikipedia|wikidata)\.org$/, 20_000]];
@@ -200,6 +211,7 @@ export function createHttpClient(o: { config: RuntimeConfig; logger: Logger } & 
   /** Errors raised before the request left the machine (DNS, SSRF guard, connection refused). */
   const notSent = new WeakSet<Error>();
   const now = o.now ?? (() => Date.now());
+  let contactHintShown = false; // CONTACT_RATE_LIMIT_HINT is logged once per client (one per job/stage run)
 
   // ---- per-host circuit breaker: a 429 with a wait hint closes the host until then, for every request of every job (the
   // state is persisted next to the response cache). Within the cap we wait; beyond it we fail fast without a request.
@@ -319,10 +331,16 @@ export function createHttpClient(o: { config: RuntimeConfig; logger: Logger } & 
           snippet = (await res.text()).slice(0, 300);
         } catch { /* ignore */ }
         const rate = res.status === 429;
-        if (rate && typeof retryAfterMs === "number" && retryAfterMs > 0) await tripHost(new URL(url).hostname.toLowerCase(), retryAfterMs);
+        const host = new URL(url).hostname.toLowerCase();
+        const contactHint = rate && needsContactHint(host, config);
+        if (contactHint && !contactHintShown) {
+          contactHintShown = true;
+          logger.warn(`${host} is rate-limiting anonymous requests: ${CONTACT_RATE_LIMIT_HINT}`);
+        }
+        if (rate && typeof retryAfterMs === "number" && retryAfterMs > 0) await tripHost(host, retryAfterMs);
         const retryable = rate || res.status >= 500 || res.status === 408;
         throw new DocmakerError(rate ? "PROVIDER_RATE_LIMIT" : "PROVIDER_ERROR", `HTTP ${res.status} from ${redactUrl(url)}`, {
-          retryable, details: { status: res.status, retryAfterMs, snippet },
+          retryable, details: { status: res.status, retryAfterMs, snippet }, ...(contactHint ? { hint: CONTACT_RATE_LIMIT_HINT } : {}),
         });
       }
       return { res, finalUrl: url, idle };

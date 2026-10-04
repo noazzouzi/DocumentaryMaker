@@ -6,6 +6,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createLogger } from "@docmaker/core/node";
 import { createHttpClient, guardUrl, isBlockedAddress, parseRetryAfter, redactUrl } from "../src/index";
+import { CONTACT_RATE_LIMIT_HINT, needsContactHint } from "../src/http";
 import { fakeFetch, makeConfig, publicLookup, quietLogger, tmpDir } from "./helpers";
 
 afterEach(() => vi.restoreAllMocks());
@@ -197,6 +198,32 @@ describe("retries, caps, cache, timeouts", () => {
     await expect(http.getJson("https://commons.wikimedia.org/w/api.php", { signal })).rejects.toMatchObject({ code: "PROVIDER_RATE_LIMIT", details: { retryAfterMs: 20_000 } });
     await expect(http.getJson("https://www.wikidata.org/w/api.php", { signal })).rejects.toMatchObject({ details: { retryAfterMs: 20_000 } });
     await expect(http.getJson("https://api.openverse.org/v1/images/", { signal })).rejects.toMatchObject({ details: { retryAfterMs: null } });
+  });
+
+  it("a Wikimedia 429 without a configured contact logs one DOCMAKER_CONTACT hint per client; a contact (or another host) gets none", async () => {
+    const lines: string[] = [];
+    const logger = createLogger({ level: "warn", sink: (l) => void lines.push(l) });
+    const signal = new AbortController().signal;
+    const f = fakeFetch(() => new Response("", { status: 429, headers: { "retry-after": "3600" } }));
+    const http = createHttpClient({ config: makeConfig({ offline: false, contact: null }), logger, fetchImpl: f.impl, lookup: publicLookup, retries: 0 });
+    await expect(http.getJson("https://commons.wikimedia.org/w/api.php?a=1", { signal })).rejects.toMatchObject({ code: "PROVIDER_RATE_LIMIT", hint: CONTACT_RATE_LIMIT_HINT });
+    await expect(http.getJson("https://www.wikidata.org/w/api.php?a=2", { signal })).rejects.toMatchObject({ hint: CONTACT_RATE_LIMIT_HINT });
+    const hints = lines.filter((l) => l.includes("DOCMAKER_CONTACT"));
+    expect(hints).toHaveLength(1);
+    expect(hints[0]).toContain("commons.wikimedia.org is rate-limiting anonymous requests: set DOCMAKER_CONTACT to an e-mail address or URL of your choice");
+    expect(hints[0]).not.toMatch(/@[a-z0-9-]+\.[a-z]/i); // no invented address
+    // a non-etiquette host never gets the hint
+    const other = createHttpClient({ config: makeConfig({ offline: false, contact: null }), logger, fetchImpl: f.impl, lookup: publicLookup, retries: 0 });
+    const err = await other.getJson("https://x.example.com/r", { signal }).catch((e: unknown) => e);
+    expect((err as { hint?: unknown }).hint).toBeNull();
+    // with a contact configured: no hint at all
+    lines.length = 0;
+    const withContact = createHttpClient({ config: makeConfig({ offline: false, contact: "https://example.org/contact" }), logger, fetchImpl: f.impl, lookup: publicLookup, retries: 0 });
+    const e2 = await withContact.getJson("https://commons.wikimedia.org/w/api.php?b=1", { signal }).catch((e: unknown) => e);
+    expect((e2 as { hint?: unknown }).hint).toBeNull();
+    expect(lines.filter((l) => l.includes("DOCMAKER_CONTACT"))).toHaveLength(0);
+    expect(needsContactHint("Commons.Wikimedia.org", { contact: null })).toBe(true);
+    expect(needsContactHint("commons.wikimedia.org", { contact: "x" })).toBe(false);
   });
 
   it("a 429 with a long Retry-After closes the host: later requests fail fast without a request, across clients", async () => {

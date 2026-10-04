@@ -1,10 +1,13 @@
 // Pure helpers: pipeline planning, QA parsers, doctor parsers, worker env, render tokens, music planning, utilities.
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { ENV_KEYS, type Approval, type ApprovalsDoc, type BeatPlan, type FactCheck, type FactCheckItem, type JobRequest, type StylePlugin } from "@docmaker/core";
 import { TEST_STYLE, makeProject } from "@docmaker/core/testing";
 import { planInvocations, stageRange } from "../src/pipeline";
 import { blackViolations, parseBlackdetect, parseFreezedetect, sheetFrames } from "../src/stages/qa";
-import { nodeVersionCheck, parseFfmpegList, parseFfmpegVersion, versionAtLeast } from "../src/doctor";
+import { contactCheck, nodeVersionCheck, parseFfmpegList, parseFfmpegVersion, rateLimitedContactHosts, versionAtLeast } from "../src/doctor";
 import { workerEnv, workerForkOptions } from "../src/worker";
 import { buildRenderTokens, filterPlans, filterScript } from "../src/stages/common";
 import { musicOptionsFor, usedMoods } from "../src/stages/assets";
@@ -77,6 +80,26 @@ describe("doctor parsers", () => {
     expect(nodeVersionCheck("22.22.0").ok).toBe(true);
     expect(nodeVersionCheck("22.11.0")).toMatchObject({ ok: false, level: "error" });
     expect(nodeVersionCheck("24.1.0")).toMatchObject({ ok: false, level: "warn" });
+  });
+});
+
+describe("doctor contact check", () => {
+  it("unset contact → one hint naming DOCMAKER_CONTACT (never an invented address), with recent Wikimedia 429s named", async () => {
+    expect(contactCheck("https://example.org/c", ["commons.wikimedia.org"])).toEqual({ id: "contact", ok: true, level: "warn", value: "set", hint: null });
+    const plain = contactCheck(null, []);
+    expect(plain).toMatchObject({ ok: false, level: "warn", value: "unset" });
+    expect(plain.hint).toMatch(/^set DOCMAKER_CONTACT to an e-mail address or URL of your choice/);
+    expect(plain.hint).not.toMatch(/@[a-z0-9-]+\.[a-z]/i);
+    const dir = mkdtempSync(path.join(os.tmpdir(), "docmaker-doctor-"));
+    try {
+      expect(await rateLimitedContactHosts(dir)).toEqual([]); // no file
+      writeFileSync(path.join(dir, "host-cooldown.json"), JSON.stringify({ "upload.wikimedia.org": 1, "commons.wikimedia.org": 2, "api.pexels.com": 3 }));
+      const hosts = await rateLimitedContactHosts(dir);
+      expect(hosts).toEqual(["commons.wikimedia.org", "upload.wikimedia.org"]);
+      expect(contactCheck(null, hosts).value).toBe("unset; rate-limited recently by commons.wikimedia.org, upload.wikimedia.org");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

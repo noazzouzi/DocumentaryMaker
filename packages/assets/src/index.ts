@@ -13,7 +13,7 @@ import { PROCEDURAL_RECIPES as RECIPES, proceduralAsset as proceduralAssetImpl }
 export type { AssetsCtx } from "./types";
 
 // ---- http (offline → throws OFFLINE before any socket; SSRF guard; per-host UA; TTL cache; size caps)
-export { createHttpClient, guardUrl, isBlockedAddress, parseRetryAfter, redactUrl, DEFAULT_MAX_BYTES, VIDEO_MAX_BYTES, HEADER_TIMEOUT_MS } from "./http";
+export { createHttpClient, guardUrl, isBlockedAddress, parseRetryAfter, redactUrl, CONTACT_RATE_LIMIT_HINT, needsContactHint, DEFAULT_MAX_BYTES, VIDEO_MAX_BYTES, HEADER_TIMEOUT_MS } from "./http";
 export type { HttpClientInternals, LookupFn } from "./http";
 export { QuotaBuckets } from "./quota";
 

@@ -4,7 +4,8 @@ import { existsSync, readdirSync, accessSync, constants as fsc } from "node:fs";
 import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { ENV_KEYS, GlProbe, type RuntimeConfig, type SecretName, type Secrets } from "@docmaker/core";
+import { CONTACT_RATE_LIMIT_HINT } from "@docmaker/assets";
+import { CONTACT_UA_HOSTS, ENV_KEYS, GlProbe, type RuntimeConfig, type SecretName, type Secrets } from "@docmaker/core";
 import { cacheCapBytes, freeDiskBytes, maskSecret, readHomeConfig, run } from "@docmaker/core/node";
 import type { DoctorCheck, DoctorReport } from "./types";
 import type { Runtime } from "./runtime";
@@ -33,6 +34,26 @@ export function parseFfmpegList(text: string): Set<string> {
 export function versionAtLeast(v: [number, number] | null, min: [number, number]): boolean {
   return !!v && (v[0] > min[0] || (v[0] === min[0] && v[1] >= min[1]));
 }
+/**
+ * The Wikimedia contact check. `rateLimited` are the contact-etiquette hosts the persisted HTTP host breaker
+ * (`<httpCache>/host-cooldown.json`) recorded as having sent a 429; the hint names the fix and never invents a contact.
+ */
+export function contactCheck(contact: string | null, rateLimited: readonly string[]): DoctorCheck {
+  if (contact) return { id: "contact", ok: true, level: "warn", value: "set", hint: null };
+  const value = rateLimited.length ? `unset; rate-limited recently by ${rateLimited.join(", ")}` : "unset";
+  return { id: "contact", ok: false, level: "warn", value, hint: CONTACT_RATE_LIMIT_HINT };
+}
+/** Contact-etiquette hosts present in the persisted host-cooldown file (a 429 was received from them). */
+export async function rateLimitedContactHosts(httpCacheDir: string): Promise<string[]> {
+  try {
+    const j = JSON.parse(await readFile(path.join(httpCacheDir, "host-cooldown.json"), "utf8")) as unknown;
+    if (!j || typeof j !== "object") return [];
+    return Object.keys(j).filter((h) => CONTACT_UA_HOSTS.includes(h)).sort();
+  } catch {
+    return [];
+  }
+}
+
 export function nodeVersionCheck(version: string): DoctorCheck {
   const [maj = 0, min = 0] = version.replace(/^v/, "").split(".").map(Number);
   const ok = maj === 22 && min >= 12;
@@ -171,7 +192,7 @@ export async function runDoctor(rt: Runtime, o: { probeNetwork?: boolean; signal
 
   // keys, contact, disk, residue
   checks.push(...secretChecks(rt.secrets));
-  add({ id: "contact", ok: config.contact !== null, level: "warn", value: config.contact ? "set" : "unset", hint: config.contact ? null : "set DOCMAKER_CONTACT (Wikimedia etiquette) or the contact in settings" });
+  checks.push(contactCheck(config.contact, config.contact ? [] : await rateLimitedContactHosts(config.paths.httpCache)));
   for (const [id, dir] of [["disk:home", config.paths.home], ["disk:projects", config.projectsDir]] as const) {
     let free: number | null = null;
     let probe = dir;
