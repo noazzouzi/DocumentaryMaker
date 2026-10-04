@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import type { Candidate, FrozenAsset } from "@docmaker/core";
 import { FrozenAsset as FrozenAssetSchema } from "@docmaker/core";
 import { makeFactSheet, makeProject } from "@docmaker/core/testing";
-import { licenseInfo, nonLikenessSubject, validatePick } from "../src/index";
+import { candidateNamesPerson, licenseInfo, nonLikenessSubject, validatePick } from "../src/index";
+import { likenessEvidence } from "../src/identity";
 
 const c = (title: string, tags: string[] = [], description = "") => ({ title, tags, description });
 
@@ -45,6 +46,23 @@ describe("nonLikenessSubject (EN/FR/DE/NL titles and Commons categories)", () =>
     expect(nonLikenessSubject(c("Portrait of Carolus Clusius", ["Coats of arms in portraits", "House of Habsburg"]))).toBeNull();
     // … but never a funerary category.
     expect(nonLikenessSubject(c("Photo of Charles Mackay", ["Graves in Kensal Green Cemetery"]))).toBe("grave");
+  });
+});
+
+describe("who a picture shows", () => {
+  const mackay = { name: "Charles Mackay", aliases: [], roleInStory: "Scottish journalist whose 1841 book popularised the story" };
+  it("the name must stand together in one field, not as scattered words", () => {
+    expect(candidateNamesPerson(c("Mackay Island Wildlife Refuge 11 LR", ["Mackay Island National Wildlife Refuge"], "View from the Charles Kuralt Overlook on Mackay Island."), mackay)).toBe(false);
+    expect(candidateNamesPerson(c("Portrait", [], "Engraving of Mackay, Charles, Scottish poet"), mackay)).toBe(true);
+  });
+  it("likeness evidence: a portraits category beats a bare name; a namesake's qualifier counts against it", () => {
+    expect(likenessEvidence(c("Charles Mackay by Herbert Watkins", ["Works by Herbert Watkins", "Portraits of Charles Mackay"]), mackay)).toBe(2);
+    expect(likenessEvidence(c("CMackay", [], "Depicted person: Charles Mackay – British writer (1814-1889)"), mackay)).toBe(2);
+    expect(likenessEvidence(c("Charles Mackay, photograph"), mackay)).toBe(1);
+    expect(likenessEvidence(c("File:Charles Mackay (8738982379).jpg"), mackay)).toBe(0);
+    expect(likenessEvidence(c("Charles Mackay (8738982379)", ["Mug shots of people of New Zealand", "Charles Mackay (mayor)"]), mackay)).toBe(-2);
+    expect(likenessEvidence(c("Charles Mackay as Bailie Nicol Jarvie", ["Charles Mackay (Scottish actor)"]), mackay)).toBe(-2);
+    expect(likenessEvidence(c("Charles Mackay", ["Charles Mackay (journalist)"]), mackay)).toBe(0);
   });
 });
 

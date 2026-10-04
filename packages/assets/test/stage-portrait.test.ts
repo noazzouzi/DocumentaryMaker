@@ -27,7 +27,9 @@ const page = (index: number, file: string, width: number, categories: string) =>
 // The grave is the larger file (it ranks first); the engraving is the person's likeness.
 const commons = { query: { pages: [
   page(1, "Carolus_Clusius_Leiden_04.jpg", 2400, "Graves in the Pieterskerk, Leiden|Carolus Clusius"),
-  page(2, "Carolus_Clusius_engraving.jpg", 1000, "Engravings by Martin Rota|Carolus Clusius"),
+  // A namesake (another place, another trade) ranks above the engraving but is never the portrait.
+  page(2, "Carolus_Clusius_mayor_of_Wanganui,_New_Zealand.jpg", 1500, "Carolus Clusius (mayor)|Mayors of Wanganui"),
+  page(3, "Carolus_Clusius_engraving.jpg", 1000, "Engravings by Martin Rota|Carolus Clusius"),
 ] } };
 
 const config = makeConfig({ offline: false });
@@ -52,7 +54,7 @@ const project: Project = makeProject();
 project.assets = { ...project.assets, offline: false, visionRerank: "off", providers: ["local", "wikimedia", "loc", "openverse", "procedural"] };
 
 describe("portrait identity (online, fake network)", () => {
-  it("the grave may illustrate the beat; the portrait is the engraving, frozen from the candidates", async () => {
+  it("the grave may illustrate the beat; the portrait is the engraving (not the namesake), frozen from the candidates", async () => {
     await mkdir(projectDir, { recursive: true });
     await writeFile(path.join(projectDir, P.project), JSON.stringify(project));
     const out = await resolveAssets({

@@ -20,11 +20,50 @@ export function personNameTokenSets(p: Pick<Person, "name" | "aliases">): string
   return sets;
 }
 
-/** true when the candidate's title, description or tags carry one of the person's full names (every token of it). */
-export function candidateNamesPerson(c: Pick<Candidate, "title" | "tags" | "description">, p: Pick<Person, "name" | "aliases">): boolean {
-  const have = new Set([...tokensOf(c.title), ...tokensOf(c.description), ...c.tags.flatMap((t) => tokensOf(t))]);
-  return personNameTokenSets(p).some((set) => set.every((t) => have.has(t)));
+/** true when one field carries every token of `set` side by side, in any order ("Charles Mackay", "Mackay, Charles"; name
+ *  particles skipped) — not scattered words ("the Charles Kuralt Overlook on Mackay Island"). */
+function fieldNames(field: string, set: readonly string[]): boolean {
+  const t = tokensOf(field).filter((x) => !PARTICLES.has(x));
+  for (let i = 0; i + set.length <= t.length; i++) {
+    const win = t.slice(i, i + set.length);
+    if (set.every((x) => win.includes(x))) return true;
+  }
+  return false;
 }
+
+/** true when the candidate's title, description or one of its tags carries one of the person's full names (its tokens side
+ *  by side within one field). */
+export function candidateNamesPerson(c: Pick<Candidate, "title" | "tags" | "description">, p: Pick<Person, "name" | "aliases">): boolean {
+  const fields = [c.title, c.description, ...c.tags];
+  return personNameTokenSets(p).some((set) => fields.some((f) => fieldNames(f, set)));
+}
+
+/**
+ * How strongly a candidate that names a person shows their likeness: 2 = a "Portraits of <name>" category or a "Depicted
+ * person: <name>" statement; 1 = a title announcing a likeness (portrait, engraving, photograph…); 0 = only the name. A
+ * Commons category qualifying a namesake ("<name> (mayor)", "<name> (Scottish actor)") whose words are not in the person's
+ * role in the story costs 2 (a homonym), as does a place the story never mentions (`foreignPlace`, from the caller).
+ */
+export function likenessEvidence(c: Pick<Candidate, "title" | "tags" | "description">, p: Pick<Person, "name" | "aliases"> & { roleInStory?: string }): number {
+  const sets = personNameTokenSets(p);
+  const named = (s: string) => sets.some((set) => fieldNames(s, set));
+  let score = 0;
+  if (c.tags.some((t) => /^(?:portraits?|portrait photographs?|photographs?|paintings?|engravings?|portretten|portraits de|bildnisse) of\b/i.test(t) && named(t))
+    || /depicted person\s*:/i.test(c.description) && named(c.description.split(/depicted person\s*:/i)[1]!.slice(0, 80))) score = 2;
+  else if (LIKENESS_TITLE.test(fold(c.title))) score = 1;
+  const role = new Set(tokensOf(p.roleInStory ?? ""));
+  if (role.size > 0) {
+    for (const t of c.tags) {
+      const m = /^(.*)\(([^)]+)\)\s*$/.exec(t);
+      if (!m || !named(m[1]!)) continue;
+      const q = tokensOf(m[2]!).filter((x) => x.length > 2 && !role.has(x) && !QUALIFIER_IGNORE.has(x));
+      if (q.length > 0 && !tokensOf(m[2]!).some((x) => role.has(x) && !QUALIFIER_IGNORE.has(x))) score -= 2;
+    }
+  }
+  return score;
+}
+/** Nationality words in a namesake's qualifier say nothing about who they are ("Scottish actor" vs "Scottish journalist"). */
+const QUALIFIER_IGNORE = new Set(["scottish", "english", "british", "irish", "welsh", "american", "french", "german", "dutch", "flemish", "italian", "spanish", "born", "the", "and"]);
 
 // ------------------------------------------------------------------------------------------------ portrait subjects
 /** Things named after a person that are not their likeness (EN/FR/DE/NL, singular and plural; Commons category names such

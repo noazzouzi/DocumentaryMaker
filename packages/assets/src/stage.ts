@@ -10,7 +10,7 @@ import type {
 } from "@docmaker/core";
 import { buildAiDenylist, checkFalPrompt, falAllowedForBeat } from "./denylist";
 import { loadClip } from "./clipsim";
-import { candidateNamesPerson, nonLikenessSubject } from "./identity";
+import { candidateNamesPerson, likenessEvidence, nonLikenessSubject } from "./identity";
 import { buildLedger } from "./ledger";
 import { LicensePolicyEngine } from "./license";
 import { materializeCandidate } from "./materialize";
@@ -23,7 +23,7 @@ import { createProceduralProvider } from "./providers/procedural";
 import { FAL_COST_PER_IMAGE_USD, FAL_ENDPOINT, falRequest } from "./providers/paid";
 import { ConcurrencyGate, QuotaBuckets, quotaHttp } from "./quota";
 import { dHash, dedupeRecords, eraOf, hamming, keyOf, needsVisionRerank, rankCandidates, RELEVANCE_FLOOR, textCoverage, yearOfRaw } from "./rank";
-import { beatContext, relevanceFailure, relevanceSignals, storyContext } from "./relevance";
+import { beatContext, placesIn, relevanceFailure, relevanceSignals, storyContext } from "./relevance";
 import type { AssetsCtx } from "./types";
 import { readUserFrozen } from "./userfrozen";
 import { commercialMediaHint, needsProvenanceCheck } from "./provenance";
@@ -328,7 +328,12 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
 
   /** Per person: candidates of their beats that demonstrably show them (named, or Commons "depicts" = their QID) and are a
    *  likeness (no grave, statue, plaque, house, signature, coat of arms) — the portrait fallback when no pick qualifies. */
-  const portraitPool = new Map<string, { plan: BeatPlan; rec: CandidateRecord; role: AssetQuery["role"] }[]>();
+  const portraitPool = new Map<string, { plan: BeatPlan; rec: CandidateRecord }[]>();
+  /** A picture that names a place the story never mentions (a namesake: "Charles Mackay, mayor of Wanganui, New Zealand"). */
+  const foreignToStory = (c: CandidateRecord["candidate"]): boolean => {
+    const named = [...placesIn([c.title, c.description, ...c.tags].join(" \n "), { namesOnly: true })];
+    return story.places.size > 0 && named.length > 0 && !named.some((g) => story.places.has(g));
+  };
   const notePortraits = (plan: BeatPlan, records: readonly CandidateRecord[]) => {
     for (const p of facts.people.filter((x) => plan.personIds.includes(x.id))) {
       const qid = qidOf(p.id);
@@ -336,7 +341,7 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
       for (const rec of records) {
         const c = rec.candidate;
         if (c.kind !== "image" || c.provider === "procedural" || c.provider === "fal" || nonLikenessSubject(c) !== null) continue;
-        if (candidateNamesPerson(c, p) || (qid !== null && depictsByKey.get(keyOf(c)) === qid)) pool.push({ plan, rec, role: "portrait" });
+        if (candidateNamesPerson(c, p) || (qid !== null && depictsByKey.get(keyOf(c)) === qid)) pool.push({ plan, rec });
       }
       portraitPool.set(p.id, pool);
     }
@@ -539,21 +544,25 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
   for (const person of facts.people) {
     if (portraits.some((p) => p.personId === person.id) || !personOk(person.id)) continue;
     const qid = qidOf(person.id);
-    const pk = picks.find((p) => {
+    // Options: this person's single-person archival picks that show them, then the likenesses among their beats' candidates
+    // (the portrait pool) — best likeness evidence first ("Portraits of <name>" category, a portrait title), namesakes and
+    // pictures of places the story never mentions left out.
+    const options: { plan: BeatPlan; rec: CandidateRecord }[] = [];
+    for (const p of picks) {
       const pl = planById.get(p.beatId);
       const a = frozen.get(p.assetId);
-      if (!pl || !a || a.kind !== "image" || pl.visualKind !== "archival_photo" || pl.personIds.length !== 1 || pl.personIds[0] !== person.id) return false;
-      if (a.candidate === null || a.candidate.provider === "procedural") return false;
-      const shows = candidateNamesPerson(a.candidate, person) || (qid !== null && depictsByKey.get(keyOf(a.candidate)) === qid);
-      return shows && portraitIssues(person.id, a).length === 0;
-    });
-    if (pk) {
-      portraits.push({ personId: person.id, assetId: pk.assetId });
-      continue;
+      if (!pl || !a || a.kind !== "image" || pl.visualKind !== "archival_photo" || pl.personIds.length !== 1 || pl.personIds[0] !== person.id) continue;
+      if (a.candidate === null || a.candidate.provider === "procedural") continue;
+      if (candidateNamesPerson(a.candidate, person) || (qid !== null && depictsByKey.get(keyOf(a.candidate)) === qid)) options.push({ plan: pl, rec: { candidate: a.candidate, score: null, raw: null } });
     }
-    // No pick is a likeness of the person (e.g. only their grave or statue was picked): freeze the best candidate that is.
-    for (const cand of portraitPool.get(person.id) ?? []) {
-      const a = await freeze(cand.plan, cand.rec, cand.role);
+    options.push(...(portraitPool.get(person.id) ?? []));
+    const seen = new Set<string>();
+    const ranked = options
+      .filter((o) => !seen.has(keyOf(o.rec.candidate)) && seen.add(keyOf(o.rec.candidate)) && !foreignToStory(o.rec.candidate))
+      .map((o, k) => ({ o, k, ev: likenessEvidence(o.rec.candidate, person) }))
+      .sort((x, y) => y.ev - x.ev || x.k - y.k);
+    for (const { o } of ranked) {
+      const a = await freeze(o.plan, o.rec, "portrait");
       if (!a || a.kind !== "image" || portraitIssues(person.id, a).length > 0) continue;
       portraits.push({ personId: person.id, assetId: a.id });
       frozen.set(a.id, a);
