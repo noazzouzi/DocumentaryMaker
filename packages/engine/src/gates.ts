@@ -283,6 +283,8 @@ export async function prepareApproval(
     throw new DocmakerError("VALIDATION", `the ${gate} gate is editorial: it cannot be satisfied by --yes, --max-cost or the auto-approve threshold`, { hint: "review the items and approve them explicitly" });
   }
   if (a.by === "fixture" && !o.fixtureAllowed) throw new DocmakerError("VALIDATION", `by:"fixture" is reserved for fixture projects with autoApproveGates`);
+  if (a.by === "autopilot" && project.editorial.autopilot !== true) throw new DocmakerError("VALIDATION", `by:"autopilot" is reserved for autopilot projects`);
+  const automatic = a.by === "fixture" || a.by === "autopilot";
   const base = (planHash: string, items: string[], itemNotes: Record<string, string>, stage: StageId, lang: Lang | null): Approval => ({
     gate, stage, lang, planHash, approvedAt: nowIso(), by: a.by, note: a.note, items, itemNotes,
   });
@@ -298,7 +300,7 @@ export async function prepareApproval(
       if (!outline) throw new DocmakerError("UPSTREAM_MISSING", "there is no outline to approve", { hint: "run the outline stage first" });
       let next = outline;
       if (!outline.thesisConfirmed) {
-        if (a.by !== "fixture") throw new DocmakerError("VALIDATION", "the thesis is not confirmed", { hint: "edit or confirm the thesis first (docmaker outline <slug> --confirm-thesis)" });
+        if (!automatic) throw new DocmakerError("VALIDATION", "the thesis is not confirmed", { hint: "edit or confirm the thesis first (docmaker outline <slug> --confirm-thesis)" });
         next = { ...outline, thesisConfirmed: true };
       }
       const h = docHash(next);

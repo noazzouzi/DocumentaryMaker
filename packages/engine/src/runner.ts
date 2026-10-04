@@ -191,9 +191,15 @@ export async function persistApproval(rt: Runtime, store: ProjectStore, gate: Ga
   return approval;
 }
 
-/** Fixture projects with autoApproveGates approve every editorial gate with by:"fixture" (never fix-only items). */
-async function autoApprove(rt: Runtime, store: ProjectStore, project: Project, need: GateNeed, inv: StageInvocation): Promise<boolean> {
-  const note = "demo fixture";
+/** The note autopilot approvals carry (approvals.json, editorial report). */
+export const AUTOPILOT_NOTE = "autopilot: approved automatically, no human review";
+
+/**
+ * Fixture projects with autoApproveGates (by:"fixture") and autopilot projects (by:"autopilot") approve every editorial
+ * gate themselves. Never fix-only fact-check items nor a stale fact-check: those block (autopilot fixes them between runs).
+ */
+async function autoApprove(rt: Runtime, store: ProjectStore, project: Project, need: GateNeed, inv: StageInvocation, by: "fixture" | "autopilot"): Promise<boolean> {
+  const note = by === "fixture" ? "demo fixture" : AUTOPILOT_NOTE;
   let items: string[] = [];
   let lang: Lang | null = null;
   switch (need.gate) {
@@ -217,8 +223,8 @@ async function autoApprove(rt: Runtime, store: ProjectStore, project: Project, n
   }
   try {
     await persistApproval(rt, store, need.gate, {
-      stage: inv.stage, lang, planHash: need.planHash, by: "fixture", note, items, itemNotes: Object.fromEntries(items.map((id) => [id, note])),
-    }, { fixtureAllowed: true, stage: inv.stage });
+      stage: inv.stage, lang, planHash: need.planHash, by, note, items, itemNotes: Object.fromEntries(items.map((id) => [id, note])),
+    }, { fixtureAllowed: by === "fixture", stage: inv.stage });
     return true;
   } catch {
     return false;
@@ -237,6 +243,15 @@ async function costApproved(store: ProjectStore, project: Project, est: { planHa
   const viaPipeline = job.pipelineApproved?.get(key);
   if (viaPipeline !== undefined && est.totalUsd <= viaPipeline * 1.25 + 0.25) {
     job.costs.setApproved(est.stage, est.lang, Math.max(viaPipeline, est.totalUsd));
+    return true;
+  }
+  if (project.editorial.autopilot === true) {
+    // the budget caps (maxUsdPerStage, maxUsdTotal) still stop a stage that spends more
+    await addApproval(store, {
+      gate: "cost", stage: est.stage, lang: est.lang, planHash: est.planHash, approvedAt: nowIso(), by: "autopilot",
+      note: `${AUTOPILOT_NOTE} (estimate $${est.totalUsd.toFixed(2)}; budget caps apply)`, items: [est.planHash], itemNotes: {},
+    });
+    job.costs.setApproved(est.stage, est.lang, est.totalUsd);
     return true;
   }
   if (est.totalUsd <= threshold) {
@@ -267,14 +282,15 @@ export async function runStage(rt: Runtime, store: ProjectStore, inv: StageInvoc
     return { kind: "skipped" };
   }
 
-  // gates (editorial ones auto-approve only for fixtures with autoApproveGates)
+  // gates (editorial ones auto-approve only for fixtures with autoApproveGates and autopilot projects)
   const fixture = await fixtureOf(rt, ctx.project);
+  const autoBy = fixtureAutoApproves(fixture) ? ("fixture" as const) : ctx.project.editorial.autopilot === true ? ("autopilot" as const) : null;
   for (let round = 0; round < 3; round++) {
     const needs = def.gatesBefore ? await def.gatesBefore(ctx) : [];
     if (needs.length === 0) break;
     let progressed = false;
-    if (fixtureAutoApproves(fixture)) {
-      for (const n of needs) if (await autoApprove(rt, store, ctx.project, n, inv)) progressed = true;
+    if (autoBy) {
+      for (const n of needs) if (await autoApprove(rt, store, ctx.project, n, inv, autoBy)) progressed = true;
     }
     if (progressed) {
       ctx = await buildCtx(rt, store, inv, job, renderClient);

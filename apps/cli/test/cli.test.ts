@@ -485,3 +485,70 @@ describe("demo on the walking-skeleton fakes", () => {
     }
   }, 300_000);
 });
+
+describe("auto (autopilot)", () => {
+  const project = (over: Record<string, unknown> = {}) => ({ slug: "sujet", languages: ["fr"], targetMinutes: 15, llm: { provider: "claude-code" }, editorial: { asOf: "2026-10-04", monetized: true, fairUseAcknowledged: false }, ...over });
+  const autoExtra = (o: { fixes?: { actions: string[]; replanChapters: string[] } } = {}) => {
+    const calls = { created: [] as unknown[], updated: [] as unknown[], fixes: 0 };
+    const extra = {
+      async createProject(input: unknown) {
+        calls.created.push(input);
+        return project();
+      },
+      async getProject() {
+        return project();
+      },
+      async updateProject(_slug: string, patch: unknown) {
+        calls.updated.push(patch);
+        return project(patch as Record<string, unknown>);
+      },
+      async autopilotFixes() {
+        calls.fixes++;
+        return o.fixes ?? { actions: [], replanChapters: [] };
+      },
+    } as unknown as Partial<EngineExt>;
+    return { calls, extra };
+  };
+  const errorEv = (message: string, retryable: boolean) => ({ type: "error", stage: "research", code: "LLM_API", message, retryable, hint: null }) as const;
+
+  it("creates the project in autopilot, fixes fix-only items, re-plans their beats, runs to the end", async () => {
+    const a = autoExtra({ fixes: { actions: ["fr CH2: rewrote CH2-S05 as attributed narration (unverified_quote)"], replanChapters: ["CH4"] } });
+    const m = mockEngine([{ status: "waiting-approval", events: [need("factcheck-ack")] }, { status: "succeeded", events: [] }], a.extra);
+    const io = memIo();
+    expect(await runCli(argv("auto", "Le", "terrible", "secret"), { io, factory: m.factory })).toBe(0);
+    expect(a.calls.created).toEqual([expect.objectContaining({ idea: "Le terrible secret", autopilot: true })]);
+    expect(m.submitted.map((r) => [r.kind, r.preset, r.options])).toEqual([["pipeline", "master", {}], ["pipeline", "master", { replanChapters: ["CH4"] }]]);
+    expect(io.stdout).toMatch(/\[auto\] fr CH2: rewrote CH2-S05/);
+    expect(io.stdout).toMatch(/video: .*render\/fr\/master\/final\.mp4/);
+    expect(m.approvals).toEqual([]); // the engine approves by itself; the CLI never approves by flag
+  });
+
+  it("re-runs a stale fact-check as a forced stage job, then continues", async () => {
+    const a = autoExtra();
+    const stale = { ...need("factcheck-ack"), lang: "fr", reason: "stale" } as const;
+    const m = mockEngine([{ status: "waiting-approval", events: [stale] }, { status: "succeeded", events: [] }, { status: "succeeded", events: [] }], a.extra);
+    expect(await runCli(argv("auto", "--project", "sujet"), { io: memIo(), factory: m.factory })).toBe(0);
+    expect(a.calls.updated).toEqual([{ editorial: expect.objectContaining({ autopilot: true }) }]);
+    expect(m.submitted[1]).toMatchObject({ kind: "stage", stage: "factcheck", langs: ["fr"], force: true });
+    expect(a.calls.fixes).toBe(0);
+  });
+
+  it("retries a retryable failure, never a subscription limit; stops on what it cannot settle", async () => {
+    const r = mockEngine([{ status: "failed", events: [errorEv("Anthropic API unreachable", true)] }, { status: "succeeded", events: [] }], autoExtra().extra);
+    expect(await runCli(argv("auto", "--project", "sujet"), { io: memIo(), factory: r.factory })).toBe(0);
+    expect(r.submitted).toHaveLength(2);
+    const limit = mockEngine([{ status: "failed", events: [errorEv("Claude subscription limit reached: resets 3pm", true)] }], autoExtra().extra);
+    const io = memIo();
+    expect(await runCli(argv("auto", "--project", "sujet"), { io, factory: limit.factory })).toBe(1);
+    expect(limit.submitted).toHaveLength(1);
+    expect(io.stderr).toMatch(/resume later: docmaker auto --project sujet/);
+    const stuck = mockEngine([{ status: "waiting-approval", events: [need("person-ack")] }], autoExtra().extra);
+    const io2 = memIo();
+    expect(await runCli(argv("auto", "--project", "sujet"), { io: io2, factory: stuck.factory })).toBe(3);
+    expect(io2.stderr).toMatch(/autopilot cannot settle: person-ack/);
+  });
+
+  it("needs a subject or --project", async () => {
+    expect(await runCli(argv("auto"), { io: memIo(), factory: mockEngine([]).factory })).toBe(2);
+  });
+});

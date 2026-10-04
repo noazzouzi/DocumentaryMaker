@@ -47,6 +47,8 @@ export {
   gatingItems, fixOnly, factcheckPlanHash, NOTE_MIN, RECHECK_MAX_AGE_DAYS, ACK_SIG_PREFIX, ackSignature, ackCoverage, changedSinceAck, reopenChanged,
 } from "./gates";
 export { ProjectCosts, readReceipts } from "./costs";
+export { autopilotFixes, fixIssue, segmentOf, type AutopilotFixes } from "./autopilot";
+export { AUTOPILOT_NOTE } from "./runner";
 export { stageDef, STAGE_ORDER } from "./stages";
 export { exportReadmeRel, upToDateRender } from "./stages/export";
 export { snapshotTimelineRel, snapshotMixRel } from "./stages/render";

@@ -13,7 +13,8 @@ import { ProjectStore, withFileLock } from "@docmaker/core/node";
 import type { Runtime } from "./runtime";
 import { ProjectCosts } from "./costs";
 import { NEEDS_TAKE, pipelineEstimate, pipelineSummary, planInvocations } from "./pipeline";
-import { costKey, readProject, runStage, type JobHandle, type StageInvocation } from "./runner";
+import { AUTOPILOT_NOTE, costKey, readProject, runStage, type JobHandle, type StageInvocation } from "./runner";
+import { addApproval } from "./gates";
 import { docs } from "./docs";
 import { readState, updateStageState } from "./state";
 import { JOB_ID_RE, errorInfo, newJobId, nowIso, pidAlive, sleep } from "./util";
@@ -579,7 +580,15 @@ export class JobManager {
       if (pe.totalUsd > 0) {
         for (const s of pe.stages) emit({ type: "estimate", estimate: s });
         const approvals = (await docs.approvals(store)).approvals;
-        const approved = approvals.some((a) => a.gate === "cost" && a.planHash === pe.planHash) || pe.totalUsd <= project.budget.autoApproveUnderUsd;
+        let approved = approvals.some((a) => a.gate === "cost" && a.planHash === pe.planHash) || pe.totalUsd <= project.budget.autoApproveUnderUsd;
+        if (!approved && project.editorial.autopilot === true) {
+          // autopilot: approved automatically; the budget caps still stop a stage that spends more
+          await addApproval(store, {
+            gate: "cost", stage: pe.stages[0]!.stage, lang: pe.stages[0]!.lang, planHash: pe.planHash, approvedAt: nowIso(), by: "autopilot",
+            note: `${AUTOPILOT_NOTE} (${pipelineSummary(pe)}; budget caps apply)`, items: pe.stages.map((s) => s.planHash), itemNotes: {},
+          });
+          approved = true;
+        }
         if (!approved) {
           const first = pe.stages[0]!;
           emit({ type: "needs-approval", gate: "cost", stage: first.stage, lang: first.lang, planHash: pe.planHash, reason: "unmet", summary: pipelineSummary(pe) });

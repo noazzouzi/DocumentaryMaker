@@ -32,7 +32,7 @@ export function parseChapters(v: string | undefined): string[] | null {
   return xs.length ? xs : null;
 }
 
-function qaSummary(file: string): string {
+export function qaSummary(file: string): string {
   try {
     const qa = QaReport.parse(JSON.parse(readFileSync(file, "utf8")));
     const errs = qa.checks.filter((c) => !c.ok && c.level === "error");

@@ -8,6 +8,7 @@ import { exitCodeOf, makeContext, processIo, realEngineFactory, type CliContext,
 import { registerCore } from "./commands/core";
 import { registerProject } from "./commands/project";
 import { registerMisc } from "./commands/misc";
+import { registerAuto } from "./commands/auto";
 
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
 export const VERSION: string = pkg.version;
@@ -35,6 +36,7 @@ export function buildProgram(o: { io?: Io; factory?: EngineFactory; cwd?: string
   registerCore(program, ctx);
   registerProject(program, ctx);
   registerMisc(program, ctx);
+  registerAuto(program, ctx);
   for (const c of program.commands) c.exitOverride().configureOutput({ writeOut: (s) => io.out(s), writeErr: (s) => io.err(s) });
   return { program, ctx };
 }

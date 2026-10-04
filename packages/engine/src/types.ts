@@ -54,6 +54,8 @@ export interface Engine {
   estimatePipeline(slug: string, o: { from: StageId; to: StageId; langs: Lang[] }): Promise<PipelineEstimate>;
   /** Per-gate validation (§5.4): factcheck-ack needs items ⊇ open high items, each with a note ≥ 10 chars; editorial gates refuse by:"flag"/"auto-threshold". */
   approve(slug: string, gate: GateId, a: Omit<Approval, "gate" | "approvedAt">): Promise<void>;
+  /** Autopilot projects: rewrites fix-only fact-check items (narration) and names the chapters whose beats must be re-planned. */
+  autopilotFixes(slug: string): Promise<{ actions: string[]; replanChapters: string[] }>;
   // jobs (persisted in jobs/index.json; crash-reconciled at start; identical queued requests coalesce)
   submit(req: JobRequest): Promise<{ jobId: string; coalesced: boolean }>;
   resume(jobId: string): Promise<{ jobId: string }>; // "approve & continue" / `docmaker run --resume`

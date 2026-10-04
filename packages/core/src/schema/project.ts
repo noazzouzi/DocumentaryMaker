@@ -141,6 +141,8 @@ export const Project = z.object({
     asOf: IsoDate,
     monetized: z.boolean(),
     fairUseAcknowledged: z.boolean(),
+    // every editorial gate approves itself (by "autopilot", recorded in approvals.json and the editorial report)
+    autopilot: z.boolean().optional(),
   }),
   publish: z.partialRecord(Lang, PublishInfo),
   budget: z.object({
@@ -163,6 +165,7 @@ export const NewProjectInput = z.object({
   styleId: z.string().nullable().default(null), // a value here also sets styleConfirmed=true
   llm: LlmProviderId.default("anthropic"),
   fixtureId: z.string().nullable().default(null),
+  autopilot: z.boolean().optional(), // editorial.autopilot
   seed: z.number().int().min(0).max(0xffffffff).optional(), // default fnv1a32(slug)
 });
 export type NewProjectInput = z.input<typeof NewProjectInput>;

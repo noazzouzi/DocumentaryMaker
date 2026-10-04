@@ -17,7 +17,10 @@ export const GateId = z.enum([
   "style-confirm", "outline-approval", "factcheck-ack", "person-ack", "recheck", "cost", "fair-use",
 ]);
 export type GateId = z.infer<typeof GateId>;
-/** Editorial gates are NEVER satisfied by --yes / --max-cost / auto-threshold (only fixtures auto-approve them). */
+/**
+ * Editorial gates are NEVER satisfied by --yes / --max-cost / auto-threshold. Only fixtures (autoApproveGates) and
+ * autopilot projects (editorial.autopilot, the owner's explicit choice) approve them automatically.
+ */
 export const EDITORIAL_GATES: readonly GateId[] = ["outline-approval", "factcheck-ack", "person-ack", "recheck", "fair-use"];
 export const JobStatus = z.enum(["queued", "running", "waiting-approval", "succeeded", "failed", "canceled"]);
 export type JobStatus = z.infer<typeof JobStatus>;
@@ -107,7 +110,7 @@ export const Approval = z.object({
   lang: Lang.nullable(),
   planHash: Sha256,
   approvedAt: IsoDateTime,
-  by: z.enum(["web", "cli", "flag", "fixture", "auto-threshold"]),
+  by: z.enum(["web", "cli", "flag", "fixture", "auto-threshold", "autopilot"]), // autopilot: projects with editorial.autopilot only
   note: z.string(),
   items: z.array(z.string()), // acknowledged FactCheckItem ids | personIds | stage planHashes
   itemNotes: z.record(z.string(), z.string()), // per-item notes (factcheck-ack, person-ack)

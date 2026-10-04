@@ -76,7 +76,7 @@ export function defaultProject(
     captionsVariant: null,
     render: { defaultPreset: "draft", gl: "auto", concurrency: null, chunkSeconds: 60 },
     export: { formats: DEFAULT_FORMATS, fcpxmlVersion: "1.10", exportRoot: null, overlays: false },
-    editorial: { asOf: iso.slice(0, 10), monetized: true, fairUseAcknowledged: false },
+    editorial: { asOf: iso.slice(0, 10), monetized: true, fairUseAcknowledged: false, ...(parsed.autopilot ? { autopilot: true } : {}) },
     publish: {},
     budget: { maxUsdPerStage: 25, maxUsdTotal: 40, autoApproveUnderUsd: envAutoApprove() },
   });

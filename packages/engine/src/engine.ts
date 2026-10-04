@@ -13,6 +13,7 @@ import type { z } from "zod";
 import type { DemoOptions, Engine, EngineOptions, ImpactReport, StageStatus } from "./types";
 import { REAL_DEPS } from "./deps";
 import { claudeCodeSettings, createRuntime, type Runtime } from "./runtime";
+import { autopilotFixes, type AutopilotFixes } from "./autopilot";
 import { JobManager, isTerminal } from "./jobs";
 import { ProjectCosts, readReceipts } from "./costs";
 import { docs } from "./docs";
@@ -288,6 +289,15 @@ class EngineImpl implements Engine {
     const project = await readProject(store);
     const fx = await fixtureOf(this.rt, project);
     await persistApproval(this.rt, store, gate, a, { fixtureAllowed: a.by === "fixture" && fixtureAutoApproves(fx), stage: a.stage });
+  }
+
+  /** Autopilot projects: fixes what no approval settles (fix-only fact-check items), between pipeline runs. */
+  async autopilotFixes(slug: string): Promise<AutopilotFixes> {
+    const store = await this.open(slug);
+    const project = await readProject(store);
+    if (project.editorial.autopilot !== true) throw new DocmakerError("VALIDATION", `${slug} is not an autopilot project`, { hint: "docmaker auto --project <slug>" });
+    this.rt.refresh();
+    return autopilotFixes(this.rt, store, project, new AbortController().signal);
   }
 
   // ---------------------------------------------------------------- jobs

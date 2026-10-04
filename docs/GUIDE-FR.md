@@ -2,6 +2,8 @@
 
 Ce guide fabrique un vrai documentaire de 25 minutes, de l'idée au fichier prêt à publier, de deux façons : **en ligne de commande** et **dans l'application web**. Les deux font exactement la même chose sur le même projet : vous pouvez commencer dans l'une et finir dans l'autre.
 
+> **Raccourci : l'autopilote.** `pnpm docmaker auto "La rupture catastrophique de Johnny Depp" --lang fr --minutes 25` fait tout ce guide d'une traite, sans aucune validation manuelle (toutes sont automatiques et tracées « autopilot » ; les points de vérification sont validés tels quels, les citations introuvables réécrites en paraphrase attribuée), jusqu'au MP4 1080p et à l'export. Voir le [README](../README.md#mode-autopilote--du-sujet-à-la-vidéo-sans-intervention). Ce guide décrit le parcours avec relecture humaine, recommandé pour un sujet sensible.
+>
 > Toutes les commandes s'écrivent `pnpm docmaker …` depuis la racine du dépôt. Remplacez `<slug>` par l'identifiant du projet ; ici `la-rupture-catastrophique-de-johnny-depp`. Dans les exemples, on le garde dans une variable :
 >
 > ```sh
