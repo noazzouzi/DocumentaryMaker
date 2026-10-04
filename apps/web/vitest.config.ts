@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineProject } from "vitest/config";
+import { testTmpRoot } from "../../vitest.shared";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export default defineProject({
@@ -11,5 +12,5 @@ export default defineProject({
       { find: /^server-only$/, replacement: path.join(here, "test/support/server-only.ts") },
     ],
   },
-  test: { name: "web", include: ["test/**/*.test.ts?(x)"], environment: "node", passWithNoTests: true },
+  test: { ...testTmpRoot, name: "web", include: ["test/**/*.test.ts?(x)"], environment: "node", passWithNoTests: true },
 });

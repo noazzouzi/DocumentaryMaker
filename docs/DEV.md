@@ -81,6 +81,10 @@ export DOCMAKER_BROWSER_EXECUTABLE=<path above>
 
 `TEST_STYLE` (Appendix A), `makeProject`, `makeFactSheet`, `makeScript` (EN/FR, same skeleton), `makeBeats`, `makeTake`, `makeLayout`, `makeScenario` (the consistent script/beats/take/layout set behind `makeLayout`/`makeTimeline`), `makeFrozen`, `makePicks`, `makeSfxManifest`, `makeSfxEntry`, `makeMusicTrack`, `makeTimeline`. Properties: deterministic bytes; `makeTimeline({seconds})` has exactly `round(seconds·fps)` frames (for seconds ≥ 2), contiguous video, unique ids, every M1 overlay component when long enough, and `resolveTimeline(makeTimeline(o), buildAnchorIndex(makeLayout(o), docHash(makeLayout(o))))` is the identity.
 
+## Test temp dirs
+
+Every vitest project (unit, `render-int`, `e2e`, and per-package `pnpm --filter … test`) spreads `testTmpRoot` from `vitest.shared.ts`: a global setup creates one run root `<tmp>/docmaker-testrun-<pid>-XXXXXX`, a setup file makes it the workers' `TMPDIR` (so `os.tmpdir()` of tests, of the code under test and of spawned CLI/worker/ffmpeg/Chrome processes lands inside it) and the teardown removes it. Roots of killed runs (dead pid) are pruned at the next start. The shared generator cache `<tmp>/docmaker-test-shared` (`DOCMAKER_TEST_SHARED`) stays outside and is kept between runs. `DOCMAKER_KEEP_TEST_TMP=1` (or `DOCMAKER_KEEP_E2E=1`) keeps the root and prints its path.
+
 ## Environment notes
 
 - A proxy is configured in this container (`HTTPS_PROXY`). Node processes that fetch need `NODE_USE_ENV_PROXY=1` (the CLI shim re-execs with it). TLS verification is never disabled.
