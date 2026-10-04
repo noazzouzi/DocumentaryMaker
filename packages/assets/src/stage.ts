@@ -10,7 +10,7 @@ import type {
 } from "@docmaker/core";
 import { buildAiDenylist, checkFalPrompt, falAllowedForBeat } from "./denylist";
 import { loadClip } from "./clipsim";
-import { candidateNamesPerson, likenessEvidence, nonLikenessSubject } from "./identity";
+import { MEMORIAL_SUBJECTS, candidateNamesPerson, likenessEvidence, nonLikenessSubject } from "./identity";
 import { buildLedger } from "./ledger";
 import { LicensePolicyEngine } from "./license";
 import { materializeCandidate } from "./materialize";
@@ -417,8 +417,18 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
       if (why !== null) log.debug("candidate fails the relevance rules", { beatId: plan.id, candidate: keyOf(c), why });
       return why === null;
     };
-    const eligible = ranked.filter(relevant);
+    let eligible = ranked.filter(relevant);
     if (eligible.length < ranked.length) log.debug("irrelevant candidates skipped", { beatId: plan.id, skipped: ranked.length - eligible.length });
+    // A beat about a person shows them (their likeness, books, letters): their grave, statue or house reads as an anonymous
+    // cemetery or building and stands in only when nothing else qualifies — unless the beat is about their death or memory.
+    if (people.length > 0 && !bctx.memorialBeat) {
+      const memorial = (r: { record: CandidateRecord }) => MEMORIAL_SUBJECTS.has(nonLikenessSubject(r.record.candidate) ?? "");
+      const rest = eligible.filter((r) => !memorial(r));
+      if (rest.length > 0 && rest.length < eligible.length) {
+        log.debug("memorial pictures kept as a last resort", { beatId: plan.id, skipped: eligible.length - rest.length });
+        eligible = rest;
+      }
+    }
     notePortraits(plan, eligible.map((r) => r.record));
 
     // Greedy picks with fallback to the next candidate when a freeze or validatePick fails.

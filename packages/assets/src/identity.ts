@@ -102,3 +102,14 @@ export function nonLikenessSubject(c: Pick<Candidate, "title" | "tags" | "descri
   for (const [label, re] of NOT_A_LIKENESS) if (re.test(tags)) return label;
   return GRAVE_RE.test(fold(c.description)) ? "grave" : null;
 }
+
+/** Non-likeness subjects that stand in for a person only as a last resort on their beat: their grave, statue, plaque or house
+ *  reads as an anonymous cemetery or building (their books, letters and signature are fair illustrations). */
+export const MEMORIAL_SUBJECTS: ReadonlySet<string> = new Set(["grave", "statue", "plaque", "house"]);
+const DEATH_WORDS = /\b(?:died|dies|dying|death|dead|buried|burial|funerals?|mourn\w*|mort|morte|meurt|deces|enterre\w*|obseques|inhum\w*|starb|gestorben|tod|begraben|beerdig\w*|overleed|overleden|dood|begraven|begrafenis)\b/;
+/** A beat about a person's death, burial or memory (or one that asks for their grave, statue, plaque or house): there a
+ *  memorial is the right picture. */
+export function memorialBeat(text: string): boolean {
+  const t = fold(text);
+  return DEATH_WORDS.test(t) || NOT_A_LIKENESS.some(([label, re]) => MEMORIAL_SUBJECTS.has(label) && re.test(t));
+}

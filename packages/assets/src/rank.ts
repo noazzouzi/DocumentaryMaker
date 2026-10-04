@@ -1,7 +1,7 @@
 // Ranking (§7.6): metadata score, optional CLIP (M3) and vision rerank fusion, dHash dedupe, needsVisionRerank.
 import sharp from "sharp";
 import type { AssetProviderId, BeatPlan, Candidate, CandidateRecord, CandidateScore, FactSheet, Person, VisualKind } from "@docmaker/core";
-import { candidateNamesPerson, nonLikenessSubject, personNameTokenSets } from "./identity";
+import { MEMORIAL_SUBJECTS, candidateNamesPerson, nonLikenessSubject, personNameTokenSets } from "./identity";
 import { ERA_SLACK_YEARS, relevancePenalty, relevanceSignals, signalNotes, type BeatContext, type RelevanceSignals } from "./relevance";
 import { canonToken, clamp01, matchQueryTokens, matchTokens } from "./util";
 
@@ -112,8 +112,10 @@ export function metadataScore(c: Candidate, plan: BeatPlan, all: readonly Candid
 }
 
 const r3 = (x: number) => Math.round(x * 1000) / 1000;
-/** Metadata penalty of a grave/statue/plaque/house/signature/coat-of-arms picture on a beat about people. */
+/** Metadata penalty of a grave/statue/plaque/house/signature/coat-of-arms picture on a beat about people … */
 export const MEMORIAL_PENALTY = 0.05;
+/** … and of a grave/statue/plaque/house on a beat about people that is not about a death or memory (a last resort). */
+export const MEMORIAL_STRONG_PENALTY = 0.25;
 
 /** Fuses metadata (+ CLIP similarity) (+ vision rerank) into CandidateScore.total and sorts best first (deterministic ties). */
 export function rankCandidates(i: {
@@ -131,7 +133,8 @@ export function rankCandidates(i: {
     // On a beat about people, their likeness comes before their grave, statue or house (which may still illustrate it);
     // their books and letters are fair illustrations and keep their score.
     const subject = (i.people?.length ?? 0) > 0 ? nonLikenessSubject(record.candidate) : null;
-    const memorial = subject !== null && subject !== "document" ? MEMORIAL_PENALTY : 0;
+    const memorial = subject === null || subject === "document" ? 0
+      : MEMORIAL_SUBJECTS.has(subject) && i.relevance && !i.relevance.ctx.memorialBeat ? MEMORIAL_STRONG_PENALTY : MEMORIAL_PENALTY;
     let metadata = clamp01(m.metadata - memorial);
     if (clip !== null && clip !== undefined) metadata = clamp01(metadata - 0.45 * m.textMatch + 0.2 * m.textMatch + 0.25 * clip);
     const vision = rr?.vision ?? null;

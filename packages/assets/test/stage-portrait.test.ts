@@ -1,5 +1,6 @@
-// resolveAssets online against a fake network: a person's grave may illustrate their beat, but their portrait (quote,
-// lower-third and social-post slots) is a likeness — frozen from the beat's candidates when no pick is one.
+// resolveAssets online against a fake network: a person's beat shows their likeness (their grave, statue or house only as a
+// last resort, or when the beat is about their death); their portrait (quote, lower-third and social-post slots) is a
+// likeness — frozen from the beat's candidates when no pick is one.
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
@@ -49,12 +50,14 @@ const script = makeScript({ chapters: 1, segmentsPerChapter: 2 });
 const all = makeBeats(script).plans;
 const first = all.plans.find((p) => p.origin === "llm")!;
 const beat: BeatPlan = { ...first, visualKind: "archival_photo", motionTemplate: "none", personIds: ["P1"], cueTags: [], visualQuery: "carolus clusius portrait", estSeconds: 1.2, energy: 3 };
-const plans: BeatPlansDoc = { ...all, plans: [beat] };
+const second = all.plans.filter((p) => p.origin === "llm")[1]!;
+const graveBeat: BeatPlan = { ...second, visualKind: "archival_photo", motionTemplate: "none", personIds: ["P1"], cueTags: [], visualQuery: "carolus clusius grave", estSeconds: 1.2, energy: 3 };
+const plans: BeatPlansDoc = { ...all, plans: [beat, graveBeat] };
 const project: Project = makeProject();
 project.assets = { ...project.assets, offline: false, visionRerank: "off", providers: ["local", "wikimedia", "loc", "openverse", "procedural"] };
 
 describe("portrait identity (online, fake network)", () => {
-  it("the grave may illustrate the beat; the portrait is the engraving (not the namesake), frozen from the candidates", async () => {
+  it("the beat shows the engraving, not the larger grave photo (the grave only on a beat about it); never the namesake", async () => {
     await mkdir(projectDir, { recursive: true });
     await writeFile(path.join(projectDir, P.project), JSON.stringify(project));
     const out = await resolveAssets({
@@ -62,13 +65,19 @@ describe("portrait identity (online, fake network)", () => {
       userPicks: { schemaVersion: 1, picks: [], portraits: [], clips: [] }, previous: { picks: null, frozen: null, ledger: null }, projectDir, reranker: null, personAcks: [],
     }, ctx);
     const picked = out.picks.picks.filter((p) => p.beatId === beat.id).map((p) => out.frozen.assets[p.assetId]!.candidate!);
-    expect(picked.map((c) => c.title)).toEqual(["Carolus Clusius Leiden 04"]); // the grave, as b-roll (its categories say so)
-    expect(picked[0]!.tags).toContain("Graves in the Pieterskerk, Leiden");
+    // the grave ranks first on metadata (larger file) but reads as an anonymous cemetery: the likeness is the b-roll
+    expect(picked.map((c) => c.title)).toEqual(["Carolus Clusius engraving"]);
+    const ranked = out.candidates.find((c) => c.beatId === beat.id)!.records;
+    expect(ranked.find((r) => r.candidate.title === "Carolus Clusius Leiden 04")!.score!.total)
+      .toBeLessThan(ranked.find((r) => r.candidate.title === "Carolus Clusius engraving")!.score!.total);
+    // a beat that asks for the grave gets it (its categories say so)
+    const graves = out.picks.picks.filter((p) => p.beatId === graveBeat.id).map((p) => out.frozen.assets[p.assetId]!.candidate!);
+    expect(graves[0]!.title).toBe("Carolus Clusius Leiden 04");
+    expect(graves[0]!.tags).toContain("Graves in the Pieterskerk, Leiden");
     const portrait = out.picks.portraits.find((p) => p.personId === "P1");
     expect(portrait).toBeDefined();
     expect(out.frozen.assets[portrait!.assetId]!.candidate!.title).toBe("Carolus Clusius engraving");
-    expect(out.frozen.assets[portrait!.assetId]!.role).toBe("portrait");
-    // The extra portrait asset is frozen and ledgered (credits list it only when a card shows it).
+    // The portrait asset is frozen and ledgered (credits list it only when a card shows it).
     expect(out.ledger.entries.some((e) => e.assetId === portrait!.assetId)).toBe(true);
   }, 300_000);
 });

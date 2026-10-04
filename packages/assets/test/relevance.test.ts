@@ -4,9 +4,11 @@ import { describe, expect, it } from "vitest";
 import type { BeatPlan, Candidate, CandidateRecord, FactSheet } from "@docmaker/core";
 import { makeBeats, makeFactSheet, makeScript } from "@docmaker/core/testing";
 import { licenseInfo, rankCandidates } from "../src/index";
+import { memorialBeat } from "../src/identity";
 import { RELEVANCE_FLOOR, textCoverage } from "../src/rank";
 import {
-  beatContext, beatEraWindows, candidateYear, coreEra, currenciesIn, isAnachronistic, placesIn, relevanceFailure, relevanceSignals, salientTokens, storyContext, withoutHolder,
+  beatContext, beatEraWindows, candidateYear, coreEra, currenciesIn, eraMarkerYear, isAnachronistic, placesIn, relevanceFailure, relevanceSignals, salientTokens, storyContext,
+  withoutHolder,
 } from "../src/relevance";
 import { matchQueryTokens } from "../src/util";
 
@@ -86,6 +88,9 @@ describe("story and beat context", () => {
     expect(candidateYear({ title: "Gold coin of the Kushans, 40-350 CE, Ashmolean Museum, Oxford" }, 2012)).toEqual({ year: 40, stated: true });
     expect(candidateYear({ title: "Roman denarius, 44 BC" }, null)).toEqual({ year: -44, stated: true });
     expect(candidateYear({ title: "Portrait of a lady, Safavid Iran, mid-17th century" }, null)).toEqual({ year: 1650, stated: true });
+    // an ordinal is a century only before a century word ("second half" is not the 2nd century)
+    expect(candidateYear({ title: "A lady in an interior, Persia, middle or second half of the 17th Century" }, null)).toEqual({ year: 1650, stated: true });
+    expect(candidateYear({ title: "Third edition, revised" }, 1702)).toEqual({ year: 1702, stated: false });
     expect(isAnachronistic(1843, [[1600, 1699]])).toBe(true);
     expect(isAnachronistic(1648, [[1593, 1637]])).toBe(false);
   });
@@ -121,8 +126,19 @@ describe("relevance rules on the demo's off-topic picks", () => {
     expect(verdict(plan("archive contract documents"), cand("tc", "Contract for the sale of tulip bulbs, Haarlem 1637"))).toBeNull();
     expect(verdict(plan("archive contract documents"), cand("dc", "Dutch notarial contract, Amsterdam archive"))).toBeNull();
   });
-  it("on-topic candidates keep their place despite a foreign place or a late date (penalised, not dropped)", () => {
-    expect(verdict(plan("single red tulip dark background", { visualKind: "stock_broll" }), cand("fr", "Frieze (USA), 1905–15 (CH 18500107-2)", "Stylized tulips in dark red"), 1905)).toBeNull();
+  it("on topic is not enough for a work from another era and place, or dated elsewhere in time by one shared word", () => {
+    // the final online run's CH3-B010 pick: on topic by "tulip" only, American, 1905 (notes "on-topic anachronism 1905
+    // foreign-place usa", total 0.522 above the floor)
+    const frieze = cand("fr", "Frieze (USA), 1905–15 (CH 18500107-2)", "Stylized tulips in dark red");
+    expect(verdict(plan("single red tulip dark background", { visualKind: "stock_broll" }), frieze, 1905)).toMatch(/dated 1905 and from elsewhere \(usa\)/);
+    expect(verdict(plan("single red tulip dark background", { visualKind: "stock_broll" }), cand("fr2", "Tulip frieze, Art Nouveau, 1905"))).toMatch(/dated 1905, outside/);
+    // strongly on topic (the whole topic, a story person, the topic in the story's place): a later depiction is fine
+    expect(verdict(plan("single red tulip dark background", { visualKind: "stock_broll" }), cand("tm", "Tulip mania caricature, 1882 reprint"))).toBeNull();
+    expect(verdict(plan("single red tulip dark background", { visualKind: "stock_broll" }), cand("th", "A tulip from Haarlem, 1920 photograph"))).toBeNull();
+    // on topic with a foreign place but no date from another era: penalised, not dropped
+    expect(verdict(plan("single red tulip dark background", { visualKind: "stock_broll" }), cand("sk", "Red tulip, Skagit Valley, Washington"), 2015)).toBeNull();
+    // a strong-topic work from another place AND era is still refused
+    expect(verdict(plan("tulip mania satire print", { visualKind: "stock_broll" }), cand("us", "Tulip mania satire, New York, 1910"))).toMatch(/from elsewhere \(usa\)/);
     // A modern photograph of exactly the wanted place passes; a partial match dated by its provider far outside does not.
     expect(verdict(plan("hortus botanicus leiden garden"), cand("h", "Hortus Botanicus Leiden - De Wintertuin", "", ["Hortus Botanicus Leiden", "Gardens in Leiden"]), 2008)).toBeNull();
     expect(verdict(plan("seventeenth century satirical print tulips"), cand("bm", "Print, book-illustration, satirical print (BM 1863,0613.754-765)"), 1780)).toMatch(/dated 1780/);
@@ -141,6 +157,46 @@ describe("relevance rules on the demo's off-topic picks", () => {
     const ranked = rankCandidates({ plan: p, records: recs, reranked: null, relevance: { ctx, queries: [p.visualQuery] } });
     expect(ranked[0]!.record.candidate.providerAssetId).toBe("ships");
     expect(ranked.find((r) => r.record.candidate.providerAssetId === "saf")!.score.notes).toMatch(/foreign-place persia/);
+  });
+  it("Roman Britain: a coin of Allectus from Aquae Sulis is dated by its emperor and its Roman place names", () => {
+    const allectus = cand("al", "Gold coin of Allectus thrown in the Spring at Aquae Sulis, Bath");
+    expect(candidateYear(allectus, null)).toEqual({ year: 200, stated: true });
+    expect([...placesIn(allectus.title, { namesOnly: true })]).toEqual(["britain"]);
+    // the final online run's CH2-B012 pick for "gold coins pile candlelight"
+    expect(verdict(plan("gold coins pile candlelight", { visualKind: "stock_broll" }), allectus)).toMatch(/dated 200, outside/);
+    expect(verdict(plan("gold coins pile candlelight", { visualKind: "stock_broll" }), cand("ro", "Roman gold aureus of Hadrian"))).toMatch(/dated 200 and from elsewhere \(roman\)/); // a Roman currency too
+    expect(eraMarkerYear("Gold coin of Allectus")).toBe(250);
+    expect(eraMarkerYear("A Roman coin found in a field")).toBe(200);
+    expect(eraMarkerYear("Roman Britain: villa mosaic")).toBe(200);
+    expect(eraMarkerYear("Pièce de monnaie romaine en or")).toBe(200);
+    expect(eraMarkerYear("Medieval manuscript illumination")).toBe(1200);
+    // not a period: the Holy Roman Empire, the Roman Catholic church, given names, typefaces, tulip names, Dutch history paintings
+    for (const t of ["Coat of arms of the Holy Roman Empire", "Roman Catholic church in Haarlem", "Roman Polanski at Cannes", "Portrait de Romain Gary",
+      "Text set in Times New Roman", "Semper Augustus tulip, watercolour", "The Conspiracy of Claudius Civilis", "Valerian flowers in a garden", "Saint-Romain church"]) {
+      expect(eraMarkerYear(t), t).toBeNull();
+    }
+    // UK places: short common words only when capitalised; New York stays American
+    expect([...placesIn("Pulteney Bridge, Bath, Somerset", { namesOnly: true })]).toEqual(["britain"]);
+    expect([...placesIn("a warm bath with tulip petals", { namesOnly: true })]).toEqual([]);
+    expect([...placesIn("Tulip festival, New York", { namesOnly: true })]).toEqual(["usa"]);
+    expect([...placesIn("York Minster at dusk", { namesOnly: true })]).toEqual(["britain"]);
+    expect([...placesIn("Kensal Green Cemetery, grave of a journalist", { namesOnly: true })]).toEqual(["britain"]);
+  });
+  it("a person's grave is a last resort on their beat: the collected songs rank first (CH3-B005); a beat about a burial keeps it", () => {
+    const p = plan("charles mackay book title page", { personIds: ["P2"] });
+    const grave = cand("grab", "Grab Charles Mackay", "Grave of Charles Mackay, Kensal Green Cemetery", ["Charles Mackay", "Graves in Kensal Green Cemetery"]);
+    const songs = cand("songs", "The Collected Songs of Charles Mackay", "Title page");
+    const people = [facts.people[1]!];
+    const recs = [grave, songs].map((c) => ({ candidate: c, score: null, raw: { year: 2025 } }));
+    const rank = (narration: string, q = p) => {
+      const ctx = beatContext(q, facts, story, narration);
+      return rankCandidates({ plan: q, records: recs, reranked: null, people, relevance: { ctx, queries: [q.visualQuery] } }).map((r) => r.record.candidate.providerAssetId);
+    };
+    expect(rank("the ruin Mackay described may never have happened.")).toEqual(["songs", "grab"]);
+    expect(memorialBeat("the ruin Mackay described may never have happened.")).toBe(false);
+    expect(memorialBeat("Mackay died in London in 1889 and was buried at Kensal Green.")).toBe(true);
+    expect(memorialBeat("charles mackay grave")).toBe(true);
+    expect(memorialBeat("Clusius est mort à Leyde en 1609.")).toBe(true);
   });
   it("a foreign demonym alone is a weak signal: penalised, not disqualifying", () => {
     const p = plan("gold coins pile candlelight", { visualKind: "stock_broll" });

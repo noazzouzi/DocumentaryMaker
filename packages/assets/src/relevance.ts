@@ -2,7 +2,7 @@
 // currencies. Metadata-only ranking otherwise lets a Persian painting win a Dutch auction beat because its description says
 // "17th century painting", or Danish coins illustrate guilders. A vision rerank score, when one exists, outranks all of this.
 import type { BeatPlan, Candidate, FactSheet, Person } from "@docmaker/core";
-import { candidateNamesPerson } from "./identity";
+import { candidateNamesPerson, memorialBeat } from "./identity";
 import { canonToken, matchQueryTokens, matchTokens, tokensOf } from "./util";
 
 // ------------------------------------------------------------------------------------------------ vocabulary
@@ -21,7 +21,7 @@ const ERA_WORD = /^(?:\d+th|\d{3,4}s?|c\d{4})$/;
 
 /** Place groups: names (countries, historic states, regions, major cities) are evidence of where a picture belongs;
  *  demonyms only say that a story or picture is connected to the place ("Chinese bowl" in a Dutch still life is no evidence). */
-const PLACES: Record<string, { names: string; demonyms: string }> = {
+const PLACES: Record<string, { names: string; demonyms: string; capNames?: string }> = {
   "low-countries": {
     names: "netherlands|holland|nederland|pays-bas|pays bas|niederlande|flanders|vlaanderen|flandre|flandres|flandern|amsterdam|haarlem|leiden|leyden|rotterdam|utrecht|delft|the hague|den haag|la haye|antwerp|antwerpen|anvers|brabant|zeeland|friesland|alkmaar|hoorn|enkhuizen|gouda|dordrecht",
     demonyms: "dutch|netherlandish|hollandish|nederlandse|nederlandsche|hollandse|hollands|neerlandais|neerlandaise|hollandais|hollandaise|niederlandisch|niederlandische|niederlandischen|hollandisch|flemish|vlaams|vlaamse|flamand|flamande|flamisch|flamische|amsterdammer",
@@ -37,7 +37,13 @@ const PLACES: Record<string, { names: string; demonyms: string }> = {
   spain: { names: "spain|espagne|spanien|spanje|madrid|castile|castille|kastilien|seville|sevilla|toledo|barcelona", demonyms: "spanish|espagnol|espagnole|spanisch|spaans|spaanse|castilian" },
   portugal: { names: "portugal|lisbon|lisboa|lisbonne|lissabon|porto", demonyms: "portuguese|portugais|portugaise|portugiesisch|portugees" },
   italy: { names: "italy|italie|italien|rome|roma|venice|venezia|venise|venedig|florence|firenze|florenz|milan|milano|mailand|naples|napoli|neapel|genoa|genova|tuscany|toscane|toskana", demonyms: "italian|italienne|italienisch|italiaans|italiaanse|venetian|venitien|florentine|roman|romain" },
-  britain: { names: "england|britain|great britain|united kingdom|scotland|wales|ireland|angleterre|ecosse|royaume-uni|grande-bretagne|irlande|schottland|grossbritannien|irland|engeland|schotland|ierland|london|londres|londen|edinburgh|dublin|oxford|liverpool|manchester", demonyms: "british|scottish|scots|welsh|irish|anglais|anglaise|ecossais|ecossaise|irlandais|englisch|schottisch|britisch|engelse|schots|brits|iers|ierse|londoner" },
+  britain: {
+    names: "england|britain|great britain|united kingdom|scotland|wales|ireland|angleterre|ecosse|royaume-uni|grande-bretagne|irlande|schottland|grossbritannien|irland|engeland|schotland|ierland|london|londres|londen|edinburgh|dublin|oxford|liverpool|manchester"
+      + "|aquae sulis|londinium|eboracum|camulodunum|verulamium|hadrian's wall|hadrians wall|bristol|canterbury|winchester|norwich|cornwall|yorkshire|somerset|glasgow|cardiff|belfast|brighton|birmingham|leeds|sheffield|nottingham|southampton|portsmouth|plymouth|exeter|salisbury|stonehenge|cambridge|kensal green|highgate cemetery",
+    // short names that are also common words: only capitalised ("Bath", not "a warm bath"; "York", not "New York")
+    capNames: "Bath|(?<!New )York|Kent|Durham|Chester|Dover",
+    demonyms: "british|scottish|scots|welsh|irish|anglais|anglaise|ecossais|ecossaise|irlandais|englisch|schottisch|britisch|engelse|schots|brits|iers|ierse|londoner|romano-british|anglo-saxon",
+  },
   scandinavia: { names: "denmark|danemark|danmark|denemarken|sweden|suede|schweden|zweden|sverige|norway|norvege|norwegen|noorwegen|norge|finland|finlande|finnland|iceland|islande|ijsland|copenhagen|copenhague|kopenhagen|kobenhavn|stockholm|oslo|scandinavia|scandinavie|skandinavien", demonyms: "danish|dane|danois|danoise|danisch|deens|deense|swedish|swede|suedois|suedoise|schwedisch|zweeds|zweedse|norwegian|norvegien|norwegisch|noors|noorse|finnish|icelandic|scandinavian|scandinave|skandinavisch" },
   russia: { names: "russia|russie|russland|rusland|muscovy|moscow|moscou|moskau|moskou|st petersburg|saint petersburg|saint-petersbourg|sankt petersburg", demonyms: "russian|russe|russisch|russische|muscovite" },
   ottoman: { names: "ottoman empire|turkey|turquie|turkei|turkije|anatolia|anatolie|istanbul|constantinople|konstantinopel", demonyms: "ottoman|ottomane|osmanisch|turkish|turc|turque|turkisch|turks" },
@@ -85,15 +91,21 @@ const CURRENCIES: Record<string, RegExp> = {
   roman: /\b(?:denarius|denarii|sestertius|sestertii|aureus|aurei)\b/,
 };
 
-const fold = (s: string): string => s.normalize("NFD").replace(/\p{M}+/gu, "").toLowerCase().replace(/_+/g, " ");
+const unaccent = (s: string): string => s.normalize("NFD").replace(/\p{M}+/gu, "").replace(/_+/g, " ");
+const fold = (s: string): string => unaccent(s).toLowerCase();
 const wordRe = (list: string) => new RegExp(`(?:^|[^\\p{L}\\p{N}])(?:${list.replace(/\./g, "\\.")})(?=$|[^\\p{L}\\p{N}])`, "u");
-const PLACE_RES = Object.entries(PLACES).map(([group, p]) => ({ group, names: wordRe(p.names), demonyms: wordRe(p.demonyms) }));
+/** Case-sensitive names (a raw alternation; lookbehinds allowed). */
+const capRe = (list: string) => new RegExp(`(?<![\\p{L}\\p{N}])(?:${list})(?![\\p{L}\\p{N}])`, "u");
+const PLACE_RES = Object.entries(PLACES).map(([group, p]) => ({
+  group, names: wordRe(p.names), demonyms: wordRe(p.demonyms), cap: p.capNames ? capRe(p.capNames) : null,
+}));
 
 /** Place groups a text names (`names` only) or mentions (names or demonyms). */
 export function placesIn(text: string, o: { namesOnly?: boolean } = {}): Set<string> {
-  const t = fold(text);
+  const raw = unaccent(text);
+  const t = raw.toLowerCase();
   const out = new Set<string>();
-  for (const p of PLACE_RES) if (p.names.test(t) || (!o.namesOnly && p.demonyms.test(t))) out.add(p.group);
+  for (const p of PLACE_RES) if (p.names.test(t) || p.cap?.test(raw) || (!o.namesOnly && p.demonyms.test(t))) out.add(p.group);
   return out;
 }
 /** A text without the institution that holds the work ("…, Ashmolean Museum, Oxford", "Paintings in the National Gallery,
@@ -125,10 +137,14 @@ function yearsIn(text: string): number[] {
   for (const m of text.matchAll(/(?<![\d.,/])(?:c\.?\s?|ca\.?\s?)?(1[0-9]\d{2}|20\d{2})(?![\d])(?![.,]\d)/g)) out.push(Number(m[1]));
   return out;
 }
-function centuryOf(tokens: readonly string[]): number | null {
-  for (const t of tokens) {
-    const m = /^(\d{1,2})th$/.exec(t);
-    if (m && Number(m[1]) >= 1 && Number(m[1]) <= 21) return Number(m[1]);
+/** Words that make an ordinal a century ("17th century", "XVIIe siècle"); "second half", "third edition" are not. */
+const CENTURY_WORD = /^(?:century|centuries|cent|c|siecle|siecles|jahrhundert|jahrhunderts|eeuw|eeuwse)$/;
+/** The century raw text tokens name ("seventeenth century", "17th-century", "1600s"), null when none. */
+function centuryOf(raw: readonly string[]): number | null {
+  for (let i = 0; i < raw.length; i++) {
+    const m = /^(\d{1,2})th$/.exec(canonToken(raw[i]!));
+    if (!m || Number(m[1]) < 1 || Number(m[1]) > 21) continue;
+    if (/^(?:1\d|20)00s$/.test(raw[i]!) || CENTURY_WORD.test(raw[i + 1] ?? "")) return Number(m[1]);
   }
   return null;
 }
@@ -151,8 +167,9 @@ export function coreEra(facts: Pick<FactSheet, "timeline">): [number, number] | 
 /** Era windows a beat's archival material should fall in: the era its visual query names ("seventeenth century", "1630s",
  *  "1637"), else the dates of the facts it cites plus the story's core era. null when nothing is dated. */
 export function beatEraWindows(plan: Pick<BeatPlan, "visualQuery" | "factIds" | "cueTags">, facts: FactSheet): [number, number][] | null {
-  const q = tokensOf(plan.visualQuery).map(canonToken);
-  const c = centuryOf(q);
+  const raw = tokensOf(plan.visualQuery.replace(/-/g, " "));
+  const q = raw.map(canonToken);
+  const c = centuryOf(raw);
   if (c !== null) return [[(c - 1) * 100, (c - 1) * 100 + 99]];
   const dec = q.map((t) => /^(1\d|20)(\d)0s$/.exec(t)).find((m) => m);
   if (dec) {
@@ -175,13 +192,54 @@ export function beatEraWindows(plan: Pick<BeatPlan, "visualQuery" | "factIds" | 
   return windows.length > 0 ? windows : null;
 }
 
-/** The candidate's own date: a year or century its title states (the work: `stated`), else the provider's date (often when
- *  a photograph of the subject was taken). */
+/** Period words that date a work without a year (approximate year of the period). Roman: the empire, its coins and the
+ *  Roman-Britain place names, and the emperors whose names are not also common given names, plants or Dutch tulip names
+ *  ("Semper Augustus" is a tulip, "Claudius Civilis" a Dutch history painting, valerian a flower). */
+const ERA_MARKERS: readonly [RegExp, number][] = [
+  [/(?<![\p{L}])(?:neolithic|neolithique|jungsteinzeit)(?![\p{L}])/u, -4000],
+  [/(?<![\p{L}])(?:bronze age|age du bronze|bronzezeit|bronstijd)(?![\p{L}])/u, -1500],
+  [/(?<![\p{L}])(?:pharaoh|pharaohs|pharaonic|pharaon|pharaons|pharaonique|ptolemaic|ptolemaique)(?![\p{L}])/u, -1000],
+  [/(?<![\p{L}])(?:iron age|age du fer|eisenzeit|ijzertijd)(?![\p{L}])/u, -400],
+  [/(?<![\p{L}])(?:hellenistic|hellenistique|hellenistisch\w*|ancient greek|grece antique)(?![\p{L}])/u, -200],
+  [/(?<![\p{L}])(?:ancient rome|rome antique|romano-british|gallo-roman\w*|aquae sulis|londinium|eboracum|camulodunum|verulamium|denarius|denarii|sestertius|sestertii|aureus|aurei|antoninianus|antoniniani)(?![\p{L}])/u, 200],
+  [/(?<![\p{L}])(?:tiberius|caligula|vespasian\w*|domitian\w*|trajan|trajan's|trajanic|hadrian|hadrian's|hadrianic|antoninus pius|marcus aurelius|commodus|septimius severus|caracalla|elagabalus|severus alexander|maximinus thrax|gallienus|postumus|aurelian|diocletian\w*|maximian|carausius|allectus|constantius|galerius|licinius|constantine the great|julian the apostate|valentinian|theodosius|tetricus)(?![\p{L}])/u, 250],
+  [/(?<![\p{L}])(?:merovingian|merovingien\w*|merowing\w*)(?![\p{L}])/u, 600],
+  [/(?<![\p{L}])(?:byzantine|byzantin\w*|anglo-saxon|carolingian|carolingien\w*|karoling\w*)(?![\p{L}])/u, 800],
+  [/(?<![\p{L}])(?:medieval|mediaeval|middle ages|moyen age|mittelalter\w*|middeleeuw\w*)(?![\p{L}])/u, 1200],
+];
+/** "Roman" as a period ("Roman coin", "a Roman mosaic", "Roman Britain") — not the Holy Roman Empire, the Roman Catholic
+ *  church, a typeface, or a given name ("Roman Polanski", "Romain Gary": a capitalised word that is no period noun follows). */
+const ROMAN_WORD = /(?<![\p{L}])(?:roman|romain|romaine|romains|romaines|romeins|romeinse|romisch\w*)(?![\p{L}])/giu;
+const ROMAN_NOT = /^(?:catholic\w*|catholique\w*|katholi\w*|church|curia|numerals?|type|typeface|font|law|rite|breviary|missal)$/i;
+const ROMAN_PERIOD_NOUN = /^(?:Empire|Britain|Republic|Emperors?|Era|Period|Gaul|Egypt|Forum|Senate|Legions?|Army|Villa|Baths?|Road|Wall|Fort|Theatre|Theater|Mosaics?|Coins?|Gold|Silver|Bronze|Glass|Pottery|Sculpture|Statue|Temple|Antiquity|Imperial|Italy|Spain|Germany|Africa|Syria|Province)$/;
+function romanPeriod(raw: string): boolean {
+  for (const m of raw.matchAll(ROMAN_WORD)) {
+    const before = raw.slice(Math.max(0, m.index - 8), m.index);
+    if (/(?:holy|new|saint|st\.?)[\s-]$/i.test(before)) continue;
+    const next = /^\s+([\p{L}'-]+)/u.exec(raw.slice(m.index + m[0].length))?.[1] ?? "";
+    if (ROMAN_NOT.test(next)) continue;
+    if (/^\p{Lu}/u.test(next) && !ROMAN_PERIOD_NOUN.test(next)) continue;
+    return true;
+  }
+  return false;
+}
+/** The period a title names ("Gold coin of Allectus", "Roman mosaic", "Medieval manuscript"), as an approximate year. */
+export function eraMarkerYear(title: string): number | null {
+  const raw = unaccent(title);
+  const t = raw.toLowerCase();
+  for (const [re, y] of ERA_MARKERS) if (re.test(t)) return y;
+  return romanPeriod(raw) ? 200 : null;
+}
+
+/** The candidate's own date: a year, century or period its title states (the work: `stated`), else the provider's date
+ *  (often when a photograph of the subject was taken). */
 export function candidateYear(c: Pick<Candidate, "title">, rawYear: number | null): { year: number | null; stated: boolean } {
   const ty = yearsIn(c.title);
   if (ty.length > 0) return { year: ty[0]!, stated: true };
-  const cent = centuryOf(tokensOf(c.title.replace(/-/g, " ")).map(canonToken));
+  const cent = centuryOf(tokensOf(c.title.replace(/-/g, " ")));
   if (cent !== null) return { year: (cent - 1) * 100 + 50, stated: true };
+  const era = eraMarkerYear(c.title);
+  if (era !== null) return { year: era, stated: true };
   return { year: rawYear, stated: false };
 }
 
@@ -243,6 +301,8 @@ export interface BeatContext {
    *  (a title stating a year before `modernSince`, e.g. a 1920 film poster for "gold coins pile") from another era. */
   periodKind: boolean;
   modernSince: number;
+  /** The beat is about a death, burial or memory (or asks for a grave, statue, plaque or house): memorials fit it. */
+  memorialBeat: boolean;
 }
 
 const PERIOD_KINDS = new Set(["archival_photo", "news_footage", "document_screenshot"]);
@@ -254,6 +314,7 @@ export function beatContext(plan: Pick<BeatPlan, "visualQuery" | "factIds" | "cu
     story, places: new Set([...story.places, ...own]), corePlaces: new Set([...story.primaryPlaces, ...own]), currencies: new Set([...story.currencies, ...currenciesIn(text)]),
     windows: beatEraWindows(plan, facts), periodKind: PERIOD_KINDS.has(plan.visualKind),
     modernSince: (yearsIn(facts.asOf)[0] ?? 2020) - 30,
+    memorialBeat: memorialBeat([plan.visualQuery, narration].join(" \n ")),
   };
 }
 
@@ -264,6 +325,9 @@ export interface RelevanceSignals {
   salientTotal: number;
   /** The candidate carries a story topic token or names one of the story's people. */
   onTopic: boolean;
+  /** … and more than one shared word: it names one of the story's people, carries every topic token (at most two needed), or
+   *  a topic token together with one of the story's main places. A 1905 tulip frieze is on topic by "tulip" alone. */
+  strongTopic: boolean;
   /** Its title/categories mention one of the story's places. */
   placeMatch: boolean;
   /** … one of the places the story (or this beat) is mainly about. */
@@ -302,11 +366,14 @@ export function relevanceSignals(c: Pick<Candidate, "title" | "tags" | "descript
       salientTotal = s.length;
     }
   }
-  const onTopic = ctx.story.topic.some((t) => have.has(t)) || ctx.story.people.some((p) => candidateNamesPerson(c, p));
+  const topicHits = ctx.story.topic.filter((t) => have.has(t)).length;
+  const namesStoryPerson = ctx.story.people.some((p) => candidateNamesPerson(c, p));
+  const onTopic = topicHits > 0 || namesStoryPerson;
   const head = [c.title, ...c.tags].map(withoutHolder).join(" \n ");
   const mentioned = placesIn(head);
   const placeMatch = [...mentioned].some((g) => ctx.places.has(g));
   const corePlaceMatch = [...mentioned].some((g) => ctx.corePlaces.has(g));
+  const strongTopic = namesStoryPerson || (topicHits > 0 && (topicHits >= Math.min(2, ctx.story.topic.length) || corePlaceMatch));
   const named = [...placesIn(head, { namesOnly: true })].filter((g) => !ctx.places.has(g));
   const foreignPlace = ctx.places.size > 0 && !placeMatch && named.length > 0 ? named[0]! : null;
   const others = [...mentioned].filter((g) => !ctx.places.has(g));
@@ -316,25 +383,31 @@ export function relevanceSignals(c: Pick<Candidate, "title" | "tags" | "descript
   const { year, stated } = candidateYear(c, rawYear);
   const anachronism = ctx.periodKind ? isAnachronistic(year, ctx.windows)
     : stated && year !== null && year < ctx.modernSince && isAnachronistic(year, ctx.windows);
-  return { salientHits, salientTotal, onTopic, placeMatch, corePlaceMatch, year, yearStated: stated, anachronism, foreignPlace, foreignDemonym, foreignCurrency };
+  return { salientHits, salientTotal, onTopic, strongTopic, placeMatch, corePlaceMatch, year, yearStated: stated, anachronism, foreignPlace, foreignDemonym, foreignCurrency };
 }
 
 /** Metadata penalty of the signals (subtracted from the metadata score). */
 export function relevancePenalty(s: RelevanceSignals): number {
   // A provider date is often when a photograph of the subject was taken (a 2008 photo of a 1590 garden): a light penalty.
-  return (s.anachronism ? (s.yearStated ? 0.15 : 0.05) : 0) + (s.foreignPlace ? 0.2 : s.foreignDemonym ? 0.1 : 0) + (s.foreignCurrency ? 0.2 : 0) + (s.salientTotal > 0 && s.salientHits === 0 ? 0.15 : 0);
+  return (s.anachronism ? (s.yearStated ? 0.15 : 0.05) : 0) + (s.foreignPlace ? 0.3 : s.foreignDemonym ? 0.1 : 0) + (s.foreignCurrency ? 0.2 : 0) + (s.salientTotal > 0 && s.salientHits === 0 ? 0.15 : 0);
 }
 
 /**
  * Hard relevance rules (the word-coverage floor is checked separately): the candidate must carry one of the beat's salient
  * nouns; a generic query (one salient noun, e.g. "archive contract documents") also needs the story's topic, people or
- * main places (a Scottish narrator does not make a Scottish contract part of a Dutch story); a foreign place or currency disqualifies unless the candidate is on the story's topic, and so does a date far
- * outside the era — when the title states it, or when the candidate matches the beat's nouns only in part (a modern
- * photograph of exactly the wanted place is fine). Returns the reason it fails, or null when it passes.
+ * main places (a Scottish narrator does not make a Scottish contract part of a Dutch story). A work from another era AND
+ * another place (or currency) is never the story's, on topic or not (a 1905 American tulip frieze for Haarlem 1637). A work
+ * whose title dates it in another era is refused unless strongly on topic (a story person, the whole topic, or the topic
+ * with the story's place). Otherwise a foreign place or currency disqualifies unless the candidate is on the story's topic,
+ * and so does a date far outside the era — when the title states it, or when the candidate matches the beat's nouns only
+ * in part (a modern photograph of exactly the wanted place is fine). Returns the reason it fails, or null when it passes.
  */
 export function relevanceFailure(s: RelevanceSignals): string | null {
   if (s.salientTotal > 0 && s.salientHits === 0) return "no salient noun of the beat";
   if (s.salientTotal === 1 && !s.onTopic && !s.corePlaceMatch) return "generic query and nothing of the story";
+  const elsewhere = s.foreignPlace ?? s.foreignCurrency ?? s.foreignDemonym;
+  if (s.anachronism && elsewhere) return `dated ${s.year} and from elsewhere (${elsewhere}): another era and place`;
+  if (s.anachronism && s.yearStated && !s.strongTopic) return `dated ${s.year}, outside the story's era`;
   if (s.onTopic) return null;
   if (s.foreignCurrency) return `foreign currency (${s.foreignCurrency})`;
   if (s.foreignPlace) return `foreign place (${s.foreignPlace})`;
@@ -344,7 +417,7 @@ export function relevanceFailure(s: RelevanceSignals): string | null {
 
 export function signalNotes(s: RelevanceSignals): string {
   const parts = [`salient ${s.salientHits}/${s.salientTotal}`];
-  if (s.onTopic) parts.push("on-topic");
+  if (s.onTopic) parts.push(s.strongTopic ? "on-topic" : "on-topic(weak)");
   if (s.anachronism) parts.push(`anachronism ${s.year}`);
   if (s.foreignPlace) parts.push(`foreign-place ${s.foreignPlace}`);
   if (s.foreignDemonym) parts.push(`foreign-demonym ${s.foreignDemonym}`);
