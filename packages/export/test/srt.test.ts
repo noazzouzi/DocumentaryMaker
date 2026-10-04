@@ -86,6 +86,11 @@ describe("text helpers", () => {
     expect(joinWords(["Hello", ",", "world", "!"])).toBe("Hello, world!");
     expect(joinWords(["«", "Bonjour", "»"])).toBe("« Bonjour »");
   });
+  it("joinWords keeps the no-break spaces of French typography inside a word", () => {
+    expect(joinWords(["puis", "plus", "rien", "du", "tout\u202F?"])).toBe("puis plus rien du tout\u202F?");
+    expect(joinWords(["«\u202FBonjour\u202F»", "dit-il\u00A0:", "oui."])).toBe("«\u202FBonjour\u202F» dit-il\u00A0: oui.");
+    expect(joinWords(["tout", "\u202F?"])).toBe("tout\u202F?");
+  });
   it("sentenceCase only rewrites all-caps text", () => {
     expect(sentenceCase("THE FALL OF FTX. IT WAS FAST")).toBe("The fall of ftx. It was fast");
     expect(sentenceCase("The FTX collapse")).toBe("The FTX collapse");

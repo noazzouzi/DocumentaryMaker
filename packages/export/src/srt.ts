@@ -8,14 +8,18 @@ export const SRT_MAX_LINE = 42;
 export const SRT_MAX_LINES = 2;
 const SRT_VARIANTS = new Set<CaptionGroup["variant"]>(["srt", "clip", "translation"]);
 
-/** Words → text: single spaces, no space before closing punctuation. */
+/**
+ * Words → text: single spaces, no space before closing punctuation. Only ordinary spaces are collapsed: the
+ * no-break spaces of French typography (U+00A0, U+202F, e.g. "tout\u202F?") inside a word are kept.
+ */
 export function joinWords(words: readonly string[]): string {
   return words
-    .map((w) => w.trim())
+    .map((w) => w.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, ""))
     .filter(Boolean)
     .join(" ")
-    .replace(/\s+([,.;:!?…)\]»”])/g, (m, p: string) => (p === "»" ? m : p))
-    .replace(/([([«“])\s+/g, (m, p: string) => (p === "«" ? m : p));
+    .replace(/[ \t\r\n]+(?=[\u00A0\u202F][;:!?»])/g, "")
+    .replace(/[ \t\r\n]+([,.;:!?…)\]»”])/g, (m, p: string) => (p === "»" ? m : p))
+    .replace(/([([«“])[ \t\r\n]+/g, (m, p: string) => (p === "«" ? m : p));
 }
 
 /** All-caps groups (e.g. typed in caps) are converted to sentence case; mixed-case text is kept as written. */
