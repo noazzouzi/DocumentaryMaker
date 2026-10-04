@@ -84,7 +84,9 @@ describe("factSheetFromWire", () => {
     expect(f.timeline[0]!.personIds).toEqual(["P3", "P2"]);
     expect(f.quotes.map((q) => [q.id, q.speakerId, q.verbatim])).toEqual([["Q1", "P3", "Exact words."], ["Q3", "P3", "Second part."]]);
     expect(f.claims[0]!.sourceIds).toEqual(["S1"]);
-    expect(issues.filter((x) => x.rule === "FS_RENAMED_ID").map((x) => x.where)).toEqual(["P3", "Q3"]);
+    expect(issues.filter((x) => x.rule === "FS_RENAMED_ID").map((x) => [x.where, x.msg])).toEqual([
+      ["people", "1 people id(s) not P<n>, renumbered: Ada→P3"], ["quotes", "1 quotes id(s) not Q<n>, renumbered: Q2a→Q3"],
+    ]);
     expect(issues.some((x) => x.rule === "FS_BAD_REF" && x.where === "claims[0].source_ids[1]")).toBe(true);
   });
 });

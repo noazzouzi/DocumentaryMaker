@@ -41,13 +41,16 @@ function renameMalformed(raws: readonly string[], prefix: string, where: string,
   };
   let next = Math.max(0, ...raws.map((r) => Number(valid(r)?.slice(1) ?? 0))) + 1;
   const renamed = new Map<string, string>();
-  raws.forEach((r, i) => {
+  const pairs: string[] = [];
+  for (const r of raws) {
     const key = r.trim().toUpperCase();
-    if (key === "" || valid(r) !== null || renamed.has(key)) return; // a repeated bad id stays a duplicate
+    if (key === "" || valid(r) !== null || renamed.has(key)) continue; // a repeated bad id stays a duplicate
     const id = `${prefix}${next++}`;
     renamed.set(key, id);
-    issues.push(warn("FS_RENAMED_ID", id, `${where}[${i}].id "${r}" is not ${prefix}<n>: renamed ${id}`));
-  });
+    pairs.push(`${r.trim()}→${id}`);
+  }
+  // one issue per list (a model that numbers "Q2a, Q2b…" does it dozens of times)
+  if (pairs.length) issues.push(warn("FS_RENAMED_ID", where, `${pairs.length} ${where} id(s) not ${prefix}<n>, renumbered: ${pairs.slice(0, 8).join(", ")}${pairs.length > 8 ? ", …" : ""}`));
   return renamed;
 }
 

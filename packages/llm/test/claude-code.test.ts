@@ -196,7 +196,7 @@ describe("ClaudeCodeLlm.research", () => {
     ].join("\n"));
     expect(r).toMatchObject({ searchesUsed: 2, fetchesUsed: 2, turns: 1 });
     expect(warnings).toContain("research: removed 2 citation(s) of URLs no search or fetch returned");
-    expect(warnings.some((w) => w.startsWith("research: tool error web_fetch: 404"))).toBe(true);
+    expect(warnings).toContain("research: 1 page(s) could not be read (404): those sites refuse automated reading; their search results are still used");
     expect(progress.some((p) => p.startsWith("research: search 1: eiffel tower opening"))).toBe(true);
     expect(costs.receipts[0]).toMatchObject({ endpoint: "claude-code.research", costUsd: 0, outputRef: "research/raw/turn-1.json", usage: { web_search_requests: 2, web_fetch_requests: 2 } });
 

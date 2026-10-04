@@ -445,7 +445,15 @@ export class ClaudeCodeLlm implements LlmClient {
   }
 
   private finishResearch(built: ReturnType<typeof buildResearchFromClaudeCode>, h: { progress: Progress }): ResearchResult {
-    for (const e of built.serverErrors) this.cfg.logger.warn(`research: tool error ${e}`);
+    // one line for the pages sites refused (anti-bot 403, paywall 402, redirect, timeout); the details at debug level
+    for (const e of built.serverErrors) this.cfg.logger.debug(`research: tool error ${e}`);
+    const fetchErrors = built.serverErrors.filter((e) => e.startsWith("web_fetch: ")).map((e) => e.slice("web_fetch: ".length).split(" ")[0]!);
+    if (fetchErrors.length) {
+      const counts = [...new Map(fetchErrors.map((c) => [c, fetchErrors.filter((x) => x === c).length])).entries()].map(([c, n]) => (n > 1 ? `${c} ×${n}` : c));
+      this.cfg.logger.warn(`research: ${fetchErrors.length} page(s) could not be read (${counts.join(", ")}): those sites refuse automated reading; their search results are still used`);
+    }
+    const searchErrors = built.serverErrors.length - fetchErrors.length;
+    if (searchErrors) this.cfg.logger.warn(`research: ${searchErrors} web search(es) failed`);
     if (built.droppedCitations > 0) this.cfg.logger.warn(`research: removed ${built.droppedCitations} citation(s) of URLs no search or fetch returned`);
     h.progress(1, "research done", { sources: built.registry.length });
     return { dossierMarkdown: built.dossierMarkdown, registry: built.registry, searchesUsed: built.searchesUsed, fetchesUsed: built.fetchesUsed, turns: 1 };
