@@ -39,7 +39,7 @@ describe("forked job worker", () => {
     const pid = (host as unknown as { worker: { pid: number | null } }).worker.pid;
     expect(pid).not.toBeNull();
     expect(pid).not.toBe(process.pid);
-  });
+  }, 420_000); // a whole research→mix pipeline in a freshly forked tsx worker: ~95 s alone, > 180 s on the shared 4-vCPU box during `pnpm test`
 
   it("forwards cancel to the worker", async () => {
     const { jobId } = await host.submit(pipelineReq(slug, "render", "render", { force: true }));
