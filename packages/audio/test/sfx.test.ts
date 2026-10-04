@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { cp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, beforeAll } from "vitest";
 import { SfxManifest } from "@docmaker/core";
@@ -139,6 +139,17 @@ describe("procedural SFX pack", () => {
     await rm(again.entries[0]!.file);
     const regen = await ensureSfxPack("procedural", ctx);
     expect(regen.entries.map((e) => e.assetId)).toEqual(before);
+  }, 120_000);
+
+  it("stays valid when reached through another home path (moved home, shared cache): no regeneration", async () => {
+    const moved = makeCtx();
+    await cp(path.join(ctx.home, "sfx"), path.join(moved.home, "sfx"), { recursive: true });
+    const t0 = performance.now();
+    const m = await ensureSfxPack("procedural", moved);
+    expect(performance.now() - t0).toBeLessThan(2000);
+    expect(moved.events).toEqual([]); // no "generating" progress
+    expect(m.entries.map((e) => e.assetId)).toEqual(manifest.entries.map((e) => e.assetId));
+    for (const e of m.entries) expect(path.dirname(e.file)).toBe(proceduralDir(moved));
   }, 120_000);
 
   it("concurrent callers share one generation (machine lock)", async () => {

@@ -46,8 +46,11 @@ async function readValidManifest(dir: string, stamp: string): Promise<SfxManifes
     const st = JSON.parse(await readFile(path.join(dir, "stamp.json"), "utf8")) as { stamp?: string };
     if (st.stamp !== stamp) return null;
     const m = SfxManifest.parse(JSON.parse(await readFile(path.join(dir, "manifest.json"), "utf8")));
-    if (!m.entries.every((e) => existsSync(e.file))) return null;
-    return m;
+    // The entries are files of `dir` itself: resolve them there, so a pack reached through another path (a moved
+    // DOCMAKER_HOME, a home whose sfx/ links to a shared cache whose first user is gone) stays valid.
+    const entries = m.entries.map((e) => ({ ...e, file: path.join(dir, path.basename(e.file)) }));
+    if (!entries.every((e) => existsSync(e.file))) return null;
+    return { ...m, entries };
   } catch {
     return null;
   }
