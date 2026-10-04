@@ -8,7 +8,7 @@ import { buildSilences, clipAudio, duckingSpec, musicItems, silenceItems, voClip
 import { assignCameras, camMax } from "./camera";
 import { buildCaptions } from "./captions";
 import { fillDeadAir } from "./dead-air";
-import { anchorAt, buildCtx, isAiAsset, round3, type Ctx, type Shot } from "./ctx";
+import { anchorAt, buildCtx, isAiAsset, isProceduralAsset, round3, type Ctx, type Shot } from "./ctx";
 import { reconcileAiLabels } from "./disclosure";
 import { FxBook, climaxFx, impactShakes, montagePunches, outroFade, type Fx } from "./fx";
 import { lintTimeline } from "./lint";
@@ -22,7 +22,7 @@ import { placePunches, plannedReserve } from "./punch";
 import { planReveals, quietZones } from "./reveal";
 import { selectSfx, sfxCandidates } from "./sfx";
 import { applyHits, buildShots, numberShots, snapRevealCuts, textlessUnderText } from "./shots";
-import { effectiveUpscale, isImpact, maxGapFrames, punchEvents, sfxEvents, timelineVisualEvents } from "./stats";
+import { deadAirStretches, effectiveUpscale, isImpact, maxGapFrames, punchEvents, sfxEvents, timelineVisualEvents } from "./stats";
 import { decideLayouts, relayoutChanges } from "./stills";
 import { assignTransitions, hiddenTransitions, keyOf } from "./transitions";
 import type { DirectorInput, DirectorOutput, DirectorStats } from "./types";
@@ -227,7 +227,7 @@ export function direct(I: DirectorInput): DirectorOutput {
       const op = o.override;
       if (op.op === "replaceSource" && (op.source.kind === "image" || op.source.kind === "video") && I.frozen[op.source.assetId] && !extra[op.source.assetId]) {
         const f = I.frozen[op.source.assetId]!;
-        extra[f.id] = { id: f.id, kind: f.kind, ext: f.ext, mime: f.mime, width: f.width, height: f.height, durationFrames: f.durationMs !== null ? Math.round((f.durationMs * ctx.fps) / 1000) : null, hasAudio: f.hasAudio, projectRel: f.projectRel };
+        extra[f.id] = { id: f.id, kind: f.kind, ext: f.ext, mime: f.mime, width: f.width, height: f.height, durationFrames: f.durationMs !== null ? Math.round((f.durationMs * ctx.fps) / 1000) : null, hasAudio: f.hasAudio, projectRel: f.projectRel, ...(isProceduralAsset(f) ? { procedural: true } : {}) };
       }
     }
     const r = applyOverrides({ ...timeline, assets: extra }, I.overrides, buildAnchorIndex(I.layout, I.layoutHash), { style: I.style, validateAsset: I.validateAsset, plans: I.plans });
@@ -281,6 +281,7 @@ function computeStats(ctx: Ctx, t: Timeline, shots: readonly Shot[], x: { drops:
   const r2 = (v: number) => Math.round(v * 100) / 100;
   const events = timelineVisualEvents(t);
   const impacts = sfxEvents(t, isImpact).length;
+  const dead = deadAirStretches(t);
   return {
     durationSec: r2(durationSec), shots: t.video.length, aslSec: r2(durationSec / Math.max(1, t.video.length)),
     nonCutShare: r2(nonCut / Math.max(1, keys.length)), primaryShare: r2(counted.length ? primary / counted.length : 0), transitionsByKind: byKind,
@@ -289,5 +290,6 @@ function computeStats(ctx: Ctx, t: Timeline, shots: readonly Shot[], x: { drops:
     jlCuts: x.jl, maxStaticHoldSec: r2(maxStatic), maxNoChangeSec: r2(maxGapFrames(t) / fps), eventsPer10s: r2(events.length / Math.max(1e-9, durationSec / 10)),
     captionGroups: t.captions.length, keywordCaptions: x.keywordCaptions, salienceDrops: x.drops, cleanStretches: x.cleanStretches,
     cardShare: r2(images.length ? images.filter((c) => c.layout === "card").length / images.length : 0), maxUpscale: r2(maxUp),
+    deadAirStretches: dead.length, deadAirSec: r2(dead.reduce((a, g) => a + g.end - g.from, 0) / fps),
   };
 }

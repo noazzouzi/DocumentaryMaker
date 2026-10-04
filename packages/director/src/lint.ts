@@ -49,7 +49,7 @@ export const DIRECTOR_NOTES: Readonly<Record<string, string>> = {
   TEMPLATE_FACTS: "A template referenced a fact (figure, quote, source) missing from the FactSheet; it was skipped.",
   PICK_ASSET: "A pick referenced an asset that is not frozen or not visual; it was ignored.",
   BEAT_PLAN_MISSING: "A layout beat had no plan; a neutral plan was used.",
-  DEAD_AIR: "A bare generated backdrop stretch longer than 1.2 s could not be filled (no card, kinetic text or neighbouring shot available).",
+  DEAD_AIR: "A bare backdrop stretch (generated backdrop or procedural fallback asset) longer than 1.2 s could not be filled (no card, kinetic text or neighbouring shot available).",
   SLAM_TEXT: "A KeywordSlam was skipped because its on-screen text has no content word (a lone \"THE\" never slams).",
   BLEEP_SKIPPED: "A SENSITIVE \"bleep\" cue outside a quoted passage was ignored (the narrator's own words are never bleeped).",
 };

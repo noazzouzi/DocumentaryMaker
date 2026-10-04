@@ -288,6 +288,9 @@ export const TimelineAsset = z.object({
   durationFrames: Frame.nullable(),
   hasAudio: z.boolean(),
   projectRel: z.string(), // media/<id>.<ext> | program/<lang>/vo_program.wav | voice/…/seg.wav (the ONLY path field)
+  // A procedural fallback (assets §7.9: gradient-grid / archive-still / paper-drift …): a backdrop with no subject of its own,
+  // bare like a generated source for the dead-air rule (§9.3 step 7c). Absent = false.
+  procedural: z.boolean().optional(),
 });
 export type TimelineAsset = z.infer<typeof TimelineAsset>;
 

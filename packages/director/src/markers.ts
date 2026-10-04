@@ -1,6 +1,6 @@
 // Step 12 — MARKERS, ASSETS, USAGE (§9.3).
 import { P, collectAssetIds, ids, msToFrame, type Marker, type Timeline, type TimelineAsset } from "@docmaker/core";
-import type { Ctx, Shot } from "./ctx";
+import { isProceduralAsset, type Ctx, type Shot } from "./ctx";
 import { AD_BREAK_NAME } from "./resources";
 
 const mk = (ctx: Ctx, m: Omit<Marker, "frame"> & { frame: number }): Marker => ({ ...m, frame: Math.max(0, Math.min(ctx.N - 1, m.frame)), name: m.name.slice(0, 200), note: m.note.slice(0, 2000) });
@@ -69,7 +69,7 @@ export function buildAssets(ctx: Ctx, t: Pick<Timeline, "video" | "overlays" | "
     if (f) {
       out[id] = {
         id, kind: f.kind, ext: f.ext, mime: f.mime, width: f.width, height: f.height, durationFrames: f.durationMs !== null ? msToFrame(f.durationMs, ctx.fps) : null,
-        hasAudio: f.hasAudio, projectRel: f.projectRel,
+        hasAudio: f.hasAudio, projectRel: f.projectRel, ...(isProceduralAsset(f) ? { procedural: true } : {}),
       };
       continue;
     }

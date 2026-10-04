@@ -1,7 +1,7 @@
 // Step 3 — STILL LAYOUT, TREATMENT, UPSCALE GUARD (§9.3): cover vs framed card, card parameters, camera-change flips,
 // treatments from the asset analysis, asset-reuse rule.
 import { fnv1a32, lerp, weightedPick, type ClipLayout } from "@docmaker/core";
-import { clamp, round2, type Ctx, type Shot } from "./ctx";
+import { clamp, isProceduralAsset, round2, type Ctx, type Shot } from "./ctx";
 
 const FRAME_W = 1920, FRAME_H = 1080, SAFE_W = 1728;
 
@@ -57,8 +57,7 @@ function treatmentOf(ctx: Ctx, s: Shot): Shot["treatment"] {
 }
 
 function isProceduralStill(ctx: Ctx, s: Shot): boolean {
-  const a = s.src.assetId ? ctx.frozen[s.src.assetId] : undefined;
-  return a !== undefined && (a.candidate?.provider === "procedural" || a.conform.recipe.startsWith("proc-"));
+  return isProceduralAsset(s.src.assetId ? ctx.frozen[s.src.assetId] : undefined);
 }
 
 export function decideLayouts(ctx: Ctx, shots: Shot[]): void {

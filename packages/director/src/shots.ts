@@ -2,7 +2,7 @@
 // beat starts with cut lead, contiguity and min-length merges. Also the shot-level edits of steps 6 (reveal cut snap)
 // and 11b (musicCue "hit" → nearest cut onto a downbeat).
 import { COMPONENT_META, fnv1a32, ids, lerp, msToFrame, type ClipLayout, type LayoutParams, type OverlayComponentId, type VisualKind } from "@docmaker/core";
-import { clamp, type BeatCtx, type Ctx, type Shot, type Src } from "./ctx";
+import { clamp, isProceduralAsset, type BeatCtx, type Ctx, type Shot, type Src } from "./ctx";
 import { montageShots } from "./montage";
 import { nearestIn, type MusicPlan } from "./music";
 import { readText } from "./overlays/hold";
@@ -55,6 +55,7 @@ export function sourcesFor(ctx: Ctx, b: BeatCtx): Src[] {
       crop: p.crop, focal: p.focal, recipe: "darkNoise", text: "", palette: [], seed: 0, width: w, height: h,
       mediaFrames: a.kind === "video" && a.durationMs !== null ? msToFrame(a.durationMs, ctx.fps) : null,
       headHandle: msToFrame(a.conform.handleHeadMs, ctx.fps), pickSlot: p.slot, key: `${a.id}:${p.slot}`,
+      ...(isProceduralAsset(a) ? { procedural: true } : {}),
     });
   }
   if (out.length === 0) out.push(generatedSrc(ctx, b, ""));

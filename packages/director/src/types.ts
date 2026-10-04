@@ -50,6 +50,8 @@ export interface DirectorStats {
   punchPerMin: number; sfxPerMin: number; impactsPerMin: number; overlaysByKind: Record<string, number>; silences: number; jlCuts: number;
   maxStaticHoldSec: number; maxNoChangeSec: number; eventsPer10s: number; captionGroups: number; keywordCaptions: number;
   salienceDrops: number; cleanStretches: number; cardShare: number; maxUpscale: number;
+  /** Bare-backdrop stretches longer than DEAD_AIR_MAX_SEC left in the timeline (generated or procedural), and their total seconds. */
+  deadAirStretches: number; deadAirSec: number;
 }
 
 export interface DirectorOutput {

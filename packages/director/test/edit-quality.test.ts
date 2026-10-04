@@ -2,9 +2,9 @@
 // never read as a lone function word.
 import { describe, expect, it } from "vitest";
 import { isFunctionWord } from "@docmaker/core";
-import { bareStretches } from "../src/dead-air";
+import { bareStretches, isBareSource, isForeground } from "../src/dead-air";
 import { contentText } from "../src/overlays/cues";
-import { deadAirStretches } from "../src/stats";
+import { deadAirStretches, isBareClip } from "../src/stats";
 import { direct } from "../src/index";
 import { errorsOf, runs } from "./helpers";
 import { tulipInputs } from "./tulip";
@@ -45,6 +45,46 @@ describe("dead air (bare generated backdrops)", () => {
     const evs = (tl.props as { events: { at: number; dateLabel: string }[] }).events;
     expect(evs.map((e) => e.dateLabel)).toEqual(["5 Feb 1637", "24 Feb 1637"]);
     expect(evs[0]!.at).toBeLessThanOrEqual(tl.enterFrames + 4);
+  });
+  it("a procedural fallback asset (image or video) is a bare backdrop: flagged in the assets table, filled, read back", () => {
+    // the online tulip run: archival searches that found nothing fell back to procedural gradient-grid / paper-drift picks
+    // (score notes "procedural fallback"); they come in as kind image/video and showed 3.7 s of empty red grid
+    const built = tulipInputs();
+    const used = [...new Set(built.input.picks.picks.map((p) => p.assetId))];
+    const proc = new Set(used.filter((_, i) => i % 3 === 0));
+    expect([...proc].some((id) => built.input.frozen[id]!.kind === "video")).toBe(true);
+    for (const id of proc) {
+      const a = built.input.frozen[id]!;
+      built.input.frozen[id] = { ...a, conform: { ...a.conform, recipe: a.kind === "video" ? "proc-paper-drift-v1" : "proc-gradient-grid-v1" } };
+    }
+    const out = direct(built.input);
+    const t = out.timeline;
+    const procClips = t.video.filter((c) => (c.source.kind === "image" || c.source.kind === "video") && proc.has(c.source.assetId));
+    expect(procClips.length).toBeGreaterThan(0);
+    for (const c of procClips) expect(isBareClip(t, c), c.id).toBe(true);
+    for (const id of Object.keys(t.assets)) expect(t.assets[id]!.procedural === true, id).toBe(proc.has(id));
+    // the fill pass sees them: no bare stretch longer than 1.2 s is left, and the stats say so
+    const left = deadAirStretches(t).map((s) => `${(s.from / t.fps).toFixed(2)}–${(s.end / t.fps).toFixed(2)} s`);
+    expect(left).toEqual([]);
+    expect(errorsOf(out)).toEqual([]);
+    expect(out.stats.deadAirStretches).toBe(0);
+    expect(out.stats.deadAirSec).toBe(0);
+  });
+  it("deadAirStretches counts a procedural asset as bare (an unfilled timeline reads back its stretch)", () => {
+    const t = structuredClone(runs().tulip.timeline);
+    const fg = (f: number) => t.overlays.some((o) => o.from <= f && f < o.from + o.dur && isForeground(o.component));
+    // the longest real-picture clip with no foreground graphic over its middle
+    const c = t.video.filter((x) => (x.source.kind === "image" || x.source.kind === "video") && x.dur > 2 * t.fps && !fg(x.from + Math.floor(x.dur / 2)))
+      .sort((a, b) => b.dur - a.dur)[0]!;
+    expect(c).toBeDefined();
+    const id = (c.source as { assetId: string }).assetId;
+    expect(deadAirStretches(t)).toEqual([]);
+    t.assets[id] = { ...t.assets[id]!, procedural: true };
+    const s = deadAirStretches(t);
+    expect(s.length).toBeGreaterThan(0);
+    expect(s.some((g) => g.from <= c.from + Math.floor(c.dur / 2) && c.from + Math.floor(c.dur / 2) < g.end)).toBe(true);
+    expect(isBareSource({ kind: "image", procedural: true })).toBe(true);
+    expect(isBareSource({ kind: "image" })).toBe(false);
   });
   for (const name of ["rich", "policy", "tulip"] as const) {
     it(`${name}: no backdrop-only stretch longer than 1.2 s, no lint error`, () => {

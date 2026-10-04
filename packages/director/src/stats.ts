@@ -81,10 +81,17 @@ export function cutsWithSfx(t: Timeline): number {
   return n;
 }
 
-/** Bare-backdrop stretches (s) of a finished timeline longer than DEAD_AIR_MAX_SEC (QA / tests read-back of §9.3 step 7c). */
+/** Whether a finished timeline's picture clip shows only a backdrop: a generated one, or a procedural fallback asset. */
+export function isBareClip(t: Pick<Timeline, "assets">, c: Timeline["video"][number]): boolean {
+  const s = c.source;
+  if (s.kind === "generated") return isBareSource(s);
+  return (s.kind === "image" || s.kind === "video") && t.assets[s.assetId]?.procedural === true;
+}
+
+/** Bare-backdrop stretches (frames) of a finished timeline longer than DEAD_AIR_MAX_SEC (QA / tests read-back of §9.3 step 7c). */
 export function deadAirStretches(t: Timeline): { from: number; end: number }[] {
   return bareStretches(
-    t.video.map((c) => ({ from: c.from, end: c.from + c.dur, bare: isBareSource(c.source.kind === "generated" ? c.source : { kind: c.source.kind }) })),
+    t.video.map((c) => ({ from: c.from, end: c.from + c.dur, bare: isBareClip(t, c) })),
     t.overlays.filter((o) => isForeground(o.component)).map((o) => ({ from: o.from, end: o.from + o.dur })),
     Math.round(DEAD_AIR_MAX_SEC * t.fps),
   );

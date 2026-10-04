@@ -1,5 +1,6 @@
 // Dead air (§9.3 step 7c): a generated backdrop (gradientGrid / paper / darkNoise, or a keywordCard without text) is a
-// stage, not content. No stretch of the picture track may show a bare backdrop with no foreground graphic for longer
+// stage, not content — and so is a procedural fallback asset (gradient-grid / archive-still / paper-drift picked as an
+// image or video when no real picture was found: the same empty backdrop under another source kind). No stretch of the picture track may show a bare backdrop with no foreground graphic for longer
 // than DEAD_AIR_MAX_SEC. Fills, in order of preference:
 //   1. the VO-synced card that ends the stretch (QuoteCard, TimelineGraphic, …) enters earlier — its sub-items keep
 //      their spoken frames, the first list item shows at the entry;
@@ -31,8 +32,9 @@ const LIST_KEY: Partial<Record<OverlayComponentId, string>> = {
 /** Components that may hold longer than planned over a bare backdrop. */
 const EXTEND_OK: ReadonlySet<OverlayComponentId> = new Set([...EARLY_OK, "KineticText", "NumberCounter"]);
 
-/** A picture-track source that is only a backdrop (no subject of its own). */
-export function isBareSource(src: { kind: string; recipe?: string; text?: string }): boolean {
+/** A picture-track source that is only a backdrop (no subject of its own): a generated backdrop, or a procedural asset. */
+export function isBareSource(src: { kind: string; recipe?: string; text?: string; procedural?: boolean }): boolean {
+  if (src.procedural === true) return true;
   return src.kind === "generated" && !(src.recipe === "keywordCard" && (src.text ?? "").trim() !== "");
 }
 

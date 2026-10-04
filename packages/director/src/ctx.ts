@@ -30,6 +30,7 @@ export interface Src {
   recipe: "gradientGrid" | "paper" | "darkNoise" | "keywordCard"; text: string; palette: string[]; seed: number;
   width: number | null; height: number | null; mediaFrames: number | null; headHandle: number;
   pickSlot: number | null; key: string; // identity of the source within the beat (camera-change detection)
+  procedural?: boolean; // a procedural fallback asset: a backdrop with no subject (bare for the dead-air rule)
 }
 
 export type ShotRole = "normal" | "clip" | "hold" | "montage";
@@ -265,6 +266,10 @@ export function truncate(s: string, max: number): string {
 
 export const ZONES: readonly ZoneName[] = ["center", "lowerThird", "topLeft", "topRight", "full", "captionBand"];
 export type CompId = OverlayComponentId;
+
+/** A procedural fallback asset (assets §7.9): a synthetic texture with no subject, bare like a generated backdrop. */
+export const isProceduralAsset = (a: FrozenAsset | undefined): boolean =>
+  !!a && (a.candidate?.provider === "procedural" || a.conform.recipe.startsWith("proc-"));
 
 export const isAiAsset = (a: FrozenAsset | undefined): boolean =>
   !!a && (a.candidate?.license.code === "AI-GENERATED" || a.declaration?.kind === "ai-generated" || a.candidate?.provider === "fal");

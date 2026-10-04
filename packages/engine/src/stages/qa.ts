@@ -178,6 +178,11 @@ export const qaStage: StageDef = {
       emitLog(ctx, "qa", "warn", `density report unavailable: ${err instanceof Error ? err.message : String(err)}`);
     }
     if (lint?.stats && typeof lint.stats.aslSec === "number") checks.push(check("asl", "info", true, `average shot length ${(lint.stats.aslSec as number).toFixed(2)} s`, lint.stats.aslSec as number, null));
+    // dead air (§9.3 step 7c): bare backdrops — generated or procedural fallbacks — left without a foreground graphic
+    if (lint?.stats && typeof lint.stats.deadAirSec === "number" && typeof lint.stats.deadAirStretches === "number") {
+      const n = lint.stats.deadAirStretches as number, sec = lint.stats.deadAirSec as number;
+      checks.push(check("dead-air", "warn", n === 0, n === 0 ? "no bare backdrop longer than 1.2 s" : `${n} bare-backdrop stretch(es) longer than 1.2 s, ${sec.toFixed(1)} s in all (procedural fallbacks or generated backdrops without a graphic)`, sec, 0));
+    }
 
     // contact sheets (render client; skipped when this process has none)
     ctx.progress(0.7, "contact sheets");
