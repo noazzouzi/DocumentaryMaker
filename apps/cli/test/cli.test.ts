@@ -1,6 +1,6 @@
 // CLI: parsing, exit codes (0/1/2/3/4), --yes/--max-cost never editorial, --ack all refused without a TTY,
 // --ack-file (mocked engine), and one real run of `demo` on the walking-skeleton fakes.
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -430,19 +430,29 @@ describe("demo pruning", () => {
       mk("demo-tulip-mania-20261001-131313", "tulip-mania", { "jobs/index.json": { schemaVersion: 1, jobs: [job("job-20261001-131313-aaaaaa", "demo", "succeeded"), job("job-20261001-131314-bbbbbb", "stage", "succeeded")] } });
       mk("demo-tulip-mania-20261001-141414", "tulip-mania", { "jobs/index.json": { schemaVersion: 1, jobs: [job("job-20261001-141414-aaaaaa", "demo", "running")] } });
       mk("demo-tulip-mania-20261001-151515", "gate-test");
+      // every fresh demo snapshots the outline's history (the fixture's outline approval): that is the run's own write …
+      const OUTLINE_HISTORY = ".history/outline/outline.json/2026-10-02T23-59-59.000Z-aaaaaaaa.json";
+      const at = (slug: string, rel: string, iso: string) => utimesSync(path.join(root, slug, rel), new Date(iso), new Date(iso));
+      const demoJobs = (id: string) => ({ "jobs/index.json": { schemaVersion: 1, jobs: [job(id, "demo", "succeeded")] }, "approvals.json": { schemaVersion: 1, approvals: [approval("fixture")] }, [OUTLINE_HISTORY]: "{}" });
+      mk("demo-tulip-mania-20261001-161616", "tulip-mania", demoJobs("job-20261001-161616-aaaaaa"));
+      at("demo-tulip-mania-20261001-161616", OUTLINE_HISTORY, "2026-10-02T23:59:59.000Z");
+      // … while a history entry written after the demo job ended is a person's edit
+      mk("demo-tulip-mania-20261001-171717", "tulip-mania", demoJobs("job-20261001-171717-aaaaaa"));
+      at("demo-tulip-mania-20261001-171717", OUTLINE_HISTORY, "2026-10-03T01:00:00.000Z");
       mk("demo-tulip-mania-mine");
       mk("demo-tulip-mania-20261003-090000");
       const r = pruneDemoProjects(root, "tulip-mania", "demo-tulip-mania-20261003-090000");
-      expect(r.removed).toEqual(["demo-tulip-mania-20261001-101010"]);
+      expect(r.removed).toEqual(["demo-tulip-mania-20261001-101010", "demo-tulip-mania-20261001-161616"]);
       expect(r.kept).toEqual([
         { slug: "demo-tulip-mania-20261001-111111", why: "it has user edits" },
         { slug: "demo-tulip-mania-20261001-121212", why: "it has approvals by a person" },
         { slug: "demo-tulip-mania-20261001-131313", why: "it was used beyond the demo run" },
         { slug: "demo-tulip-mania-20261001-141414", why: "a job is queued or running" },
+        { slug: "demo-tulip-mania-20261001-171717", why: "it has user edits" },
       ]);
       expect(readdirSync(root).sort()).toEqual([
         "demo-tulip-mania-20261001-111111", "demo-tulip-mania-20261001-121212", "demo-tulip-mania-20261001-131313", "demo-tulip-mania-20261001-141414",
-        "demo-tulip-mania-20261001-151515", "demo-tulip-mania-20261003-090000", "demo-tulip-mania-mine",
+        "demo-tulip-mania-20261001-151515", "demo-tulip-mania-20261001-171717", "demo-tulip-mania-20261003-090000", "demo-tulip-mania-mine",
       ]);
     } finally {
       rmSync(root, { recursive: true, force: true });

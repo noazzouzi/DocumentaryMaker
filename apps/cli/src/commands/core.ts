@@ -1,5 +1,5 @@
 // M1 commands: demo, doctor, status, run, setup (§15.1–15.3).
-import { readFileSync, readdirSync, rmSync } from "node:fs";
+import { readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import type { Command } from "commander";
 import { ApprovalsDoc, JobsIndex, P, Project, QaReport, StageId, type Lang, type RenderPresetId } from "@docmaker/core";
@@ -83,27 +83,38 @@ export function pruneDemoProjects(projectsDir: string, fixture: string, currentS
 }
 
 /** Why a demo project must not be removed automatically (null: untouched). */
-function demoTouched(dir: string): string | null {
-  const hasFiles = (d: string): boolean => {
+export function demoTouched(dir: string): string | null {
+  // The demo run itself snapshots history (the fixture's outline approval writes the outline as the user would): only
+  // history written after the demo job ended is a person's edit.
+  let demoEnd: number | null = null;
+  try {
+    const j = JobsIndex.parse(JSON.parse(readFileSync(path.join(dir, P.jobsIndex), "utf8")));
+    const own = j.jobs.filter((x) => x.request.kind === "demo");
+    if (j.jobs.some((x) => x.status === "running" || x.status === "queued")) return "a job is queued or running";
+    if (j.jobs.some((x) => !own.includes(x))) return "it was used beyond the demo run";
+    const ends = own.map((x) => Date.parse(x.endedAt ?? "")).filter((x) => Number.isFinite(x));
+    if (ends.length > 0) demoEnd = Math.max(...ends);
+  } catch { /* no jobs index */ }
+  const editedAfter = (d: string): boolean => {
     try {
-      return readdirSync(d, { withFileTypes: true }).some((e) => (e.isDirectory() ? hasFiles(path.join(d, e.name)) : true));
+      return readdirSync(d, { withFileTypes: true }).some((e) => {
+        const f = path.join(d, e.name);
+        if (e.isDirectory()) return editedAfter(f);
+        return demoEnd === null || statSync(f).mtimeMs > demoEnd + DEMO_HISTORY_SLACK_MS;
+      });
     } catch {
       return false;
     }
   };
-  if (hasFiles(path.join(dir, ".history"))) return "it has user edits";
+  if (editedAfter(path.join(dir, ".history"))) return "it has user edits";
   try {
     const a = ApprovalsDoc.parse(JSON.parse(readFileSync(path.join(dir, P.approvals), "utf8")));
     if (a.approvals.some((x) => x.by !== "fixture" && x.by !== "auto-threshold")) return "it has approvals by a person";
   } catch { /* no approvals */ }
-  try {
-    const j = JobsIndex.parse(JSON.parse(readFileSync(path.join(dir, P.jobsIndex), "utf8")));
-    const own = new Set(j.jobs.filter((x) => x.request.kind === "demo").map((x) => x.id));
-    if (j.jobs.some((x) => x.status === "running" || x.status === "queued")) return "a job is queued or running";
-    if (j.jobs.some((x) => !own.has(x.id))) return "it was used beyond the demo run";
-  } catch { /* no jobs index */ }
   return null;
 }
+/** History files written up to this long after the demo job's recorded end still belong to the run (clock granularity). */
+const DEMO_HISTORY_SLACK_MS = 2000;
 
 export function registerCore(program: Command, ctx: CliContext): void {
   program
