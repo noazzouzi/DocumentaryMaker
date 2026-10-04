@@ -67,7 +67,7 @@ describe("story and beat context", () => {
     expect(withoutHolder("Pisces, Gold Zodiac coin of Jahangir, Agra, 1618-23 CE, Ashmolean Museum, Oxford")).toBe("Pisces, Gold Zodiac coin of Jahangir, Agra, 1618-23 CE, ");
     expect(withoutHolder("Paintings in the National Gallery, London")).toBe("Paintings in the ");
     expect(withoutHolder("Dutch Golden Age paintings in the Rijksmuseum")).toBe("Dutch Golden Age ");
-    expect(withoutHolder("Collections of the Danish National Archives")).toBe("");
+    expect(withoutHolder("Collections of the Danish National Archives")).toBe("Collections of the ");
   });
   it("currencies in EN/FR/DE/NL and abbreviations", () => {
     expect([...currenciesIn("Two 20kr gold coins")]).toEqual(["krone"]);
