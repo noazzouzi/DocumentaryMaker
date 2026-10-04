@@ -64,13 +64,15 @@ edit("CH1-B004", { personIds: ["P2"], visualQuery: "Adriaen Pauw tulip collectio
 const project: Project = makeProject();
 project.assets = { ...project.assets, offline: false };
 
-const rerankCalls: { beatId: string; n: number; exts: string[] }[] = [];
+const rerankCalls: { beatId: string; n: number; exts: string[]; titles: string[] }[] = [];
 const reranker: Reranker = {
   async rerank(input, candidates, thumbs) {
-    rerankCalls.push({ beatId: input.beatId, n: candidates.length, exts: thumbs.map((t) => path.extname(t)) });
-    // Prefer the LAST candidate strongly (it must win after fusion).
+    rerankCalls.push({ beatId: input.beatId, n: candidates.length, exts: thumbs.map((t) => path.extname(t)), titles: candidates.map((c) => c.title) });
+    // Prefer the LAST candidate that does not name the beat's person strongly (it must win after fusion); call one other
+    // candidate irrelevant (< 0.3: the vision verdict rules it out whatever its metadata says).
+    const best = Math.max(0, candidates.map((c) => /depp/i.test(`${c.title} ${c.tags.join(" ")}`)).lastIndexOf(false));
     const scores = candidates.map((_, k): Pick<CandidateScore, "vision" | "technical" | "watermark" | "nsfw" | "focal" | "safeCrop" | "notes"> => ({
-      vision: k === candidates.length - 1 ? 1 : 0.1, technical: 0.8, watermark: false, nsfw: false, focal: { x: 0.4, y: 0.3 }, safeCrop: null, notes: `rr${k}`,
+      vision: k === best ? 1 : k === 0 && best !== 0 ? 0.1 : 0.4, technical: 0.8, watermark: false, nsfw: false, focal: { x: 0.4, y: 0.3 }, safeCrop: null, notes: `rr${k}`,
     }));
     return { scores, receipt: null };
   },
@@ -119,6 +121,10 @@ describe("resolveAssets (online, fake network)", () => {
     const top = out.picks.picks.find((p) => p.beatId === "CH1-B001" && p.slot === 0)!;
     expect(top.score.vision).toBe(1);
     expect(top.focal).toEqual({ x: 0.4, y: 0.3 });
+    // The vision rerank is the preferred judge: a candidate it scores irrelevant (< 0.3) is never picked, metadata or not.
+    const b1 = out.picks.picks.filter((p) => p.beatId === "CH1-B001");
+    expect(b1.every((p) => p.score.vision === null || p.score.vision >= 0.3)).toBe(true);
+    expect(b1.some((p) => out.frozen.assets[p.assetId]!.candidate!.title === call.titles[0])).toBe(false);
     const cand = out.candidates.find((c) => c.beatId === "CH1-B001")!;
     expect(cand.records.length).toBeLessThanOrEqual(project.assets.maxCandidatesPerBeat);
   });

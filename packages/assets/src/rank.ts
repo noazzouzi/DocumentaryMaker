@@ -1,7 +1,8 @@
 // Ranking (§7.6): metadata score, optional CLIP (M3) and vision rerank fusion, dHash dedupe, needsVisionRerank.
 import sharp from "sharp";
 import type { AssetProviderId, BeatPlan, Candidate, CandidateRecord, CandidateScore, FactSheet, Person, VisualKind } from "@docmaker/core";
-import { candidateNamesPerson, personNameTokenSets } from "./identity";
+import { candidateNamesPerson, nonLikenessSubject, personNameTokenSets } from "./identity";
+import { ERA_SLACK_YEARS, relevancePenalty, relevanceSignals, signalNotes, type BeatContext, type RelevanceSignals } from "./relevance";
 import { canonToken, clamp01, matchQueryTokens, matchTokens } from "./util";
 
 /** PROVIDER_PRIOR[visualKind][provider] ∈ [0,1]; missing → 0.5. */
@@ -18,7 +19,7 @@ export const PROVIDER_PRIOR: Record<VisualKind, Partial<Record<AssetProviderId, 
   ai_illustration: { fal: 1, local: 0.9, procedural: 0.5 },
 };
 
-export interface MetadataParts { textMatch: number; coverage: number; resolution: number; aspect: number; durFit: number; prior: number; anachronism: number; metadata: number }
+export interface MetadataParts { textMatch: number; coverage: number; resolution: number; aspect: number; durFit: number; prior: number; anachronism: number; penalty: number; metadata: number }
 
 /** People of the beat (names), so a lone surname match ("Mackay Island") gets no credit for the person's name. */
 export type RankPerson = Pick<Person, "name" | "aliases">;
@@ -60,12 +61,11 @@ export function textCoverage(c: Candidate, queryText: string, people: readonly R
 }
 
 /** Candidates below this coverage of every beat query are irrelevant (unless identity evidence or a vision score says
- *  otherwise): a designed backdrop beats an unrelated photograph. */
-export const RELEVANCE_FLOOR = 0.34;
+ *  otherwise): a designed backdrop beats an unrelated photograph. Two words of a five-word query is the least that counts. */
+export const RELEVANCE_FLOOR = 0.4;
 
 const PERIOD_KINDS: readonly VisualKind[] = ["archival_photo", "news_footage", "document_screenshot"];
-/** Archival material dated more than this many years outside the story's era is penalised. */
-export const ERA_SLACK_YEARS = 50;
+export { ERA_SLACK_YEARS };
 
 export function resolutionScore(c: Pick<Candidate, "kind" | "width">): number {
   if (c.width === null) return 0.5;
@@ -85,7 +85,7 @@ export function durFitScore(c: Pick<Candidate, "kind" | "durationSec">, beatSec:
 }
 
 /** All metadata components (textMatch normalised by the best raw text score among `all`). */
-export function metadataParts(c: Candidate, plan: BeatPlan, all: readonly Candidate[], o?: { cardShare?: number; queryText?: string; people?: readonly RankPerson[]; era?: readonly [number, number] | null; year?: number | null }): MetadataParts {
+export function metadataParts(c: Candidate, plan: BeatPlan, all: readonly Candidate[], o?: { cardShare?: number; queryText?: string; people?: readonly RankPerson[]; era?: readonly [number, number] | null; year?: number | null; signals?: RelevanceSignals | null }): MetadataParts {
   const q = matchQueryTokens(o?.queryText ?? plan.visualQuery);
   const people = o?.people ?? [];
   const max = Math.max(0, ...all.map((x) => rawText(x, q, people)), rawText(c, q, people));
@@ -98,9 +98,13 @@ export function metadataParts(c: Candidate, plan: BeatPlan, all: readonly Candid
   const aspectW = (o?.cardShare ?? 0) > 0 && c.kind === "image" ? 0.05 : 0.1;
   const era = o?.era ?? null;
   const year = o?.year ?? null;
-  const anachronism = era && year !== null && PERIOD_KINDS.includes(plan.visualKind) && (year < era[0] - ERA_SLACK_YEARS || year > era[1] + ERA_SLACK_YEARS) ? 1 : 0;
-  const metadata = clamp01(0.45 * textMatch + 0.2 * resolution + aspectW * aspect + 0.1 * durFit + 0.15 * prior - 0.1 * anachronism);
-  return { textMatch, coverage, resolution, aspect, durFit, prior, anachronism, metadata };
+  const signals = o?.signals ?? null;
+  // With beat signals (salient nouns, era windows, places, currencies) their penalty replaces the plain story-era check.
+  const anachronism = signals ? (signals.anachronism ? 1 : 0)
+    : era && year !== null && PERIOD_KINDS.includes(plan.visualKind) && (year < era[0] - ERA_SLACK_YEARS || year > era[1] + ERA_SLACK_YEARS) ? 1 : 0;
+  const penalty = signals ? relevancePenalty(signals) : 0.1 * anachronism;
+  const metadata = clamp01(0.45 * textMatch + 0.2 * resolution + aspectW * aspect + 0.1 * durFit + 0.15 * prior - penalty);
+  return { textMatch, coverage, resolution, aspect, durFit, prior, anachronism, penalty, metadata };
 }
 
 export function metadataScore(c: Candidate, plan: BeatPlan, all: readonly Candidate[]): number {
@@ -108,15 +112,27 @@ export function metadataScore(c: Candidate, plan: BeatPlan, all: readonly Candid
 }
 
 const r3 = (x: number) => Math.round(x * 1000) / 1000;
+/** Metadata penalty of a grave/statue/plaque/house/signature/coat-of-arms picture on a beat about people. */
+export const MEMORIAL_PENALTY = 0.05;
 
 /** Fuses metadata (+ CLIP similarity) (+ vision rerank) into CandidateScore.total and sorts best first (deterministic ties). */
-export function rankCandidates(i: { plan: BeatPlan; records: CandidateRecord[]; reranked: Map<number, Partial<CandidateScore>> | null; cardShare?: number; people?: readonly RankPerson[]; era?: readonly [number, number] | null }): { record: CandidateRecord; score: CandidateScore }[] {
+export function rankCandidates(i: {
+  plan: BeatPlan; records: CandidateRecord[]; reranked: Map<number, Partial<CandidateScore>> | null; cardShare?: number; people?: readonly RankPerson[];
+  era?: readonly [number, number] | null;
+  /** Beat relevance context and the texts the beat searched with: salient-noun, era-window, place and currency penalties. */
+  relevance?: { ctx: BeatContext; queries: readonly string[] } | null;
+}): { record: CandidateRecord; score: CandidateScore }[] {
   const all = i.records.map((r) => r.candidate);
   const scored = i.records.map((record, idx) => {
-    const m = metadataParts(record.candidate, i.plan, all, { cardShare: i.cardShare, people: i.people, era: i.era, year: yearOfRaw(record.raw) });
+    const signals = i.relevance ? relevanceSignals(record.candidate, yearOfRaw(record.raw), i.relevance.queries, i.relevance.ctx, i.people ?? []) : null;
+    const m = metadataParts(record.candidate, i.plan, all, { cardShare: i.cardShare, people: i.people, era: i.era, year: yearOfRaw(record.raw), signals });
     const rr = i.reranked?.get(idx) ?? null;
     const clip = rr?.clip ?? null;
-    let metadata = m.metadata;
+    // On a beat about people, their likeness comes before their grave, statue or house (which may still illustrate it);
+    // their books and letters are fair illustrations and keep their score.
+    const subject = (i.people?.length ?? 0) > 0 ? nonLikenessSubject(record.candidate) : null;
+    const memorial = subject !== null && subject !== "document" ? MEMORIAL_PENALTY : 0;
+    let metadata = clamp01(m.metadata - memorial);
     if (clip !== null && clip !== undefined) metadata = clamp01(metadata - 0.45 * m.textMatch + 0.2 * m.textMatch + 0.25 * clip);
     const vision = rr?.vision ?? null;
     const technical = rr?.technical ?? null;
@@ -129,7 +145,7 @@ export function rankCandidates(i: { plan: BeatPlan; records: CandidateRecord[]; 
       metadata: r3(metadata), clip: clip === null || clip === undefined ? null : r3(clip), vision: vision === null || vision === undefined ? null : r3(vision),
       technical: technical === null || technical === undefined ? null : r3(technical), watermark, nsfw, total: r3(nsfw ? 0 : total),
       focal: rr?.focal ?? null, safeCrop: rr?.safeCrop ?? null,
-      notes: rr?.notes ?? `text ${m.textMatch.toFixed(2)} cov ${m.coverage.toFixed(2)} res ${m.resolution.toFixed(2)} aspect ${m.aspect.toFixed(2)} dur ${m.durFit.toFixed(2)} prior ${m.prior.toFixed(2)}${m.anachronism ? " anachronism" : ""}`,
+      notes: rr?.notes ?? `text ${m.textMatch.toFixed(2)} cov ${m.coverage.toFixed(2)} res ${m.resolution.toFixed(2)} aspect ${m.aspect.toFixed(2)} dur ${m.durFit.toFixed(2)} prior ${m.prior.toFixed(2)}${signals ? ` ${signalNotes(signals)}` : m.anachronism ? " anachronism" : ""}`,
     };
     return { record: { ...record, score }, score, idx };
   });

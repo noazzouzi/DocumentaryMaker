@@ -72,7 +72,7 @@ export function commonsCategories(raw: string): string[] {
   for (const part of stripHtml(raw).split("|")) {
     const t = part.replace(/_/g, " ").trim();
     if (t === "" || t.length > 120) continue;
-    if (/^(?:CC[- ]|PD[- ]|Public domain|License|Licen[cs]e|Self-published|Uploaded|Files? (?:by|from|with|uploaded)|Pages? with|Media (?:needing|missing|lacking|with)|Images? (?:with|from|by|uploaded)|Photographs? taken on|Taken with|Supported by|Featured|Quality|Valued|Hidden|Template|Artworks? with|Artworks without|Works? by Unknown|Wikidata|GFDL|Attribution)/i.test(t)) continue;
+    if (/^(?:CC[- ]|PD[- ]|Public domain|License|Licen[cs]e|Self-published|Uploaded|Files? (?:by|from|with|uploaded)|Pages? with|Media (?:needing|missing|lacking|with)|Images? (?:with|from|by|uploaded)|Photographs? taken on|Taken with|Supported by|Featured|Quality|Valued|Hidden|Template|Artworks? with|Artworks without|Works? by Unknown|Wikidata|GFDL|Attribution|Flickr|Photos uploaded|Photographs by|Items with|Images in raw|Media contributed|Scans by|Mobile upload|Created with|Taken in|Copyright)/i.test(t)) continue;
     if (!out.includes(t)) out.push(t);
     if (out.length >= 20) break;
   }

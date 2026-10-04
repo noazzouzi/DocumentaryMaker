@@ -1,5 +1,6 @@
 // validatePick — the ONE server-side check of any pick (auto, user PUT, replaceSource override, upload) (§7.4).
 import type { AssetPick, BeatPlan, CueType, FactSheet, FrozenAsset, LicenseInfo, LicensePolicy, LintIssue, Person, Project } from "@docmaker/core";
+import { nonLikenessSubject } from "./identity";
 import { declarationLicense, licenseInfo, LicensePolicyEngine } from "./license";
 
 /** Stock look-alike vocabulary (§7.4 people / bad-light rule). */
@@ -76,6 +77,12 @@ export function validatePick(i: {
     else if (people.length > 0 && verdict.allowed) err("AI-generated image on a beat about real people");
     const bad = cueTypes.filter((c) => c === "PERSON_INTRO" || c === "SENSITIVE");
     if (bad.length > 0) err(`AI-generated image on a ${bad.join("/")} beat`);
+  }
+
+  // A grave, statue, plaque, house, signature or coat of arms is never someone's portrait (it may still illustrate a beat).
+  if (portraitOf !== null && asset.candidate) {
+    const subject = nonLikenessSubject(asset.candidate);
+    if (subject !== null) out.push({ level: "error", rule: "NOT_A_PORTRAIT", where, msg: `a ${subject} is not a likeness of ${portraitOf}: never used as their portrait` });
   }
 
   // Stock look-alikes never stand in for real people or appear in a negative context.

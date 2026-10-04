@@ -38,7 +38,7 @@ export type { PolicyVerdict } from "./license";
 /** Server-side re-check of ANY pick (auto, user PUT, replaceSource override, upload): licence policy, AI-GENERATED + people,
  *  stock look-alikes on person/negative beats, minors/private persons without person-ack. Errors = POLICY_DENIED. */
 export { validatePick, licenseOfAsset, looksLikePeople, peopleRuleBlocks, PEOPLE_RE } from "./validate";
-export { candidateNamesPerson, personNameTokenSets } from "./identity";
+export { candidateNamesPerson, nonLikenessSubject, personNameTokenSets } from "./identity";
 export { buildAiDenylist, checkFalPrompt, falAllowedForBeat, falPrompt, FAL_PROMPT_SUFFIX, FAL_NEGATIVE_PROMPT, PHOTOREAL_VOCABULARY } from "./denylist";
 
 // ---- frozen cache & conform

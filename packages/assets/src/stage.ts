@@ -10,7 +10,7 @@ import type {
 } from "@docmaker/core";
 import { buildAiDenylist, checkFalPrompt, falAllowedForBeat } from "./denylist";
 import { loadClip } from "./clipsim";
-import { candidateNamesPerson } from "./identity";
+import { candidateNamesPerson, nonLikenessSubject } from "./identity";
 import { buildLedger } from "./ledger";
 import { LicensePolicyEngine } from "./license";
 import { materializeCandidate } from "./materialize";
@@ -22,7 +22,8 @@ import { createLocalProvider } from "./providers/local";
 import { createProceduralProvider } from "./providers/procedural";
 import { FAL_COST_PER_IMAGE_USD, FAL_ENDPOINT, falRequest } from "./providers/paid";
 import { ConcurrencyGate, QuotaBuckets, quotaHttp } from "./quota";
-import { dHash, dedupeRecords, eraOf, hamming, keyOf, needsVisionRerank, rankCandidates, RELEVANCE_FLOOR, textCoverage } from "./rank";
+import { dHash, dedupeRecords, eraOf, hamming, keyOf, needsVisionRerank, rankCandidates, RELEVANCE_FLOOR, textCoverage, yearOfRaw } from "./rank";
+import { beatContext, relevanceFailure, relevanceSignals, storyContext } from "./relevance";
 import type { AssetsCtx } from "./types";
 import { readUserFrozen } from "./userfrozen";
 import { commercialMediaHint, needsProvenanceCheck } from "./provenance";
@@ -46,8 +47,10 @@ export interface AssetsStageOutput { picks: PicksDocT; frozen: FrozenDoc; ledger
 const DEFAULT_FOCAL = { x: 0.5, y: 0.45 };
 /** Providers whose candidates skip the relevance floor: the user's own files and media generated from the beat itself. */
 const RELEVANCE_EXEMPT: ReadonlySet<string> = new Set(["local", "procedural", "fal"]);
-/** A vision-rerank score this high vouches for a candidate whatever its metadata says. */
+/** A vision-rerank score this high vouches for a candidate whatever its metadata says; one this low rules it out (the vision
+ *  rerank, when a key allows it, is the preferred judge of relevance: it sees the picture, the narration and the query). */
 const VISION_RELEVANT = 0.6;
+const VISION_IRRELEVANT = 0.3;
 /** Archives whose strict (AND, filtered) search benefits from a looser second pass, and the result count below which it runs. */
 const RELAX_PROVIDERS: ReadonlySet<AssetProviderId> = new Set(["wikimedia", "openverse", "loc"]);
 const RELAX_BELOW = 3;
@@ -127,6 +130,7 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
   const denylist = buildAiDenylist(facts, i.entities);
   const qidOf = (pid: string) => i.entities.entities.find((e) => e.personId === pid)?.qid ?? facts.people.find((p) => p.id === pid)?.wikidataQid ?? null;
   const era = eraOf(facts);
+  const story = storyContext(facts);
   const prevFrozen = i.previous.frozen?.assets ?? {};
   const userFrozen = await readUserFrozen(i.projectDir);
   const fps = project.video.fps;
@@ -322,6 +326,22 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
     }
   };
 
+  /** Per person: candidates of their beats that demonstrably show them (named, or Commons "depicts" = their QID) and are a
+   *  likeness (no grave, statue, plaque, house, signature, coat of arms) — the portrait fallback when no pick qualifies. */
+  const portraitPool = new Map<string, { plan: BeatPlan; rec: CandidateRecord; role: AssetQuery["role"] }[]>();
+  const notePortraits = (plan: BeatPlan, records: readonly CandidateRecord[]) => {
+    for (const p of facts.people.filter((x) => plan.personIds.includes(x.id))) {
+      const qid = qidOf(p.id);
+      const pool = portraitPool.get(p.id) ?? [];
+      for (const rec of records) {
+        const c = rec.candidate;
+        if (c.kind !== "image" || c.provider === "procedural" || c.provider === "fal" || nonLikenessSubject(c) !== null) continue;
+        if (candidateNamesPerson(c, p) || (qid !== null && depictsByKey.get(keyOf(c)) === qid)) pool.push({ plan, rec, role: "portrait" });
+      }
+      portraitPool.set(p.id, pool);
+    }
+  };
+
   let done = 0;
   for (const plan of visualPlans) {
     if (ctx.signal.aborted) throw new DocmakerError("CANCELED", "assets stage canceled");
@@ -348,6 +368,7 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
           recent.push(prevBeat.map((p) => { const c = prevFrozen[p.assetId]!.candidate; return c ? keyOf(c) : p.assetId; }));
           const prevDoc = await readJson(path.join(i.projectDir, P.candidates(plan.id)), CandidatesDoc);
           for (const r of prevDoc?.records ?? []) noteDepicts(r);
+          notePortraits(plan, prevDoc?.records ?? []);
           candidatesDocs.push(prevDoc ?? { schemaVersion: 1, beatId: plan.id, queries, records: [] });
           continue;
         }
@@ -362,10 +383,14 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
     });
     const real = records.filter((r) => r.candidate.provider !== "procedural");
     const people = facts.people.filter((p) => plan.personIds.includes(p.id));
-    let ranked = rankCandidates({ plan, records: real, reranked: null, cardShare, people, era });
+    const narration = i.plans.primary.find((b) => b.beatId === plan.id)?.text ?? "";
+    const bctx = beatContext(plan, facts, story, narration);
+    const queryTexts = [plan.visualQuery, ...queries.filter((q) => q.role !== "portrait").map((q) => q.text)];
+    const relevance = { ctx: bctx, queries: queryTexts };
+    let ranked = rankCandidates({ plan, records: real, reranked: null, cardShare, people, era, relevance });
     if (ranked.length > 1) {
       const rr = await rerank(plan, real, ranked);
-      if (rr.reranked || rr.recs.length !== real.length) ranked = rankCandidates({ plan, records: rr.recs, reranked: rr.reranked, cardShare, people, era });
+      if (rr.reranked || rr.recs.length !== real.length) ranked = rankCandidates({ plan, records: rr.recs, reranked: rr.reranked, cardShare, people, era, relevance });
     }
     const roleOf = (rec: CandidateRecord): AssetQuery["role"] => roleByKey.get(keyOf(rec.candidate)) ?? queries[0]?.role ?? "broll";
 
@@ -375,14 +400,21 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
     const relevant = (r: { record: CandidateRecord; score: CandidateScore }): boolean => {
       const c = r.record.candidate;
       if (RELEVANCE_EXEMPT.has(c.provider)) return true;
-      if ((r.score.vision ?? 0) >= VISION_RELEVANT) return true;
+      if (r.score.vision !== null) {
+        if (r.score.vision >= VISION_RELEVANT) return true;
+        if (r.score.vision < VISION_IRRELEVANT) return false;
+      }
       const qid = depictsByKey.get(keyOf(c));
       if (qid !== undefined && planQids.has(qid)) return true;
       if (queries.some((q) => q.role === "portrait" && people.some((p) => q.personIds.includes(p.id) && candidateNamesPerson(c, p)))) return true;
-      return [plan.visualQuery, ...queries.filter((q) => q.role !== "portrait").map((q) => q.text)].some((t) => textCoverage(c, t, people) >= RELEVANCE_FLOOR);
+      if (!queryTexts.some((t) => textCoverage(c, t, people) >= RELEVANCE_FLOOR)) return false;
+      const why = relevanceFailure(relevanceSignals(c, yearOfRaw(r.record.raw), queryTexts, bctx, people));
+      if (why !== null) log.debug("candidate fails the relevance rules", { beatId: plan.id, candidate: keyOf(c), why });
+      return why === null;
     };
     const eligible = ranked.filter(relevant);
     if (eligible.length < ranked.length) log.debug("irrelevant candidates skipped", { beatId: plan.id, skipped: ranked.length - eligible.length });
+    notePortraits(plan, eligible.map((r) => r.record));
 
     // Greedy picks with fallback to the next candidate when a freeze or validatePick fails.
     const ordered = pickAssets({ plan, ranked: eligible, shots: eligible.length, recentUse: recent.map() });
@@ -515,7 +547,18 @@ export async function resolveAssets(i: AssetsStageInput, ctx: AssetsCtx): Promis
       const shows = candidateNamesPerson(a.candidate, person) || (qid !== null && depictsByKey.get(keyOf(a.candidate)) === qid);
       return shows && portraitIssues(person.id, a).length === 0;
     });
-    if (pk) portraits.push({ personId: person.id, assetId: pk.assetId });
+    if (pk) {
+      portraits.push({ personId: person.id, assetId: pk.assetId });
+      continue;
+    }
+    // No pick is a likeness of the person (e.g. only their grave or statue was picked): freeze the best candidate that is.
+    for (const cand of portraitPool.get(person.id) ?? []) {
+      const a = await freeze(cand.plan, cand.rec, cand.role);
+      if (!a || a.kind !== "image" || portraitIssues(person.id, a).length > 0) continue;
+      portraits.push({ personId: person.id, assetId: a.id });
+      frozen.set(a.id, a);
+      break;
+    }
   }
 
   // ---- frozen + ledger (keep engine-frozen music so the stage output never drops it)

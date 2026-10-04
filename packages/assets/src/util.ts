@@ -104,7 +104,8 @@ const ORDINAL_WORDS: Record<string, number> = {
 const ROMAN: Record<string, number> = { xi: 11, xii: 12, xiii: 13, xiv: 14, xv: 15, xvi: 16, xvii: 17, xviii: 18, xix: 19, xx: 20, xxi: 21 };
 const ordinal = (n: number) => `${n}th`;
 
-/** Canonical spelling of an ordinal/century token ("seventeenth", "17e", "xviie", "1600s" → "17th"), else the token itself. */
+/** Canonical spelling of an ordinal/century token ("seventeenth", "17e", "xviie", "1600s" → "17th"), else the token in the
+ *  singular (see `singular`). */
 export function canonToken(t: string): string {
   if (ORDINAL_WORDS[t] !== undefined) return ordinal(ORDINAL_WORDS[t]!);
   let m = /^(\d{1,2})(st|nd|rd|th|e|eme|ème|er|re)$/.exec(t);
@@ -113,7 +114,17 @@ export function canonToken(t: string): string {
   if (m && ROMAN[m[1]!] !== undefined) return ordinal(ROMAN[m[1]!]!);
   m = /^(1\d|20)00s$/.exec(t);
   if (m) return ordinal(Number(m[1]) + 1);
-  return t;
+  return singular(t);
+}
+
+/** Light English plural/possessive folding so "merchants", "tulips", "contracts" meet "merchant", "tulip", "contract"
+ *  ("cities" → "city"); short words and -ss/-us/-is/-ous endings are kept ("glass", "augustus", "clusius"). */
+function singular(t: string): string {
+  const w = t.endsWith("'s") ? t.slice(0, -2) : t;
+  if (!/^\p{L}{4,}$/u.test(w)) return w;
+  if (/[^aeiou]ies$/.test(w) && w.length > 5) return `${w.slice(0, -3)}y`;
+  if (/s$/.test(w) && !/(?:ss|us|is)$/.test(w)) return w.slice(0, -1);
+  return w;
 }
 
 /** Candidate-side match tokens: canonical tokens plus, for every year, its century ("1637" → "17th") and decade ("1630s"). */
@@ -133,9 +144,12 @@ export function matchTokens(text: string): string[] {
   return [...out];
 }
 
-/** Query-side match tokens: content tokens (stopwords dropped) in canonical spelling. */
+const CENTURY_WORDS = new Set(["century", "centuries", "siecle", "siecles", "jahrhundert", "jahrhunderts", "eeuw", "eeuwen"]);
+/** Query-side match tokens: content tokens (stopwords dropped) in canonical spelling; "century" after an ordinal is part of
+ *  the era token ("seventeenth century" → "17th", which candidate years match). */
 export function matchQueryTokens(text: string): string[] {
-  return [...new Set(tokensOf(text).filter((t) => !STOP.has(t)).map(canonToken))];
+  const t = [...new Set(tokensOf(text).filter((x) => !STOP.has(x)).map(canonToken))];
+  return t.some((x) => /^\d+th$/.test(x)) ? t.filter((x) => !CENTURY_WORDS.has(x)) : t;
 }
 
 export function clamp(x: number, lo: number, hi: number): number {
