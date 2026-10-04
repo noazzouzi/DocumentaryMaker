@@ -96,6 +96,12 @@ export function placesIn(text: string, o: { namesOnly?: boolean } = {}): Set<str
   for (const p of PLACE_RES) if (p.names.test(t) || (!o.namesOnly && p.demonyms.test(t))) out.add(p.group);
   return out;
 }
+/** A text without the institution that holds the work ("…, Ashmolean Museum, Oxford", "Paintings in the National Gallery,
+ *  London", "Collections of the Danish National Archives"): where an object is kept says nothing about what it shows. */
+export function withoutHolder(text: string): string {
+  return text.split(/\b(?:[\p{Lu}][\p{L}'-]*\s+)*(?:Museum|Museo|Musée|Musee|Gallery|Galerie|Galleria|Library|Bibliothèque|Bibliotheque|Archives?|Archief|Rijksmuseum|Mauritshuis|Louvre)\b|\b(?:paintings|works|objects|photographs|files|media|collections?) (?:in|of|from) the\b|\bcollections? of\b/u)[0]!;
+}
+
 /** Currency groups a text mentions. */
 export function currenciesIn(text: string): Set<string> {
   const t = fold(text);
@@ -295,7 +301,7 @@ export function relevanceSignals(c: Pick<Candidate, "title" | "tags" | "descript
     }
   }
   const onTopic = ctx.story.topic.some((t) => have.has(t)) || ctx.story.people.some((p) => candidateNamesPerson(c, p));
-  const head = [c.title, ...c.tags].join(" \n ");
+  const head = [c.title, ...c.tags].map(withoutHolder).join(" \n ");
   const mentioned = placesIn(head);
   const placeMatch = [...mentioned].some((g) => ctx.places.has(g));
   const corePlaceMatch = [...mentioned].some((g) => ctx.corePlaces.has(g));

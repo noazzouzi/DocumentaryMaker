@@ -6,7 +6,7 @@ import { makeBeats, makeFactSheet, makeScript } from "@docmaker/core/testing";
 import { licenseInfo, rankCandidates } from "../src/index";
 import { RELEVANCE_FLOOR, textCoverage } from "../src/rank";
 import {
-  beatContext, beatEraWindows, candidateYear, coreEra, currenciesIn, isAnachronistic, placesIn, relevanceFailure, relevanceSignals, salientTokens, storyContext,
+  beatContext, beatEraWindows, candidateYear, coreEra, currenciesIn, isAnachronistic, placesIn, relevanceFailure, relevanceSignals, salientTokens, storyContext, withoutHolder,
 } from "../src/relevance";
 import { matchQueryTokens } from "../src/util";
 
@@ -63,6 +63,11 @@ describe("story and beat context", () => {
     expect([...placesIn("Dutch Golden Age paintings")]).toEqual(["low-countries"]);
     expect([...placesIn("Den Haag - Mauritshuis")]).toEqual(["low-countries"]);
     expect([...placesIn("Frieze (USA), 1905–15")]).toEqual(["usa"]);
+    // Where a work is kept is not what it shows.
+    expect(withoutHolder("Pisces, Gold Zodiac coin of Jahangir, Agra, 1618-23 CE, Ashmolean Museum, Oxford")).toBe("Pisces, Gold Zodiac coin of Jahangir, Agra, 1618-23 CE, ");
+    expect(withoutHolder("Paintings in the National Gallery, London")).toBe("Paintings in the ");
+    expect(withoutHolder("Dutch Golden Age paintings in the Rijksmuseum")).toBe("Dutch Golden Age ");
+    expect(withoutHolder("Collections of the Danish National Archives")).toBe("");
   });
   it("currencies in EN/FR/DE/NL and abbreviations", () => {
     expect([...currenciesIn("Two 20kr gold coins")]).toEqual(["krone"]);
@@ -102,6 +107,7 @@ describe("relevance rules on the demo's off-topic picks", () => {
     expect(verdict(plan("seventeenth century dutch street scene painting"), crab)).toMatch(/dated 1843/);
     expect(verdict(plan("gold coins pile candlelight", { visualKind: "stock_broll" }), kroner, 2013)).toMatch(/foreign currency \(krone\)/);
     expect(verdict(plan("gold coins pile candlelight", { visualKind: "stock_broll" }), cand("g", "Gold coins"))).toBeNull();
+    expect(verdict(plan("gold coins pile candlelight", { visualKind: "stock_broll" }), cand("ja", "Pisces, Gold Zodiac coin of Jahangir, Agra, 1618-23 CE, Ashmolean Museum, Oxford"))).toMatch(/foreign place \(india\)/);
     // Stock b-roll is not held to the era, but a dated old work from another era (a 1920 film advertisement) is refused …
     expect(verdict(plan("gold coins pile candlelight", { visualKind: "stock_broll" }), cand("ad", "Three Gold Coins (1920) - Ad 1"))).toMatch(/dated 1920/);
     expect(verdict(plan("gold coins pile candlelight", { visualKind: "stock_broll" }), cand("ku", "Gold coin of the Kushans, 40-350 CE, Ashmolean Museum, Oxford"))).toMatch(/dated 40/);
