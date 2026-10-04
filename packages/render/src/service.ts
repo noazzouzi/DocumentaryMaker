@@ -29,7 +29,7 @@ import { muxMaster } from "./mux";
 import { masterPost } from "./post";
 import { chunkHashPreset, commonRemotionOptions, PRESETS, presetRenderOptions, resolveConcurrency, type GlMode } from "./presets";
 import { ProgressTracker } from "./progress";
-import { COMPOSITIONS, loadRenderer, type BrowserLog, type HeadlessBrowser } from "./remotion";
+import { COMPOSITIONS, loadRenderer, setRemotionDebugLogger, type BrowserLog, type HeadlessBrowser } from "./remotion";
 import { buildContactSheets, frameLabel } from "./sheets";
 
 export interface RenderServiceOptions { config: RuntimeConfig; logger: Logger; enableBundleCache?: boolean /* tests: false */ }
@@ -189,6 +189,7 @@ export class RenderService {
   constructor(o: RenderServiceOptions) {
     this.config = o.config;
     this.logger = o.logger.child({ pkg: "render" });
+    setRemotionDebugLogger(this.logger); // Remotion's memory warnings and echoed GL-probe lines → debug only
     this.enableBundleCache = o.enableBundleCache ?? true;
   }
 

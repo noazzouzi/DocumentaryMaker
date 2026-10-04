@@ -1,4 +1,5 @@
 // Lazy loaders for Remotion's Node packages (heavy; only loaded when a render/bundle actually runs).
+import type { Logger } from "@docmaker/core";
 type Bundler = typeof import("@remotion/bundler");
 type Renderer = typeof import("@remotion/renderer");
 export type HeadlessBrowser = Awaited<ReturnType<Renderer["openBrowser"]>>;
@@ -22,23 +23,55 @@ const REMOTION_NOISE = [
   /^You might have inadvertently set the --memory flag of `docker run`/,
   /^Using the lower amount of memory for calculation\./,
 ];
+/**
+ * The GlProbe composition's console lines. Remotion's defaultOnLog echoes every console.log of the bundle to stdout
+ * (tagged `[Tab N, file:line]`) whatever `logLevel` says — it compares the browser log's own level with itself — and
+ * the public API offers no onLog override. gl.ts already collects them through onBrowserLog.
+ */
+const BROWSER_PROBE_LINE = /^\[?\s*Tab \d+\b[^\]]*?\]?\s+(UNMASKED_RENDERER_WEBGL=|GL_PROBE )/;
 const ANSI = /\u001b\[[0-9;]*m/g;
+const argsText = (args: readonly unknown[]): string => args.map((a) => (typeof a === "string" ? a : "")).join(" ").replace(ANSI, "").replace(/\s+/g, " ").trim();
 /** Whether a console.warn call is Remotion's memory-mismatch noise (exported for tests). */
 export function isRemotionNoise(args: readonly unknown[]): boolean {
   if (args.length === 0) return false;
-  const text = args.map((a) => (typeof a === "string" ? a : "")).join(" ").replace(ANSI, "").trim();
+  const text = argsText(args);
   return REMOTION_NOISE.some((re) => re.test(text));
 }
+/** Whether a console.log/info call is Remotion echoing the GL probe's browser console lines (exported for tests). */
+export function isBrowserProbeLog(args: readonly unknown[]): boolean {
+  return args.length > 0 && BROWSER_PROBE_LINE.test(argsText(args));
+}
+
+let debugLogger: Logger | null = null;
+/** Where the filtered Remotion lines go (debug level only; the newest RenderService wins; null drops them). */
+export function setRemotionDebugLogger(logger: Logger | null): void {
+  debugLogger = logger;
+}
 let filterInstalled = false;
-/** Wraps console.warn once so Remotion's memory-mismatch block is dropped; every other warning passes through. */
+/**
+ * Wraps console.warn/log/info once so Remotion's memory-mismatch block and the GL probe's echoed browser lines go to
+ * the debug log instead of the terminal; every other line passes through.
+ */
 export function installRemotionNoiseFilter(): void {
   if (filterInstalled) return;
   filterInstalled = true;
-  const original = console.warn.bind(console);
-  console.warn = (...args: unknown[]) => {
-    if (isRemotionNoise(args)) return;
-    original(...args);
+  const toDebug = (args: readonly unknown[]): void => {
+    try {
+      debugLogger?.debug("remotion", { line: argsText(args) });
+    } catch {
+      /* logging must never throw */
+    }
   };
+  const wrap = (method: "warn" | "log" | "info", isNoise: (args: readonly unknown[]) => boolean): void => {
+    const original = console[method].bind(console);
+    console[method] = (...args: unknown[]) => {
+      if (isNoise(args)) return toDebug(args);
+      original(...args);
+    };
+  };
+  wrap("warn", isRemotionNoise);
+  wrap("log", isBrowserProbeLog);
+  wrap("info", isBrowserProbeLog);
 }
 
 /** Composition ids registered by @docmaker/remotion's Root (COMPOSITION_IDS; not imported to keep React out of Node). */
