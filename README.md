@@ -60,6 +60,15 @@ Pas à pas complet sur un vrai sujet : **[docs/GUIDE-FR.md](docs/GUIDE-FR.md)**.
 
 **Prérequis** : Linux x64 ou macOS (Windows : via WSL2), **Node.js 22.12+** (22.x), **pnpm 10**, **ffmpeg ≥ 6.1** (avec ffprobe). Optionnel : **Python 3.11–3.12** (transcription de votre voix avec faster-whisper, yt-dlp via le venv), `xmllint`.
 
+Vous n'avez que `npm` ? Installez pnpm avec lui (le dépôt utilise des workspaces pnpm : `npm install` ne fonctionne pas) :
+
+```sh
+npm install -g pnpm@10.28.0       # ou : corepack enable (Corepack est fourni avec Node 22)
+pnpm --version                    # doit afficher 10.28.0
+```
+
+Sous Windows, utilisez un terminal **WSL2** (Ubuntu) et installez-y Node 22, pnpm et ffmpeg : la v1 ne prend pas en charge Windows en natif (`pnpm docmaker doctor` le signale).
+
 ```sh
 git clone https://github.com/noazzouzi/DocumentaryMaker.git
 cd DocumentaryMaker
