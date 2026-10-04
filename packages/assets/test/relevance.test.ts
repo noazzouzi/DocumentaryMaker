@@ -100,6 +100,10 @@ describe("relevance rules on the demo's off-topic picks", () => {
     expect(verdict(plan("seventeenth century dutch street scene painting"), crab)).toMatch(/dated 1843/);
     expect(verdict(plan("gold coins pile candlelight", { visualKind: "stock_broll" }), kroner, 2013)).toMatch(/foreign currency \(krone\)/);
     expect(verdict(plan("gold coins pile candlelight", { visualKind: "stock_broll" }), cand("g", "Gold coins"))).toBeNull();
+    // Stock b-roll is not held to the era, but a dated old work from another era (a 1920 film advertisement) is refused …
+    expect(verdict(plan("gold coins pile candlelight", { visualKind: "stock_broll" }), cand("ad", "Three Gold Coins (1920) - Ad 1"))).toMatch(/dated 1920/);
+    // … while a modern photograph is fine.
+    expect(verdict(plan("gold coins pile candlelight", { visualKind: "stock_broll" }), cand("g2", "Gold coins 2015"))).toBeNull();
   });
   it("a generic query needs the story: a Bohemian wedding contract is not a tulip contract", () => {
     expect(verdict(plan("archive contract documents"), wedding, 1648)).toMatch(/generic query/);

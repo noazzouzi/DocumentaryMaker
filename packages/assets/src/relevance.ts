@@ -225,8 +225,10 @@ export interface BeatContext {
   corePlaces: Set<string>;
   currencies: Set<string>;
   windows: [number, number][] | null;
-  /** Only archival/news/document beats are held to the era. */
+  /** Archival/news/document beats are held to the era; other beats (stock b-roll, backgrounds) only refuse a dated old work
+   *  (a title stating a year before `modernSince`, e.g. a 1920 film poster for "gold coins pile") from another era. */
   periodKind: boolean;
+  modernSince: number;
 }
 
 const PERIOD_KINDS = new Set(["archival_photo", "news_footage", "document_screenshot"]);
@@ -237,6 +239,7 @@ export function beatContext(plan: Pick<BeatPlan, "visualQuery" | "factIds" | "cu
   return {
     story, places: new Set([...story.places, ...own]), corePlaces: new Set([...story.primaryPlaces, ...own]), currencies: new Set([...story.currencies, ...currenciesIn(text)]),
     windows: beatEraWindows(plan, facts), periodKind: PERIOD_KINDS.has(plan.visualKind),
+    modernSince: (yearsIn(facts.asOf)[0] ?? 2020) - 30,
   };
 }
 
@@ -293,13 +296,15 @@ export function relevanceSignals(c: Pick<Candidate, "title" | "tags" | "descript
   const shown = [...currenciesIn(`${head} \n ${c.description}`)];
   const foreignCurrency = ctx.currencies.size > 0 && shown.length > 0 && !shown.some((g) => ctx.currencies.has(g)) ? shown[0]! : null;
   const { year, stated } = candidateYear(c, rawYear);
-  const anachronism = ctx.periodKind && isAnachronistic(year, ctx.windows);
+  const anachronism = ctx.periodKind ? isAnachronistic(year, ctx.windows)
+    : stated && year !== null && year < ctx.modernSince && isAnachronistic(year, ctx.windows);
   return { salientHits, salientTotal, onTopic, placeMatch, corePlaceMatch, year, yearStated: stated, anachronism, foreignPlace, foreignCurrency };
 }
 
 /** Metadata penalty of the signals (subtracted from the metadata score). */
 export function relevancePenalty(s: RelevanceSignals): number {
-  return (s.anachronism ? 0.15 : 0) + (s.foreignPlace ? 0.2 : 0) + (s.foreignCurrency ? 0.2 : 0) + (s.salientTotal > 0 && s.salientHits === 0 ? 0.15 : 0);
+  // A provider date is often when a photograph of the subject was taken (a 2008 photo of a 1590 garden): a light penalty.
+  return (s.anachronism ? (s.yearStated ? 0.15 : 0.05) : 0) + (s.foreignPlace ? 0.2 : 0) + (s.foreignCurrency ? 0.2 : 0) + (s.salientTotal > 0 && s.salientHits === 0 ? 0.15 : 0);
 }
 
 /**
